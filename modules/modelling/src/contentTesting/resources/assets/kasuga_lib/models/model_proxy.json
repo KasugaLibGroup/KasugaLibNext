@@ -13,6 +13,11 @@
         "models/je/test_parent_b.json",
         "models/fsm/test_cube.obj",
         "models/block/test/blockbench/*.bbmodel",
-        "models/pmx/silver_wolf.mmd.zip"
+        "models/pmx/silver_wolf.mmd.zip",
+        "models/fmt/traincraft/*.mtb",
+        "models/fmt/traincraft/*.fmtb",
+        "models/fmt/traincraft/*.bob",
+        "models/fmt/traincraft/*.beo",
+        "models/fmt/traincraft/*.fmf"
     ]
 }

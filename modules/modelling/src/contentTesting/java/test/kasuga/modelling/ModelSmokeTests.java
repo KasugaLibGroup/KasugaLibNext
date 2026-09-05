@@ -28,6 +28,8 @@ public final class ModelSmokeTests {
             KasugaLib.MODID, "ragdolls/tda_bunny_miku.json");
     private static boolean missingMmdLogged;
     private static boolean missingBbmodelLogged;
+    private static boolean missingFmtLogged;
+    private static boolean modeLogged;
     private static ModelInstance currentMmdInstance;
 
     private ModelSmokeTests() {
@@ -42,8 +44,18 @@ public final class ModelSmokeTests {
 
     private static void testModel() {
         if (!Boolean.parseBoolean(System.getProperty("kasuga.renderTestModels", "true"))) return;
-        switch (System.getProperty("kasuga.testModel", "bbmodel").toLowerCase(Locale.ROOT)) {
+        String selectedModel = System.getProperty("kasuga.testModel",
+                System.getProperty("kasugaTestModel", "bbmodel"));
+        if (!modeLogged) {
+            modeLogged = true;
+            LOGGER.info("Model smoke test mode: {} (set -PkasugaTestModel=<bbmodel|mtb|bob|fmf|obj|be|je|mmd>)", selectedModel);
+        }
+        switch (selectedModel.toLowerCase(Locale.ROOT)) {
             case "bbmodel" -> testBbModels();
+            case "mtb", "fmtb" -> testFmtModels();
+            case "bob" -> testFmtBinaryModels("bob");
+            case "beo" -> testFmtBinaryModels("beo");
+            case "fmf" -> testFmtBinaryModels("fmf");
             case "obj" -> testObj();
             case "be" -> testBe();
             case "je" -> testJe();
@@ -88,6 +100,76 @@ public final class ModelSmokeTests {
             return;
         }
         missingBbmodelLogged = false;
+        if (pipeline.hasInstance(modelLoc, instanceLoc)) return;
+        ModelInstance instance = pipeline.createInstance(modelLoc, instanceLoc, new Transform().translate(
+                (float) position.x, (float) position.y, (float) position.z), null, null);
+        if (instance != null) pipeline.addToRenderer(modelLoc, instanceLoc, "mc_bridge", "mc_backend");
+    }
+
+    private static void testFmtModels() {
+        Minecraft minecraft = Minecraft.getInstance();
+        Vec3 playerPosition = minecraft.player.position();
+        Vec3 lookDirection = minecraft.player.getLookAngle();
+        String selected = System.getProperty("kasuga.testFmtModel",
+                System.getProperty("kasugaTestFmtModel"));
+        if (selected != null && !selected.isBlank()) {
+            testFmtModel(normalizeFmtPath(selected), "test_fmt_model", playerPosition.add(lookDirection.scale(3.0)).add(0.0, 1.0, 0.0));
+            return;
+        }
+        // These locomotives are roughly 8 blocks long. Keep enough depth
+        // between instances so the smoke test does not make valid geometry
+        // look like a single intersecting/duplicated train.
+        testFmtModel("models/fmt/traincraft/0-8-0_box_tank.mtb", "test_fmt_080", playerPosition.add(lookDirection.scale(6.0)).add(0.0, 1.0, 0.0));
+        testFmtModel("models/fmt/traincraft/060_pannier.mtb", "test_fmt_pannier", playerPosition.add(lookDirection.scale(20.0)).add(0.0, 1.0, 0.0));
+        testFmtModel("models/fmt/traincraft/emd_f3_a.mtb", "test_fmt_emd_f3", playerPosition.add(lookDirection.scale(34.0)).add(0.0, 1.0, 0.0));
+        testFmtBinaryModel("models/fmt/traincraft/1.bob", "test_fmt_bob", playerPosition.add(lookDirection.scale(48.0)).add(0.0, 1.0, 0.0));
+        testFmtBinaryModel("models/fmt/traincraft/1.fmf", "test_fmt_fmf", playerPosition.add(lookDirection.scale(54.0)).add(0.0, 1.0, 0.0));
+    }
+
+    private static String normalizeFmtPath(String path) {
+        String trimmed = path.trim().replace('\\', '/');
+        String normalized = trimmed.startsWith("models/") ? trimmed : "models/fmt/traincraft/" + trimmed;
+        // ResourceLocation paths are strictly lowercase in Minecraft 1.21;
+        // Traincraft's original filenames contain uppercase characters.
+        return normalized.toLowerCase(Locale.ROOT);
+    }
+
+    private static void testFmtModel(String modelPath, String instanceName, Vec3 position) {
+        ResourceLocation modelLoc = ResourceLocation.tryBuild(KasugaLib.MODID, modelPath);
+        ResourceLocation instanceLoc = ResourceLocation.tryBuild(KasugaLib.MODID, instanceName);
+        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = PipelineRegistry.fmtArchive();
+        if (!pipeline.hasModel(modelLoc)) {
+            if (!missingFmtLogged) {
+                missingFmtLogged = true;
+                LOGGER.warn("Test FMT model '{}' is unavailable after resource reload; check contentTesting model_proxy.json and restart the client", modelLoc);
+            }
+            return;
+        }
+        missingFmtLogged = false;
+        if (pipeline.hasInstance(modelLoc, instanceLoc)) return;
+        ModelInstance instance = pipeline.createInstance(modelLoc, instanceLoc, new Transform().translate(
+                (float) position.x, (float) position.y, (float) position.z), null, null);
+        if (instance != null) pipeline.addToRenderer(modelLoc, instanceLoc, "mc_bridge", "mc_backend");
+    }
+
+    private static void testFmtBinaryModels(String extension) {
+        Minecraft minecraft = Minecraft.getInstance();
+        Vec3 position = minecraft.player.position().add(minecraft.player.getLookAngle().scale(6.0)).add(0.0, 1.0, 0.0);
+        testFmtBinaryModel("models/fmt/traincraft/1." + extension, "test_fmt_" + extension, position);
+    }
+
+    private static void testFmtBinaryModel(String modelPath, String instanceName, Vec3 position) {
+        ResourceLocation modelLoc = ResourceLocation.tryBuild(KasugaLib.MODID, modelPath);
+        ResourceLocation instanceLoc = ResourceLocation.tryBuild(KasugaLib.MODID, instanceName);
+        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = PipelineRegistry.fmtBinary();
+        if (!pipeline.hasModel(modelLoc)) {
+            if (!missingFmtLogged) {
+                missingFmtLogged = true;
+                LOGGER.warn("Test FMT binary model '{}' is unavailable after resource reload; check contentTesting model_proxy.json and restart the client", modelLoc);
+            }
+            return;
+        }
+        missingFmtLogged = false;
         if (pipeline.hasInstance(modelLoc, instanceLoc)) return;
         ModelInstance instance = pipeline.createInstance(modelLoc, instanceLoc, new Transform().translate(
                 (float) position.x, (float) position.y, (float) position.z), null, null);

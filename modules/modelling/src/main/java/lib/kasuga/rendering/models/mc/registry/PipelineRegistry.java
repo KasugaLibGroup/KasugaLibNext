@@ -25,6 +25,8 @@ import lib.kasuga.rendering.models.mc.typo.KsgObjLoader;
 import lib.kasuga.rendering.models.mc.typo.KsgPmxLoader;
 import lib.kasuga.rendering.models.mc.typo.KsgGltfLoader;
 import lib.kasuga.rendering.models.mc.typo.bbmodel.KsgBbModelLoader;
+import lib.kasuga.rendering.models.mc.typo.fmt.FmtArchiveLoader;
+import lib.kasuga.rendering.models.mc.typo.fmt.FmtBinaryLoader;
 import lib.kasuga.rendering.models.mc.typo.pmx_entry.ZipHelper;
 import lib.kasuga.rendering.models.mc.typo.pmx_entry.ZipResource;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
@@ -44,6 +46,8 @@ public final class PipelineRegistry {
     public static final String PMX = "pmx";
     public static final String GLTF = "gltf";
     public static final String BBMODEL = "bbmodel";
+    public static final String FMT_ARCHIVE = "fmt_archive";
+    public static final String FMT_BINARY = "fmt_binary";
 
     private static final Map<String, ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?>> PIPELINES =
             new ConcurrentHashMap<>();
@@ -57,6 +61,11 @@ public final class PipelineRegistry {
         BUILTIN_ROUTES.put(".gltf", GLTF);
         BUILTIN_ROUTES.put(".json", JE);
         BUILTIN_ROUTES.put(".bbmodel", BBMODEL);
+        BUILTIN_ROUTES.put(".mtb", FMT_ARCHIVE);
+        BUILTIN_ROUTES.put(".fmtb", FMT_ARCHIVE);
+        BUILTIN_ROUTES.put(".bob", FMT_BINARY);
+        BUILTIN_ROUTES.put(".beo", FMT_BINARY);
+        BUILTIN_ROUTES.put(".fmf", FMT_BINARY);
     }
 
     private static KasugaPipeLineRouter router;
@@ -71,6 +80,8 @@ public final class PipelineRegistry {
     private static ModelPipeLine<ZipHelper, BackendInstance, ResourceLocation, ResourceLocation, ZipResource> pmxPipeline;
     private static ModelPipeLine<byte[], BackendInstance, ResourceLocation, ResourceLocation, Object> gltfPipeline;
     private static ModelPipeLine<String, BackendInstance, ResourceLocation, ResourceLocation, Integer> bbmodelPipeline;
+    private static ModelPipeLine<ZipHelper, BackendInstance, ResourceLocation, ResourceLocation, Integer> fmtArchivePipeline;
+    private static ModelPipeLine<byte[], BackendInstance, ResourceLocation, ResourceLocation, Integer> fmtBinaryPipeline;
 
     private PipelineRegistry() {
     }
@@ -154,6 +165,26 @@ public final class PipelineRegistry {
                 .withBackend("mc_backend", backend)
                 .build();
         register(BBMODEL, bbmodelPipeline);
+
+        fmtArchivePipeline = new ModelPipeLine.Builder<ZipHelper, BackendInstance, ResourceLocation,
+                ResourceLocation, Integer>()
+                .withModelSource(zipSource)
+                .withSidedSource(textures.getType(), "mc_layer_0", textures)
+                .withLoader(new FmtArchiveLoader("fmt_archive"))
+                .withBridge("mc_bridge", bridge)
+                .withBackend("mc_backend", backend)
+                .build();
+        register(FMT_ARCHIVE, fmtArchivePipeline);
+
+        fmtBinaryPipeline = new ModelPipeLine.Builder<byte[], BackendInstance, ResourceLocation,
+                ResourceLocation, Integer>()
+                .withModelSource(binarySource)
+                .withSidedSource(textures.getType(), "mc_layer_0", textures)
+                .withLoader(new FmtBinaryLoader("fmt_binary"))
+                .withBridge("mc_bridge", bridge)
+                .withBackend("mc_backend", backend)
+                .build();
+        register(FMT_BINARY, fmtBinaryPipeline);
     }
 
     public static ModelPipeLine<JsonObject, BackendInstance, ResourceLocation, ResourceLocation, String> be() {
@@ -178,6 +209,14 @@ public final class PipelineRegistry {
 
     public static ModelPipeLine<String, BackendInstance, ResourceLocation, ResourceLocation, Integer> bbmodel() {
         return bbmodelPipeline;
+    }
+
+    public static ModelPipeLine<ZipHelper, BackendInstance, ResourceLocation, ResourceLocation, Integer> fmtArchive() {
+        return fmtArchivePipeline;
+    }
+
+    public static ModelPipeLine<byte[], BackendInstance, ResourceLocation, ResourceLocation, Integer> fmtBinary() {
+        return fmtBinaryPipeline;
     }
 
     public static MCBackend backend() {
