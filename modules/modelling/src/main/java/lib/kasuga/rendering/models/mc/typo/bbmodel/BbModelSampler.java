@@ -3,6 +3,7 @@ package lib.kasuga.rendering.models.mc.typo.bbmodel;
 import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationSampler;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.ApplyMode;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Pose;
+import lib.kasuga.rendering.models.uml.math.QuaternionHelper;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import org.joml.Vector3f;
 
@@ -52,7 +53,8 @@ public final class BbModelSampler implements AnimationSampler<BbModelAnimation> 
             Vector3f scale = sampleChannel(bone, BbModelAnimation.Channel.SCALE, time, new Vector3f(1f));
             Transform transform = new Transform();
             transform.translate(position.x() / PIXELS_PER_BLOCK, position.y() / PIXELS_PER_BLOCK, position.z() / PIXELS_PER_BLOCK);
-            transform.rotate(rotation.x(), rotation.y(), rotation.z(), true);
+            // Blockbench keyframes use the same Z→Y→X euler composition as the model's own rotations.
+            transform.mul(QuaternionHelper.fromZYXDegrees(rotation));
             transform.scale(scale.x(), scale.y(), scale.z());
             builder.bone(bone.bone(), transform, ApplyMode.REPLACE);
         }

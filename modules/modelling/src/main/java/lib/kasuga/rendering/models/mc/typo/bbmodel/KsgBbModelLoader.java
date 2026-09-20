@@ -390,7 +390,9 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
         private BlockBenchTransform child(Vector3f pivot, Vector3f localRotation) {
             Vector3f scaledPivot = new Vector3f(pivot).mul(1.0f / 16.0f);
             Vector3f origin = scaledPivot.sub(parentPivot).rotate(rotation).add(absoluteOrigin);
-            Quaternionf combinedRotation = new Quaternionf(rotation).mul(QuaternionHelper.fromXYZDegrees(localRotation));
+            // Blockbench composes Z→Y→X (see QuaternionHelper.fromZYXAngle): a group's or element's own
+            // rotation is applied in its parent's already-rotated frame, around its own origin.
+            Quaternionf combinedRotation = new Quaternionf(rotation).mul(QuaternionHelper.fromZYXDegrees(localRotation));
             return new BlockBenchTransform(combinedRotation, origin, scaledPivot);
         }
 

@@ -128,6 +128,8 @@ Blockbench 的 UV 坐标单位是纹理像素。`KsgBbModelLoader` 在创建顶�
 
 立方体面遵循 Blockbench 的 `CubeFace.UVToLocal` 约定：从立方体外侧观察时，`uv` 矩形的 `u` 指向观察者右手方向、`v` 向下（顶面 `u=+X, v=+Z`；底面 `u=+X, v=-Z`），`rotation` 表示纹理顺时针旋转。loader 按左上 → 左下 → 右下 → 右上输出每个面，这同时也是后端生成朝外法线所需的绕序。
 
+元素、组与动画的旋转按文件中的数值原样使用（不做符号翻转），并按内旋 Z → Y → X 合成，即矩阵 `Rz·Ry·Rx`——three.js 的 `Euler.order = "ZYX"`、Minecraft `ModelPart` 的 `ZP`/`YP`/`XP` 顺序以及 `RotHelper.rotation` 都是这一顺序。每个元素绕自身 `origin` 旋转，并处于父组已旋转的坐标系中，因此嵌套是相对的。只有跨越多个轴的旋转才能区分顺序，所以顺序写错时表现为“部分部件旋转不对”。Blockbench 的 Bedrock 导出会取反 X/Y 角度（`test_fan_be.bbmodel` 的 `[0,45,0]` 对应 `test_fan_be.geo.json` 的 `[0,-45,0]`），因此 `RotHelper` 里的符号翻转属于 Bedrock 相关 loader，不要照搬到 bbmodel。
+
 仓库中的可运行内容测试示例位于：
 
 ```text
@@ -197,6 +199,7 @@ modules/modelling/run/client/
 | 绿色或缺失贴图 | 检查外部纹理的命名空间和路径，确认纹理存在于 `assets/<命名空间>/textures` 下，并搜索图集/sprite 错误。 |
 | 贴图呈颗粒状或平铺 | 检查纹理的 UV 画布而不只是图片：loader 按 `uv_width`/`uv_height`（退回声明尺寸、再退回项目 `resolution`）归一化像素 UV，因此图片小于画布时，所有面 UV 仍必须落在画布内。不要通过修改共享后端 UV 来补偿。 |
 | 面出现镜像、旋转错误或受光方向相反 | 面 `uv` 矩形按 Blockbench 约定映射（从外侧看 `u` 指向右手、`v` 向下；`rotation` 为顺时针），并按朝外绕序输出。可与 `KsgBbModelLoaderFaceUvTest` 对照；不要单独调整某个面的角点顺序而不连带移动其 UV。 |
+| 单轴旋转正常，但个别旋转部件不对 | 这些部件在 2～3 个轴上都有旋转，差别在欧拉顺序：必须是内旋 Z → Y → X（`Rz·Ry·Rx`，见 `KsgBbModelLoaderRotationTest`）。角度本身不取负；X/Y 取负是 Bedrock 相关 loader（`RotHelper`）的职责，因为 Blockbench 的 Bedrock 导出已经写入了取负后的 X/Y。 |
 | 模型已加载但不可见 | 依次检查 `pipeline.hasModel`、`pipeline.hasInstance` 和 `pipeline.isRendering(modelKey, instanceKey, "mc_backend")`。确认变换位置在相机前方；重建变更过的实例前先使用 `removeInstance`。 |
 | loader 报错 | 在 `latest.log` 中搜索 `Invalid Blockbench model`、`Unable to decode embedded texture` 和模型资源路径。 |
 

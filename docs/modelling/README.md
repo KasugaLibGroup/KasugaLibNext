@@ -128,6 +128,8 @@ Blockbench records UV coordinates in texture pixels. `KsgBbModelLoader` converts
 
 Cube faces follow Blockbench's `CubeFace.UVToLocal` convention: the `uv` rectangle is mapped so that `u` points to the viewer's right and `v` downward as seen from outside the cube (top face `u=+X, v=+Z`; bottom face `u=+X, v=-Z`), and `rotation` turns the texture clockwise. Each face is emitted top-left → bottom-left → bottom-right → top-right, which is also the winding the backend needs for outward normals.
 
+Element, group and animation rotations are used exactly as stored (no sign flips) and composed intrinsic Z → Y → X, i.e. the matrix `Rz·Ry·Rx` that three.js `Euler.order = "ZYX"`, Minecraft's `ModelPart` (`ZP`/`YP`/`XP` order) and `RotHelper.rotation` all use. Each element rotates around its own `origin`, inside its parent group's already-rotated frame, so nesting is relative. Only rotations that span more than one axis can tell the orders apart, which is why a wrong order shows up as "some parts are rotated wrong". Blockbench's Bedrock export writes negated X/Y angles (`test_fan_be.bbmodel` `[0,45,0]` ↔ `test_fan_be.geo.json` `[0,-45,0]`), so the sign flips in `RotHelper` belong to the Bedrock loaders — do not copy them here.
+
 The repository has runnable content-testing examples in:
 
 ```text
@@ -197,6 +199,7 @@ Inspect `logs/latest.log` after a resource reload or client run.
 | Green/missing texture | Verify external texture namespace/path, check that the texture exists below `assets/<namespace>/textures`, and search the log for atlas/sprite errors. |
 | Texture appears tiled or granular | Check the texture's UV canvas, not just the image: the loader normalizes pixel UVs by `uv_width`/`uv_height` (falling back to the declared size and the project `resolution`), so a texture whose image is smaller than its canvas must still have all face UVs inside the canvas. Do not compensate by changing shared backend UV logic. |
 | Faces are mirrored, rotated, or lit from the wrong side | Face `uv` rectangles are mapped Blockbench-style (`u` = viewer's right, `v` = down, viewed from outside; `rotation` is clockwise) and emitted in outward-wound corner order. Compare against `KsgBbModelLoaderFaceUvTest`, and do not reorder a single face's corners without moving its UVs with them. |
+| Single-axis rotations look right but some rotated parts are wrong | Those parts carry a rotation on two or three axes, so the euler order is what differs: it must be intrinsic Z → Y → X (`Rz·Ry·Rx`, `KsgBbModelLoaderRotationTest`). The angles themselves are used unflipped; negating X/Y is the Bedrock loaders' job (`RotHelper`), because Blockbench's Bedrock export already writes negated X/Y. |
 | Model exists but is not visible | Check `pipeline.hasModel`, `pipeline.hasInstance`, then `pipeline.isRendering(modelKey, instanceKey, "mc_backend")`. Confirm the transform is in front of the camera and use `removeInstance` before recreating a changed instance. |
 | Loader error | Search `latest.log` for `Invalid Blockbench model`, `Unable to decode embedded texture`, and the model's resource path. |
 
