@@ -1,0 +1,19 @@
+{
+  "registry_groups": [
+    {
+      "id": "kasuga_lib:inherit_group",
+      "properties": {
+        "strength": [
+          1.0,
+          1.0
+        ]
+      },
+      "item_properties": {
+        "tab": "kasuga_lib:data_driven_test",
+        "stacks_to": 8,
+        "rarity": "uncommon",
+        "fire_resistant": true
+      }
+    }
+  ]
+}

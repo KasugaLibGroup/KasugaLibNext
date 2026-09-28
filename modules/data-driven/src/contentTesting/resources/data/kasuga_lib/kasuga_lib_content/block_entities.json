@@ -6,7 +6,9 @@
       "registry_group": "kasuga_lib:data_driven_group",
       "block_entity": {
         "type": "test_be",
-        "params": { "tick_interval": 4 }
+        "params": {
+          "tick_interval": 4
+        }
       }
     }
   ]

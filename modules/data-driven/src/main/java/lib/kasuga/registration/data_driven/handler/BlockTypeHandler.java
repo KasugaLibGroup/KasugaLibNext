@@ -19,7 +19,7 @@ public class BlockTypeHandler extends RegTypeHandler<BlockDef> {
     public String getTypeName() { return "blocks"; }
 
     @Override
-    public int getPhase() { return 1; }
+    public int getPhase() { return PHASE_CONTENT; }
 
     @Override
     public BlockDef parse(JsonObject json) {
@@ -36,6 +36,11 @@ public class BlockTypeHandler extends RegTypeHandler<BlockDef> {
     @Override
     protected String resolveRawId(BlockDef definition) {
         return definition.id();
+    }
+
+    @Override
+    protected String resolveType(BlockDef definition) {
+        return definition.type();
     }
 
     @Override
