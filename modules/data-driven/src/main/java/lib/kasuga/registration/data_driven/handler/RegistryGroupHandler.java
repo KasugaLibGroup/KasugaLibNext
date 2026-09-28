@@ -20,7 +20,7 @@ public class RegistryGroupHandler extends MetaTypeHandler<RegistryGroupDef> {
     public String getTypeName() { return "registry_groups"; }
 
     @Override
-    public int getPhase() { return 0; }
+    public int getPhase() { return PHASE_GROUPS; }
 
     @Override
     public RegistryGroupDef parse(JsonObject json) {
@@ -35,6 +35,20 @@ public class RegistryGroupHandler extends MetaTypeHandler<RegistryGroupDef> {
     @Override
     public void apply(RegistryGroupDef definition, BuildContext context) {
         store(definition, (RegBuildContext) context);
+    }
+
+    /**
+     * Groups are addressed by their raw {@code id()} everywhere else in the loader (blocks look them
+     * up verbatim via {@code registry_group}), so duplicate detection uses the exact same string:
+     * normalizing it here would make a group unreachable from its own references.
+     *
+     * @param modId      the owning mod's id (unused: group ids are matched verbatim)
+     * @param definition the parsed group definition
+     * @return the group's {@code id()}
+     */
+    @Override
+    public String resolveIdentity(String modId, RegistryGroupDef definition) {
+        return definition.id();
     }
 
     @SuppressWarnings("unchecked")
