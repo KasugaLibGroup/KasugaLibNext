@@ -1,20 +1,16 @@
 package lib.kasuga.rendering.models.mc.backend.vbuffer;
 
-import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
 import lib.kasuga.mixins.client.AccessorByteBufferBuilder;
-import lib.kasuga.mixins.client.AccessorVertexBuffer;
 import lib.kasuga.rendering.models.mc.backend.FlatModelData;
 import lombok.Getter;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL15;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.BitSet;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -45,8 +41,8 @@ public class IrisVertexBuffer implements IVertexBuffer {
     @Getter
     private final ExecutorService executor;
 
-    @Nullable
-    private VertexBuffer vertexBuffer;
+    private final FencedVertexBuffer uploadRing;
+    private ByteBuffer packedVertices;
 
     private boolean valid;
 
@@ -63,7 +59,7 @@ public class IrisVertexBuffer implements IVertexBuffer {
         this.multiThreadedThreshold = multiThreadedThreshold;
         this.multiBufferBuilders = null;
         this.futures = null;
-        this.vertexBuffer = null;
+        this.uploadRing = new FencedVertexBuffer(format, meshMode, maxMergeGap);
         this.valid = false;
     }
 
@@ -111,84 +107,81 @@ public class IrisVertexBuffer implements IVertexBuffer {
                     int byteCount = taskVertices * vertexSize;
                     long p = ((AccessorByteBufferBuilder) bbb).getPointer();
                     MemoryUtil.memCopy(p, pointer, byteCount);
-                    MemoryUtil.nmemFree(p);
+                    bbb.close();
                     pointer += byteCount;
                     multiBufferBuilders[i] = null;
                 }
 
                 ((AccessorByteBufferBuilder) byteBufferBuilder).setWriteOffset(vertexCount * vertexSize);
             }
-            ByteBufferBuilder.Result result = Objects.requireNonNull(byteBufferBuilder.build());
-            MeshData meshData = new MeshData(result, new MeshData.DrawState(
-                    format,
-                    vertexCount,
-                    meshMode.indexCount(vertexCount),
-                    meshMode,
-                    VertexFormat.IndexType.least(vertexCount)
-            ));
-            if (vertexBuffer == null) {
-                vertexBuffer = new VertexBuffer(VertexBuffer.Usage.DYNAMIC);
-            }
-            vertexBuffer.bind();
-            try {
-                vertexBuffer.upload(meshData);
-            } finally {
-                VertexBuffer.unbind();
+            try (ByteBufferBuilder.Result result = Objects.requireNonNull(byteBufferBuilder.build())) {
+                ByteBuffer data = result.byteBuffer();
+                if (packedVertices == null) packedVertices = MemoryUtil.memAlloc(vertexCount * vertexSize);
+                MemoryUtil.memCopy(MemoryUtil.memAddress(data), MemoryUtil.memAddress(packedVertices), data.remaining());
+                uploadRing.upload(packedVertices.duplicate().clear(), null, true);
             }
         } finally {
-            if (byteBufferBuilder != null) {
-                byteBufferBuilder.close();
+            // A worker can fail (or submission can be rejected). Never free staging
+            // memory until every already-started worker has left it.
+            if (futures != null) {
+                for (CompletableFuture<?> future : futures) {
+                    if (future != null) future.handle((value, failure) -> null).join();
+                }
             }
+            if (multiBufferBuilders != null) {
+                for (int i = 0; i < multiBufferBuilders.length; i++) {
+                    if (multiBufferBuilders[i] != null) multiBufferBuilders[i].close();
+                    multiBufferBuilders[i] = null;
+                }
+            }
+            if (byteBufferBuilder != null) byteBufferBuilder.close();
         }
         valid = true;
     }
 
     @Override
     public void draw(Matrix4f modelViewMatrix, Matrix4f projectionMatrix, ShaderInstance shader) {
-        if (vertexBuffer == null) return;
-        vertexBuffer.draw();
+        VertexBuffer buffer = uploadRing.current();
+        if (buffer == null) return;
+        try { buffer.draw(); } finally { markSubmitted(); }
     }
 
     @Override
     public void updateGpuBuffer(@Nullable BitSet dirtyVertices, boolean forceUploadAll) {
-        if (forceUploadAll || vertexBuffer == null || dirtyVertices == null) {
+        if (forceUploadAll || uploadRing.current() == null || dirtyVertices == null) {
             uploadGpuBuffer();
             return;
         }
         int count = dirtyVertices.cardinality();
         if (count == 0) return;
-        if (count * 4 >= vertexCount * 3) {
+        if ((long) count * 4 >= (long) vertexCount * 3) {
             uploadGpuBuffer();
             return;
         }
         RenderSystem.assertOnRenderThread();
-        BufferUploader.reset();
-        int prevBinding = GL15.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
-
-        try {
-            GlStateManager._glBindBuffer(GL15.GL_ARRAY_BUFFER, ((AccessorVertexBuffer) vertexBuffer).getVertexBufferId());
-            int start = dirtyVertices.nextSetBit(0);
-            while (start >= 0) {
-                int end = dirtyVertices.nextClearBit(start);
-                int next = dirtyVertices.nextSetBit(end);
-                while (next >= 0 && next - end <= maxMergeGap) {
-                    end = dirtyVertices.nextClearBit(next);
-                    next = dirtyVertices.nextSetBit(end);
-                }
-                end = Math.min(end, vertexCount);
-                ByteBufferBuilder byteBufferBuilder = new ByteBufferBuilder((end - start) * vertexSize);
-                ByteBufferBuilder bbb = fillGpuCache(byteBufferBuilder, start, end - start);
-                ByteBufferBuilder.Result result = bbb.build();
-                Objects.requireNonNull(result);
-                ByteBuffer bb = result.byteBuffer();
-                GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, (long) start * vertexSize, bb);
-                result.close();
-                start = next;
+        int start = dirtyVertices.nextSetBit(0);
+        while (start >= 0) {
+            int end = dirtyVertices.nextClearBit(start);
+            int next = dirtyVertices.nextSetBit(end);
+            while (next >= 0 && next - end <= maxMergeGap) {
+                end = dirtyVertices.nextClearBit(next);
+                next = dirtyVertices.nextSetBit(end);
             }
-        } finally {
-            GlStateManager._glBindBuffer(GL15.GL_ARRAY_BUFFER, prevBinding);
+            end = Math.min(end, vertexCount);
+            try (ByteBufferBuilder builder = new ByteBufferBuilder((end - start) * vertexSize)) {
+                fillGpuCache(builder, start, end - start);
+                try (ByteBufferBuilder.Result result = Objects.requireNonNull(builder.build())) {
+                    ByteBuffer data = result.byteBuffer();
+                    MemoryUtil.memCopy(MemoryUtil.memAddress(data),
+                            MemoryUtil.memAddress(packedVertices) + (long) start * vertexSize, data.remaining());
+                }
+            }
+            start = next;
         }
+        uploadRing.upload(packedVertices.duplicate().clear(), dirtyVertices, false);
     }
+
+    @Override public void markSubmitted() { uploadRing.markSubmitted(); }
 
     protected ByteBufferBuilder fillGpuCache(ByteBufferBuilder byteBufferBuilder, int startIndex, int numVertices) {
         ByteBufferBuilder bbb;
@@ -237,16 +230,20 @@ public class IrisVertexBuffer implements IVertexBuffer {
 
     @Override
     public VertexBuffer getVertexBuffer() {
-        if (vertexBuffer == null) {
+        if (uploadRing.current() == null) {
             uploadGpuBuffer();
         }
-        return vertexBuffer;
+        return uploadRing.current();
     }
 
     @Override
     public void close() throws Exception {
-        if (vertexBuffer != null) {
-            vertexBuffer.close();
+        uploadRing.close();
+        if (packedVertices != null) { MemoryUtil.memFree(packedVertices); packedVertices = null; }
+        if (multiBufferBuilders != null) {
+            for (ByteBufferBuilder builder : multiBufferBuilders) if (builder != null) builder.close();
+            multiBufferBuilders = null;
         }
+        valid = false;
     }
 }

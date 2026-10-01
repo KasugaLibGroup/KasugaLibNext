@@ -1,0 +1,49 @@
+name: Standalone rendering
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  mesa-regression:
+    runs-on: ubuntu-latest
+    env:
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install display and software OpenGL
+        run: sudo apt-get update && sudo apt-get install -y xvfb xauth libgl1-mesa-dri libglx-mesa0 mesa-utils
+      - name: Run production GL regression without Minecraft
+        run: xvfb-run -a ./gradlew :modules:modelling:renderGlTest --console=plain
+      - name: Upload correctness report and failure images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-regression-linux-mesa
+          path: modules/modelling/build/reports/renderHarness/test
+          if-no-files-found: error
+
+  portable-harness-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@v4
+      # Hosted runners do not guarantee a usable hardware GL context. This is a
+      # compilation/logic gate; GPU correctness remains the explicit renderGlTest gate.
+      - name: Compile standalone entry points and run logic tests (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat :modules:modelling:renderHarnessClasses :modules:modelling:jmhClasses :modules:modelling:modelUnitTest --console=plain
+      - name: Compile standalone entry points and run logic tests (macOS)
+        if: runner.os == 'macOS'
+        run: ./gradlew :modules:modelling:renderHarnessClasses :modules:modelling:jmhClasses :modules:modelling:modelUnitTest --console=plain

@@ -87,6 +87,11 @@ sourceSets {
         compileClasspath += sourceSets.main.compileClasspath
         runtimeClasspath += sourceSets.main.runtimeClasspath
     }
+
+    renderHarness {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
 }
 
 tasks.named('processContentTestingResources', ProcessResources) {
@@ -285,6 +290,12 @@ dependencies {
     jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
     jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
 
+    // Match Minecraft 1.21.1's LWJGL version; the harness starts a plain JVM, not a ModDev run.
+    renderHarnessImplementation 'org.lwjgl:lwjgl:3.3.3'
+    renderHarnessImplementation project(':modules:core')
+    renderHarnessImplementation 'org.lwjgl:lwjgl-glfw:3.3.3'
+    renderHarnessImplementation 'org.lwjgl:lwjgl-opengl:3.3.3'
+
     compileOnly("org.projectlombok:lombok:1.18.42")
     annotationProcessor("org.projectlombok:lombok:1.18.42")
 
@@ -349,6 +360,55 @@ def box3dArch = {
     return value.replaceAll('[^a-z0-9_-]', '_')
 }.call()
 def box3dClassifier = "${box3dOs}-${box3dArch}"
+def renderHarnessNatives = 'natives-' + (box3dOs == 'macos' ? 'macos' : box3dOs == 'windows' ? 'windows' : 'linux')
+if (box3dArch == 'aarch64') renderHarnessNatives += '-arm64'
+dependencies {
+    ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl'].each { library ->
+        renderHarnessRuntimeOnly "org.lwjgl:${library}:3.3.3:${renderHarnessNatives}"
+    }
+}
+
+['renderGlTest': 'test', 'renderPreview': 'preview', 'renderBench': 'bench'].each { taskName, mode ->
+    tasks.register(taskName, JavaExec) {
+        group = mode == 'preview' ? 'application' : 'verification'
+        description = "Runs standalone ${mode} rendering with the shared production GL core, without Minecraft."
+        mainClass = 'lib.kasuga.rendering.models.mc.backend.StandaloneRenderHarness'
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+        classpath = sourceSets.renderHarness.runtimeClasspath
+        systemProperty 'kasuga.render.commit', providers.exec {
+            workingDir rootProject.projectDir
+            commandLine 'git', 'rev-parse', 'HEAD'
+        }.standardOutput.asText.map { it.trim() }.get()
+        systemProperty 'kasuga.render.dirty', providers.exec {
+            workingDir rootProject.projectDir
+            commandLine 'git', 'status', '--porcelain'
+        }.standardOutput.asText.map { !it.trim().isEmpty() }.get()
+        if (box3dOs == 'macos') jvmArgs '-XstartOnFirstThread'
+        args '--mode', mode,
+                '--report', layout.buildDirectory.file("reports/renderHarness/${mode}/report.json").get().asFile.absolutePath,
+                '--width', providers.gradleProperty('kasugaRenderWidth').getOrElse(mode == 'test' ? '64' : '1280'),
+                '--height', providers.gradleProperty('kasugaRenderHeight').getOrElse(mode == 'test' ? '64' : '720'),
+                '--frames', providers.gradleProperty('kasugaRenderFrames').getOrElse(mode == 'preview' ? '0' : '120'),
+                '--warmup', providers.gradleProperty('kasugaRenderWarmup').getOrElse('30')
+        // GPU execution must never be considered up-to-date based only on source files.
+        outputs.upToDateWhen { false }
+    }
+}
+
+tasks.register('modelBench', JavaExec) {
+    group = 'verification'
+    description = 'Runs modelling CPU microbenchmarks in forked JMH JVMs without Minecraft startup.'
+    mainClass = 'org.openjdk.jmh.Main'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    classpath = sourceSets.jmh.runtimeClasspath
+    def resultFile = layout.buildDirectory.file('reports/jmh/results.json').get().asFile
+    args providers.gradleProperty('kasugaBenchmark').getOrElse('.*(StateMachine|Multiplexer|RenderPreparation)Benchmark.*'),
+            '-rf', 'json', '-rff', resultFile.absolutePath,
+            '-wi', providers.gradleProperty('kasugaBenchmarkWarmup').getOrElse('3'),
+            '-i', providers.gradleProperty('kasugaBenchmarkIterations').getOrElse('5'),
+            '-w', '1s', '-r', '1s', '-f', '1', '-prof', 'gc', '-foe', 'true'
+    doFirst { resultFile.parentFile.mkdirs() }
+}
 def box3dSourceDirectory = layout.projectDirectory.dir('src/main/native')
 def box3dBuildDirectory = layout.buildDirectory.dir('native/box3d')
 def box3dResourceDirectory = box3dBuildDirectory.map { it.dir('resources') }

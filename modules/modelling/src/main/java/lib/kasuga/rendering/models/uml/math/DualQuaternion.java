@@ -146,11 +146,17 @@ public class DualQuaternion {
         DualQuaternion blended = new DualQuaternion();
         blended.real.set(0, 0, 0, 0);
         blended.dual.set(0, 0, 0, 0);
+        Quaternionf reference = null;
         for (Pair<DualQuaternion, Float> pair : quaternions) {
             DualQuaternion dq = pair.getFirst();
             float weight = pair.getSecond();
-            blended.real.add(new Quaternionf(dq.real).mul(weight));
-            blended.dual.add(new Quaternionf(dq.dual).mul(weight));
+            if (weight == 0f) continue;
+            if (reference == null) reference = dq.real;
+            if (reference.dot(dq.real) < 0f) weight = -weight;
+            blended.real.set(blended.real.x + dq.real.x * weight, blended.real.y + dq.real.y * weight,
+                    blended.real.z + dq.real.z * weight, blended.real.w + dq.real.w * weight);
+            blended.dual.set(blended.dual.x + dq.dual.x * weight, blended.dual.y + dq.dual.y * weight,
+                    blended.dual.z + dq.dual.z * weight, blended.dual.w + dq.dual.w * weight);
         }
         blended.nomalize();
         return blended;

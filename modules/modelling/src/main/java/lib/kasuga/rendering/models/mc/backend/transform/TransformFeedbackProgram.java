@@ -15,6 +15,11 @@ import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
+import java.util.function.LongSupplier;
+import lib.kasuga.rendering.models.uml.backend.SkinningWork;
+import lib.kasuga.rendering.models.uml.backend.gpu.GlslProgram;
+import lib.kasuga.rendering.models.uml.backend.gpu.SkinningAttributes;
+import lib.kasuga.rendering.models.uml.backend.gpu.GpuUploadRing;
 
 @Getter
 public class TransformFeedbackProgram implements AutoCloseable {
@@ -36,10 +41,20 @@ public class TransformFeedbackProgram implements AutoCloseable {
             sourceVaoId = 0,
             outputBufferId = 0;
 
-    private boolean sourceValid = false;
+    private final SkinningWork work = new SkinningWork();
+    private final LongSupplier sourceVersion;
+    private int outputVertices = -1;
+    private final GpuUploadRing sources = new GpuUploadRing();
 
     public TransformFeedbackProgram(ResourceLocation programLocation, Supplier<ByteBuffer> bufSupplier,
                                     Map<VertexFormatElement, Integer> bufOffsets, int vertexSize) {
+        this(programLocation, bufSupplier, bufOffsets, vertexSize, () -> 0L);
+    }
+
+    public TransformFeedbackProgram(ResourceLocation programLocation, Supplier<ByteBuffer> bufSupplier,
+                                    Map<VertexFormatElement, Integer> bufOffsets, int vertexSize,
+                                    LongSupplier sourceVersion) {
+        this.sourceVersion = sourceVersion;
         this.programLocation = programLocation;
         this.programId = createProgram();
         this.byteBufferSupplier = bufSupplier;
@@ -76,10 +91,8 @@ public class TransformFeedbackProgram implements AutoCloseable {
             GL20.glDeleteProgram(programId);
             programId = 0;
         }
-        if (sourceBufferId != 0) {
-            GL15.glDeleteBuffers(sourceBufferId);
-            sourceBufferId = 0;
-        }
+        sources.close();
+        sourceBufferId = 0;
         if (sourceVaoId != 0) {
             GL30.glDeleteVertexArrays(sourceVaoId);
             sourceVaoId = 0;
@@ -88,7 +101,7 @@ public class TransformFeedbackProgram implements AutoCloseable {
             GL15.glDeleteBuffers(outputBufferId);
             outputBufferId = 0;
         }
-        sourceValid = false;
+        work.invalidate();
         closed = true;
     }
 
@@ -98,33 +111,8 @@ public class TransformFeedbackProgram implements AutoCloseable {
             throw new IllegalStateException("Failed to load Transform Feedback " +
                     "shader source from " + programLocation);
         }
-        int vertexShader = compileShader(GL20.GL_VERTEX_SHADER, shaderSource);
-        int program = GL20.glCreateProgram();
-        GL20.glAttachShader(program, vertexShader);
-
-        GL20.glBindAttribLocation(program, 0, "Position");
-        GL20.glBindAttribLocation(program, 5, "Normal");
-        GL20.glBindAttribLocation(program, 7, "Tangent");
-        GL20.glBindAttribLocation(program, 8, "BoneBindingType");
-        GL20.glBindAttribLocation(program, 9, "BoneIndices");
-        GL20.glBindAttribLocation(program, 10, "BoneWeights");
-        GL20.glBindAttribLocation(program, 11, "sdefR0");
-        GL20.glBindAttribLocation(program, 12, "sdefR1");
-        GL20.glBindAttribLocation(program, 13, "sdefC");
-        GL30.glTransformFeedbackVaryings(program, new CharSequence[]{"tf_Position"}, GL30.GL_INTERLEAVED_ATTRIBS);
-        GL20.glLinkProgram(program);
-
-        int linked = GL20.glGetProgrami(program, GL20.GL_LINK_STATUS);
-        GL20.glDetachShader(program, vertexShader);
-        GL20.glDeleteShader(vertexShader);
-
-        if (linked == GL11.GL_FALSE) {
-            String log = GL20.glGetProgramInfoLog(program);
-            GL20.glDeleteProgram(program);
-            throw new IllegalStateException("Failed to link Iris GPU skinning program: " + log);
-        }
-
-        return program;
+        return GlslProgram.link(shaderSource, null, SkinningAttributes.LOCATIONS,
+                new String[]{"tf_Position"});
     }
 
     protected String loadShaderSource() {
@@ -145,78 +133,63 @@ public class TransformFeedbackProgram implements AutoCloseable {
         }
     }
 
-    protected static int compileShader(int type, String source) {
-        int shader = GL20.glCreateShader(type);
-        GL20.glShaderSource(shader, source);
-        GL20.glCompileShader(shader);
-        int compiled = GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS);
-        if (compiled == GL11.GL_FALSE) {
-            String log = GL20.glGetShaderInfoLog(shader);
-            GL20.glDeleteShader(shader);
-            throw new IllegalStateException("Failed to compile shader: " + log);
-        }
-        return shader;
+    public boolean needsDispatch(long skeletonVersion, int vertices) {
+        return work.needsDispatch(sourceVersion.getAsLong(), skeletonVersion, vertices);
     }
 
+    public void dispatched(long skeletonVersion, int vertices) {
+        work.dispatched(sourceVersion.getAsLong(), skeletonVersion, vertices);
+    }
+
+    public void markSourceSubmitted() { sources.markSubmitted(); }
+
     public void ensureSkinningObjects(int numVertices) {
-        if (sourceBufferId == 0) {
-            sourceBufferId = GL15.glGenBuffers();
-        }
+        if (closed) throw new IllegalStateException("TransformFeedbackProgram is closed");
+        if (numVertices < 0) throw new IllegalArgumentException("Negative vertex count");
         if (sourceVaoId == 0) {
             sourceVaoId = GL30.glGenVertexArrays();
         }
         if (outputBufferId == 0) {
             outputBufferId = GL15.glGenBuffers();
-            GlStateManager._glBindBuffer(GL15.GL_ARRAY_BUFFER, outputBufferId);
-            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, (long) numVertices * STRIDE, GL15.GL_DYNAMIC_DRAW);
-            GlStateManager._glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+        }
+        if (outputVertices != numVertices) {
+            int previous = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
+            try {
+                GlStateManager._glBindBuffer(GL15.GL_ARRAY_BUFFER, outputBufferId);
+                GL15.glBufferData(GL15.GL_ARRAY_BUFFER, (long) numVertices * STRIDE, GL15.GL_DYNAMIC_DRAW);
+                outputVertices = numVertices;
+            } finally {
+                GlStateManager._glBindBuffer(GL15.GL_ARRAY_BUFFER, previous);
+            }
         }
     }
 
     public void uploadSkinningSourceIfNeeded() {
-        if (sourceValid) {
+        long version = sourceVersion.getAsLong();
+        if (!work.needsSource(version)) {
             return;
         }
         int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
         int previousArrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
         try {
             GL30.glBindVertexArray(sourceVaoId);
-            GlStateManager._glBindBuffer(GL15.GL_ARRAY_BUFFER, sourceBufferId);
             ByteBuffer source = byteBufferSupplier.get().duplicate();
             source.clear();
-            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, source, GL15.GL_STATIC_DRAW);
+            sourceBufferId = sources.upload(source);
+            GlStateManager._glBindBuffer(GL15.GL_ARRAY_BUFFER, sourceBufferId);
             setupIrisGpuSkinningSourceAttributes();
         } finally {
             GL30.glBindVertexArray(previousVao);
             GlStateManager._glBindBuffer(GL15.GL_ARRAY_BUFFER, previousArrayBuffer);
         }
-        sourceValid = true;
+        work.sourceUploaded(version);
     }
 
     protected void setupIrisGpuSkinningSourceAttributes() {
-        setupFloatAttribute(0, 3, bufOffsets.get(VertexFormatElement.POSITION));
-        setupByteNormalAttribute(5, bufOffsets.get(VertexFormatElement.NORMAL));
-        setupFloatAttribute(7, 4, bufOffsets.get(RenderState.TANGENT));
-        setupIntAsFloatAttribute(8, 1, bufOffsets.get(RenderState.BONE_BINDING_TYPE));
-        setupFloatAttribute(9, 4, bufOffsets.get(RenderState.BONE_INDICES));
-        setupFloatAttribute(10, 4, bufOffsets.get(RenderState.BONE_WEIGHTS));
-        setupFloatAttribute(11, 3, bufOffsets.get(RenderState.SDEF_R0));
-        setupFloatAttribute(12, 3, bufOffsets.get(RenderState.SDEF_R1));
-        setupFloatAttribute(13, 3, bufOffsets.get(RenderState.SDEF_C));
-    }
-
-    private void setupFloatAttribute(int index, int size, int offset) {
-        GL20.glEnableVertexAttribArray(index);
-        GL20.glVertexAttribPointer(index, size, GL11.GL_FLOAT, false, vertexSize, (long) offset);
-    }
-
-    private void setupByteNormalAttribute(int index, int offset) {
-        GL20.glEnableVertexAttribArray(index);
-        GL20.glVertexAttribPointer(index, 3, GL11.GL_BYTE, true, vertexSize, (long) offset);
-    }
-
-    private void setupIntAsFloatAttribute(int index, int size, int offset) {
-        GL20.glEnableVertexAttribArray(index);
-        GL20.glVertexAttribPointer(index, size, GL11.GL_INT, false, vertexSize, (long) offset);
+        SkinningAttributes.configure(vertexSize, bufOffsets.get(VertexFormatElement.POSITION),
+                bufOffsets.get(VertexFormatElement.NORMAL), bufOffsets.get(RenderState.TANGENT),
+                bufOffsets.get(RenderState.BONE_BINDING_TYPE), bufOffsets.get(RenderState.BONE_INDICES),
+                bufOffsets.get(RenderState.BONE_WEIGHTS), bufOffsets.get(RenderState.SDEF_R0),
+                bufOffsets.get(RenderState.SDEF_R1), bufOffsets.get(RenderState.SDEF_C));
     }
 }

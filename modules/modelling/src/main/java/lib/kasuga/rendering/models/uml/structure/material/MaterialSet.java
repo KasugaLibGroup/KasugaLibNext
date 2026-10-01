@@ -37,12 +37,7 @@ public class MaterialSet {
     private final Map<SpriteSet, Integer> indexBySpriteSet;
 
     public MaterialSet(@NotNull Texture texture, @NotNull Material material) {
-        this.textures = new Texture[]{texture};
-        this.materials = new Material[]{material};
-        this.spriteSets = new SpriteSet[0];
-        this.materialBySprites = new Integer[0];
-        this.indexByMaterial = new HashMap<>();
-        this.indexBySpriteSet = new HashMap<>();
+        this(java.util.List.of(texture), java.util.List.of(material));
     }
 
     public MaterialSet(Collection<Texture> textures, @NonNull Collection<Material> materials) {
@@ -54,11 +49,13 @@ public class MaterialSet {
         indexBySpriteSet = new HashMap<>();
         int i = 0, j = 0;
         for (Material material : materials) {
-            indexByMaterial.put(material, i++);
+            indexByMaterial.put(material, i);
             for (SpriteSet spriteSet : material.getSprites()) {
+                spriteSets.add(spriteSet);
                 indexBySpriteSet.put(spriteSet, j++);
                 materialBySprites.add(i);
             }
+            i++;
         }
         this.spriteSets = spriteSets.toArray(new SpriteSet[0]);
         this.materialBySprites = materialBySprites.toArray(new Integer[0]);

@@ -2,6 +2,7 @@ package lib.kasuga.mixins.client;
 
 import com.mojang.blaze3d.preprocessor.GlslPreprocessor;
 import lib.kasuga.KasugaLib;
+import lib.kasuga.core.rendering.ShaderFunctionImport;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
@@ -19,7 +20,7 @@ public class MixinGlslPreprocessor {
 
     @Redirect(method = "processImports", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/preprocessor/GlslPreprocessor;applyImport(ZLjava/lang/String;)Ljava/lang/String;"))
     private String kasugaLib$applyImport(GlslPreprocessor instance, boolean pIsVertex, String pImport) {
-        boolean debug = true;
+        boolean debug = Boolean.getBoolean("kasuga.debugShaderImports");
         ResourceLocation rl = ResourceLocation.parse(pImport);
         if (!rl.getNamespace().equals(KasugaLib.MODID))
             return instance.applyImport(pIsVertex, pImport);
@@ -31,17 +32,8 @@ public class MixinGlslPreprocessor {
             return instance.applyImport(pIsVertex, pImport);
         }
         Resource resource = resourceOpt.get();
-        StringBuilder builder = new StringBuilder();
-        String line;
         try (var reader = resource.openAsReader()) {
-            while ((line = reader.readLine()) != null) {
-                if (line.startsWith("in") ||
-                    line.startsWith("uniform") ||
-                    line.startsWith("out")) continue;
-                if (line.startsWith("void main()")) break;
-                builder.append(line).append('\n');
-            }
-            String result = builder.toString();
+            String result = ShaderFunctionImport.read(reader);
             if (debug) {
                 File file = new File("ksg_debug/" + rl.getPath());
                 if (!file.exists()) {

@@ -84,7 +84,8 @@ public class IrisGpuSkinningContext implements GLContext {
     }
 
     public void dispatchSkinning(int numVertices) {
-        if (program == null) return;
+        if (program == null || !program.isValid()
+                || !program.needsDispatch(boneTransformTBO.getSkeletonVersion(), numVertices)) return;
 
         RenderSystem.assertOnRenderThread();
         program.ensureSkinningObjects(numVertices);
@@ -93,12 +94,15 @@ public class IrisGpuSkinningContext implements GLContext {
         if (sourceVao == 0 || program.getOutputBufferId() == 0) return;
         if (!program.isValid()) return;
 
+        int previousVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         int previousArrayBuffer = GL11.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
         int previousActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        RenderSystem.activeTexture(GL13.GL_TEXTURE7);
         int previousTextureBinding = GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);
         boolean previousRasterDiscard = GL11.glGetBoolean(GL30.GL_RASTERIZER_DISCARD);
-        int previousFeedbackBuffer = GL11.glGetInteger(GL30.GL_TRANSFORM_FEEDBACK_BUFFER_BINDING);
+        int previousFeedbackBuffer = GL30.glGetIntegeri(GL30.GL_TRANSFORM_FEEDBACK_BUFFER_BINDING, 0);
+        int previousGenericFeedback = GL11.glGetInteger(GL30.GL_TRANSFORM_FEEDBACK_BUFFER_BINDING);
 
         try {
             program.bind(GL13.GL_TEXTURE7, getBoneTransformTextureId());
@@ -107,11 +111,16 @@ public class IrisGpuSkinningContext implements GLContext {
             GL30.glBindBufferBase(GL30.GL_TRANSFORM_FEEDBACK_BUFFER, 0, program.getOutputBufferId());
             GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);
             GL30.glBeginTransformFeedback(GL11.GL_POINTS);
+            program.markSourceSubmitted();
+            boneTransformTBO.markSubmitted();
             GL11.glDrawArrays(GL11.GL_POINTS, 0, numVertices);
             GL30.glEndTransformFeedback();
+            program.dispatched(boneTransformTBO.getSkeletonVersion(), numVertices);
         } finally {
             GL30.glBindBufferBase(GL30.GL_TRANSFORM_FEEDBACK_BUFFER, 0, previousFeedbackBuffer);
-            GL30.glBindVertexArray(0);
+            GL15.glBindBuffer(GL30.GL_TRANSFORM_FEEDBACK_BUFFER, previousGenericFeedback);
+            GL30.glBindVertexArray(previousVao);
+            RenderSystem.activeTexture(GL13.GL_TEXTURE7);
             GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER, previousTextureBinding);
             RenderSystem.activeTexture(previousActiveTexture);
             GlStateManager._glBindBuffer(GL30.GL_ARRAY_BUFFER, previousArrayBuffer);

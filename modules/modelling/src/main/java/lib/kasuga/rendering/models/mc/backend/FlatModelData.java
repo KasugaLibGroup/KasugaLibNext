@@ -134,11 +134,20 @@ public class FlatModelData implements AutoCloseable {
                 lightmap = LightTexture.FULL_BLOCK;
 
     private boolean needToUpdateAll = false;
+    private boolean closed;
 
     private final BiConsumer<Sprite, Vector4f> materialColorBlender;  // fixed
     private final boolean cpuSkinning;
 
     private long skeletonVersion;
+    private long morphVersion, materialVersion, materialMorphVersion;
+    @Getter
+    private long contentVersion;
+    @Getter
+    private long skinningSourceVersion;
+    private final BitSet changedModelVertices = new BitSet();
+    private final BitSet changedModelMaterials = new BitSet();
+    private final BitSet changedMorphMaterials = new BitSet();
 
     public FlatModelData(ModelInstance model,
                          int vertexSize,
@@ -394,35 +403,58 @@ public class FlatModelData implements AutoCloseable {
     }
 
     public boolean updateModel() {
-        if (!model.checkForUpdate()) return false;
-        model.update();
+        return updateModel(true);
+    }
+
+    boolean updateModel(boolean evaluateModel) {
+        boolean modelUpdated = evaluateModel && model.checkForUpdate();
+        if (modelUpdated) model.update();
         updateMorphedMaterials();
-        MorphInstance morphInstance = model.getMorph();
-        BitSet dirtyVertices = morphInstance.getLastUpdatedVertices();
-        List<Integer[]> updatedVertices = new ArrayList<>();
-        if (!morphInstance.getDirtyVertices().isEmpty()) {
-            for (int i = dirtyVertices.nextSetBit(0); i >= 0; i = dirtyVertices.nextSetBit(i + 1)) {
-                Integer[] indices = vertexByIndex.get(model.getModel().getVertices()[i]);
-                if (indices != null) updatedVertices.add(indices);
-            }
-        }
-        Vector3f pos = new Vector3f(),
-                normal = new Vector3f();
-        for (Integer[] vertices : updatedVertices) {
-            for (int i : vertices) {
-                Vertex vertex = this.vertices[i];
+        MorphInstance<?> morph = model.getMorph();
+        morphVersion = morph.getVertexChanges().collectSince(morphVersion, changedModelVertices);
+        Vector3f pos = new Vector3f(), normal = new Vector3f();
+        Vector2f uv = new Vector2f();
+        boolean vertexChanged = false;
+        for (int index = changedModelVertices.nextSetBit(0); index >= 0;
+             index = changedModelVertices.nextSetBit(index + 1)) {
+            Integer[] instances = vertexByIndex.get(model.getModel().getVertices()[index]);
+            if (instances == null) continue;
+            vertexChanged = true;
+            for (int i : instances) {
+                Vertex vertex = vertices[i];
                 Mesh mesh = meshes[vertexMeshes[i]];
                 model.getVertexPosition(vertex, pos);
                 setVertexPosition(i, pos);
                 model.getVertexNormal(vertex, mesh, normal);
                 setVertexNormal(i, normal);
-                this.dirtyVertices.set(i);
+                model.getVertexUv(vertex, mesh, materials[vertexMaterials[i]], uv);
+                setVertexUv(i, uv);
+                dirtyVertices.set(i);
+                dirtyPositions.set(i);
             }
         }
-        updatedVertices.clear();
+        if (vertexChanged) skinningSourceVersion++;
+        if (vertexChanged && tangOffset >= 0) {
+            calculateTangents();
+            dirtyVertices.set(0, vertexCount); // Triangle neighbours also receive new tangents.
+        }
         updateForVersion();
-        model.getMorph().clearLastChanged();
-        return true;
+        for (int i = dirtyMaterials.nextSetBit(0); i >= 0; i = dirtyMaterials.nextSetBit(i + 1)) {
+            markMaterialDirty(materials[i], dirtyVertices);
+        }
+        dirtyMaterials.clear();
+        updateBOL();
+        boolean contentChanged = !dirtyVertices.isEmpty();
+        if (contentChanged) {
+            ArrayList<BoneContext> contexts = new ArrayList<>();
+            Vector3f p = new Vector3f(), p2 = new Vector3f(), n = new Vector3f(), n2 = new Vector3f(), t2 = new Vector3f();
+            Vector4f t = new Vector4f();
+            for (int i = dirtyVertices.nextSetBit(0); i >= 0; i = dirtyVertices.nextSetBit(i + 1)) {
+                fillVertexData(i, uv, contexts, p, p2, n, n2, t, t2, true);
+            }
+            contentVersion++;
+        }
+        return modelUpdated || contentChanged;
     }
 
     /**
@@ -437,29 +469,22 @@ public class FlatModelData implements AutoCloseable {
             fillLightAndOverlayToBuffer(bufOrg);
             fillColorToBuffer(i, bufOrg);
             dirtyColors.clear(i);
+            dirtyVertices.set(i);
             bufOrg += vertexSize;
         }
         this.needToUpdateAll = false;
     }
 
     public void updateMorphedMaterials() {
-        if (model.getMaterialInstance() == null) return;
-        if (!model.getMaterialInstance().isDirty()) return;
         MaterialSetInstance instance = model.getMaterialInstance();
-        List<Integer> materialIndices = new ArrayList<>();
-        BitSet dirtyMaterials = instance.getDirtyMaterials();
-        BitSet dirtySprites = instance.getDirtySprites();
-        for (int i = dirtyMaterials.nextSetBit(0); i >= 0; i = dirtyMaterials.nextSetBit(i + 1)) {
-            materialIndices.add(i);
+        changedModelMaterials.clear();
+        if (instance != null) materialVersion = instance.getChanges().collectSince(materialVersion, changedModelMaterials);
+        materialMorphVersion = model.getMorph().getMaterialChanges().collectSince(materialMorphVersion, changedMorphMaterials);
+        changedModelMaterials.or(changedMorphMaterials);
+        for (int i = changedModelMaterials.nextSetBit(0); i >= 0; i = changedModelMaterials.nextSetBit(i + 1)) {
+            setupMaterial(i, materialColorBlender);
         }
-        for (int i = dirtySprites.nextSetBit(0); i >= 0; i = dirtySprites.nextSetBit(i + 1)) {
-            int matIndex = instance.getMaterials().getMaterialBySprites()[i];
-            materialIndices.add(matIndex);
-        }
-        for (Integer materialIndex : materialIndices) {
-            setupMaterial(materialIndex, materialColorBlender);
-        }
-        instance.clearDirty();
+        if (instance != null) instance.clearDirty(); // Compatibility flags only; versioned readers retain every change.
     }
 
     public void updateForVersion() {
@@ -472,10 +497,8 @@ public class FlatModelData implements AutoCloseable {
         Transform neoTransform;
         for (int i = 0; i < bones.length; i++) {
             neoTransform = skeletonInstance.getAbsoluteTransforms().get(bones[i]);
-            if (!Objects.equals(neoTransform, absTransforms[i])) {
-                absTransforms[i] = neoTransform;
-                markBoneDirty(bones[i], dirtyPositions, dirtyVertices);
-            }
+            absTransforms[i] = neoTransform;
+            markBoneDirty(bones[i], dirtyPositions, dirtyVertices);
         }
 
         int count = dirtyPositions.cardinality();
@@ -838,8 +861,8 @@ public class FlatModelData implements AutoCloseable {
         bufPos += posOffset;
         int posPos =  index * 3;
         buffer.putFloat(bufPos, positions[posPos] + basicOffsets[posPos]);
-        buffer.putFloat(bufPos + 4, positions[posPos + 1] + basicOffsets[posPos]);
-        buffer.putFloat(bufPos + 8, positions[posPos + 2] + basicOffsets[posPos]);
+        buffer.putFloat(bufPos + 4, positions[posPos + 1] + basicOffsets[posPos + 1]);
+        buffer.putFloat(bufPos + 8, positions[posPos + 2] + basicOffsets[posPos + 2]);
     }
 
     protected void fillPositionToBufferFromV3f(int bufPos, Vector3f v3f) {
@@ -1016,10 +1039,9 @@ public class FlatModelData implements AutoCloseable {
     protected void calculateMaterialColor(Material org, Vector4f colorCache,
                                     @Nullable BiConsumer<Sprite, Vector4f> biConsumer) {
         colorCache.set(1, 1, 1, 1);
-        if (biConsumer == null) return;
         Sprite sprite = model.getMaterialSprite(org);
         model.getMaterialColor(org, sprite, colorCache);
-        biConsumer.accept(sprite, colorCache);
+        if (biConsumer != null) biConsumer.accept(sprite, colorCache);
     }
 
     protected void setMaterialColor(int index, Vector4f org) {
@@ -1373,6 +1395,8 @@ public class FlatModelData implements AutoCloseable {
 
     @Override
     public void close() throws Exception {
+        if (closed) return;
+        closed = true;
         MemoryUtil.memFree(buffer);
     }
 }

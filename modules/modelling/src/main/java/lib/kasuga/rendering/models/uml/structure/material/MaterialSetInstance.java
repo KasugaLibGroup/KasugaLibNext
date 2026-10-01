@@ -3,6 +3,7 @@ package lib.kasuga.rendering.models.uml.structure.material;
 import lib.kasuga.rendering.models.uml.structure.material.animators.Animator;
 import lib.kasuga.rendering.models.uml.structure.material.animators.MaterialAnimation;
 import lombok.Getter;
+import lib.kasuga.rendering.models.uml.backend.ElementChanges;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
@@ -23,6 +24,8 @@ public class MaterialSetInstance {
 
     @Getter
     private final BitSet dirtySprites;
+    @Getter
+    private final ElementChanges changes;
 
 
     public MaterialSetInstance(MaterialSet set) {
@@ -31,6 +34,7 @@ public class MaterialSetInstance {
         currentMatFrame = new HashMap<>();
         dirtyMaterials = new BitSet(materials.getMaterials().length);
         dirtySprites = new BitSet(materials.getSpriteSets().length);
+        changes = new ElementChanges(materials.getMaterials().length);
         for (SpriteSet spriteSet : set.getSpriteSets()) {
             currentSprite.put(spriteSet, 0);
         }
@@ -55,14 +59,15 @@ public class MaterialSetInstance {
 
     public SpriteSet getSpriteSet(Material material) {
         int frame = getCurrentMatFrame(material);
-        frame = Math.clamp(frame, 0, material.getSprites().size());
+        frame = Math.clamp(frame, 0, material.getSprites().size() - 1);
         return material.getSprites().get(frame);
     }
 
     public void setCurrentMatFrame(Material material, int frame) {
         int matIndex = materials.getIndexByMaterial().getOrDefault(material, -1);
         if (matIndex == -1) return;
-        frame = Math.clamp(frame, 0, material.getSprites().size());
+        if (material.getSprites().isEmpty()) return;
+        frame = Math.clamp(frame, 0, material.getSprites().size() - 1);
         if (frame != currentMatFrame.getOrDefault(material, -1))
             markMaterialDirty(material);
         currentMatFrame.put(material, frame);
@@ -72,7 +77,7 @@ public class MaterialSetInstance {
         if (!containsMaterial(material)) return;
         int currentMatFrame = getCurrentMatFrame(material);
         SpriteSet spriteSet = material.getSprites().get(currentMatFrame);
-        int idx = Math.clamp(frame, 0, spriteSet.spriteSize());
+        int idx = Math.clamp(frame, 0, spriteSet.spriteSize() - 1);
         if (idx != currentSprite.getOrDefault(spriteSet, -1))
             markSpriteSetDirty(spriteSet);
         currentSprite.put(spriteSet, idx);
@@ -90,11 +95,12 @@ public class MaterialSetInstance {
         int index = materials.getIndexByMaterial().getOrDefault(material, -1);
         if (index == -1) return;
         dirtyMaterials.set(index);
+        changes.mark(index);
     }
 
     public void markSpriteSetDirty(SpriteSet spriteSet) {
         Material mat = materials.getMaterial(spriteSet);
-        dirtyMaterials.set(materials.getIndexByMaterial().get(mat));
+        markMaterialDirty(mat);
         dirtySprites.set(materials.getIndexBySpriteSet().get(spriteSet));
     }
 

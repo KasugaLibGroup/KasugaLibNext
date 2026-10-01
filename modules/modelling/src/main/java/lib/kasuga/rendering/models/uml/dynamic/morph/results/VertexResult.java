@@ -18,6 +18,8 @@ public class VertexResult implements IMorphResult<Vertex> {
 
     /** Position delta (VertexPosMorph), null if unchanged. */
     private Vector3f position;
+    @Getter(lombok.AccessLevel.NONE)
+    private Vector3f positionCache;
 
     /** Normal deltas per mesh (VertexNormalMorph), null/empty if unchanged. */
     private final Map<Mesh, Vector3f> normals;
@@ -36,8 +38,17 @@ public class VertexResult implements IMorphResult<Vertex> {
 
     /** Accumulate position delta (linear superposition for multiple VertexPosMorphs). */
     public void addPosition(Vector3f delta) {
-        if (this.position == null) this.position = new Vector3f(delta);
-        else this.position.add(delta);
+        addPosition(delta.x, delta.y, delta.z);
+    }
+
+    /** Reuses storage while keeping the public null-after-reset contract. */
+    public void addPosition(float x, float y, float z) {
+        if (position == null) {
+            if (positionCache == null) positionCache = new Vector3f();
+            position = positionCache.set(x, y, z);
+        } else {
+            position.add(x, y, z);
+        }
     }
 
     /** Accumulate normal delta per mesh. */

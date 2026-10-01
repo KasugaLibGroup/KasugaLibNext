@@ -57,6 +57,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
     private final OitRenderer oitRenderer = new OitRenderer();
     private final LayeredTransparency layeredTransparency = new LayeredTransparency(this);
     private final Set<ModelInstance> sampledThisFrame = Collections.newSetFromMap(new IdentityHashMap<>());
+    private Object renderFrameToken = new Object();
     /** Static bounding radius per instance, computed on first frustum test. */
     private final Map<ModelInstance, Float> boundsCache = new IdentityHashMap<>();
     // Reused scratch for the per-frame visibility box (render thread only).
@@ -128,6 +129,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
         }
 
         BackendInstance instance = renderable.apply();
+        instance.renderInFrame(renderFrameToken);
         float ambientLightEnhancement = effectiveAmbientLightEnhancement(
                 model, BackendInstance.isIrisEnabled());
         instance.updateLightData(lightData.packedLight(), overlay, lightData.brightness());
@@ -294,6 +296,8 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
     public void renderAllObjects(MCBackendContext context, ModelRenderPass pass,
                                  boolean frameStart, boolean frameEnd) {
         if (frameStart) {
+            renderFrameToken = new Object();
+            globalBatcher.beginFrame();
             layeredTransparency.beginFrame();
             sampledThisFrame.clear();
             ModelRenderScheduler.flipFrame();
@@ -321,7 +325,10 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
                 layeredTransparency.arm(context);
             }
         } finally {
-            if (frameEnd) sampledThisFrame.clear();
+            if (frameEnd) {
+                sampledThisFrame.clear();
+                globalBatcher.endFrame();
+            }
         }
     }
 

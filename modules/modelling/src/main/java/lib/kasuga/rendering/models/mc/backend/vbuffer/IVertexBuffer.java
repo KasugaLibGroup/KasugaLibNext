@@ -21,6 +21,9 @@ public interface IVertexBuffer extends AutoCloseable {
 
     void draw(Matrix4f modelViewMatrix, Matrix4f projectionMatrix, ShaderInstance shader);
 
+    /** Called after every draw, including transparency replays of prepared geometry. */
+    default void markSubmitted() {}
+
     default int getBufferId() {
         return ((AccessorVertexBuffer) getVertexBuffer()).getVertexBufferId();
     }

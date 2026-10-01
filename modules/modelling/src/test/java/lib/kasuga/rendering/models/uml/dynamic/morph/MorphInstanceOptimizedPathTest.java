@@ -65,6 +65,49 @@ class MorphInstanceOptimizedPathTest {
         assertEquals(expected, instance.getVertexPos(vertex, new Vector3f()));
     }
 
+    @Test
+    void pendingActivationRequestsUpdateBeforeFirstResultExists() {
+        Fixture f = fixture(1);
+        f.model().getMorph().addMorph("m", new VertexPosMorph<>(f.v0(), "m", new Vector3f(1, 0, 0)));
+        MorphInstance<Object> instance = new MorphInstance<>(f.model().getMorph());
+        instance.activateMorph("m", 1f);
+        assertTrue(instance.shouldUpdate());
+    }
+
+    @Test
+    void changingOneVertexPreservesOtherActiveMorphs() {
+        Fixture f = fixture(2);
+        f.model().getMorph().addMorph("a", new VertexPosMorph<>(f.v(0), "a", new Vector3f(2, 0, 0)));
+        f.model().getMorph().addMorph("b", new VertexPosMorph<>(f.v(1), "b", new Vector3f(1, 3, 0)));
+        MorphInstance<Object> instance = new MorphInstance<>(f.model().getMorph());
+        instance.activateMorph("a", 1f);
+        instance.activateMorph("b", 1f);
+        instance.update();
+        instance.clearLastChanged();
+        instance.activateMorph("a", .5f);
+        instance.update();
+        assertVertex(instance, f.v(0), new Vector3f(1, 0, 0));
+        assertVertex(instance, f.v(1), new Vector3f(1, 3, 0));
+        instance.deactivateMorph("a");
+        instance.update();
+        assertVertex(instance, f.v(1), new Vector3f(1, 3, 0));
+    }
+
+    @Test
+    void thirdPartyPositionMorphOverrideKeepsItsBehavior() {
+        Fixture f = fixture(1);
+        f.model().getMorph().addMorph("custom", new VertexPosMorph<Object>(f.v0(), "custom", new Vector3f()) {
+            @Override public Vector3f morph(Vertex input, float percentage, float factor) {
+                return new Vector3f(7 * percentage, 0, 0);
+            }
+        });
+        MorphInstance<Object> instance = new MorphInstance<>(f.model().getMorph());
+        instance.activateMorph("custom", 1f); instance.update();
+        assertVertex(instance, f.v0(), new Vector3f(7, 0, 0));
+        instance.activateMorph("custom", .5f); instance.update();
+        assertVertex(instance, f.v0(), new Vector3f(3.5f, 0, 0));
+    }
+
     // ── Step 1: unchanged-value skip ───────────────────────────────
 
     @Test
