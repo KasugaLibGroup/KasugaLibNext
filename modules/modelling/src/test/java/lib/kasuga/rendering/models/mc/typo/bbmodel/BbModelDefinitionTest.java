@@ -41,11 +41,13 @@ class BbModelDefinitionTest {
 
     @Test
     void keepsBlockbenchUvsInPixelCoordinatesForTextureData() {
+        // Corner tour is left-top, left-bottom, right-bottom, right-top, and rotation turns clockwise:
+        // a 90° face rotation puts the rectangle's left-bottom pixel in the face's top-left slot.
         Vector2f[] uvs = KsgBbModelLoader.rectangularUvs(new float[]{16, 32, 48, 64}, 90);
 
-        assertEquals(new Vector2f(48, 32), uvs[0]);
+        assertEquals(new Vector2f(16, 64), uvs[0]);
         assertEquals(new Vector2f(48, 64), uvs[1]);
-        assertEquals(new Vector2f(16, 64), uvs[2]);
+        assertEquals(new Vector2f(48, 32), uvs[2]);
         assertEquals(new Vector2f(16, 32), uvs[3]);
     }
 

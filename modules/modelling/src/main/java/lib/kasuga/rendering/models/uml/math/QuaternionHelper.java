@@ -41,6 +41,35 @@ public class QuaternionHelper {
         return fromXYZDegrees(angles.x(), angles.y(), angles.z());
     }
 
+    /**
+     * Blockbench/Minecraft euler order: intrinsic Z, then Y, then X — the matrix {@code Rz·Ry·Rx}.
+     *
+     * <p>{@code .bbmodel} element, group and animation rotations are authored in this order. It is the
+     * composition Blockbench's own preview applies (three.js {@code Euler.order = "ZYX"}), the order
+     * Minecraft's {@code ModelPart} multiplies its {@code ZP}/{@code YP}/{@code XP} rotations in, and the
+     * order {@code RotHelper.rotation} composes Bedrock cube rotations in. {@link #fromXYZDegrees} is
+     * JOML's {@code rotationXYZ} — the reverse composition — and silently mis-places every rotation that
+     * spans more than one axis. Single-axis rotations are unaffected by the order.
+     */
+    public static Quaternionf fromZYXAngle(float x, float y, float z, boolean degrees) {
+        return new Quaternionf()
+                .mul(fromXYZAngle(0.0f, 0.0f, z, degrees))
+                .mul(fromXYZAngle(0.0f, y, 0.0f, degrees))
+                .mul(fromXYZAngle(x, 0.0f, 0.0f, degrees));
+    }
+
+    public static Quaternionf fromZYXRadians(float x, float y, float z) {
+        return fromZYXAngle(x, y, z, false);
+    }
+
+    public static Quaternionf fromZYXDegrees(float x, float y, float z) {
+        return fromZYXAngle(x, y, z, true);
+    }
+
+    public static Quaternionf fromZYXDegrees(Vector3f angles) {
+        return fromZYXDegrees(angles.x(), angles.y(), angles.z());
+    }
+
     public static float sin(float angle) {
         return (float) Math.sin(angle);
     }

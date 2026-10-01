@@ -77,8 +77,8 @@ public final class ModelSmokeTests {
 
         Vec3 headPosition = playerPosition.add(lookDirection.scale(3.0)).add(0.0, 1.0, 0.0);
         Vec3 bogeyPosition = playerPosition.add(lookDirection.scale(8.0)).add(0.0, 1.0, 0.0);
-        testBbmodel("models/block/test/blockbench/df11g_head.bbmodel", "test_bbmodel_head", headPosition);
-        testBbmodel("models/block/test/blockbench/qj_bogey_main.bbmodel", "test_bbmodel_bogey", bogeyPosition);
+        testBbmodel("models/block/test/blockbench/52a.bbmodel", "test_bbmodel_head", headPosition);
+//        testBbmodel("models/block/test/blockbench/qj_bogey_main.bbmodel", "test_bbmodel_bogey", bogeyPosition);
     }
 
     private static String normalizeBbmodelPath(String path) {

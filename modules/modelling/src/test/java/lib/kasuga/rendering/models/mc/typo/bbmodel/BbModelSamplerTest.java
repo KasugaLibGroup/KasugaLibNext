@@ -2,6 +2,7 @@ package lib.kasuga.rendering.models.mc.typo.bbmodel;
 
 import lib.kasuga.rendering.models.uml.dynamic.fsm.ApplyMode;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Pose;
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
@@ -262,6 +263,36 @@ class BbModelSamplerTest {
         // Degraded to an identity rotation quaternion (w == 1).
         assertEquals(1.0f, bone(pose, "bone").transform().getRotation().w, 1e-6f);
         assertEquals(0.0f, bone(pose, "bone").transform().getRotation().x, 1e-6f);
+    }
+
+    @Test
+    void composesMultiAxisAnimationRotationsInZyxOrder() {
+        // Same euler order as the model's own rotations: intrinsic Z → Y → X (matrix Rz·Ry·Rx).
+        BbModelAnimation animation = animation("""
+                {
+                  "animations": [ {
+                    "name": "tilt", "loop": "hold", "length": 1.0,
+                    "animators": {
+                      "a": { "name": "arm", "type": "bone", "keyframes": [
+                        { "channel": "rotation", "time": 0.0, "interpolation": "linear",
+                          "data_points": [ {"x": "30", "y": "60", "z": "0"}, {"x": "30", "y": "60", "z": "0"} ] }
+                      ]}
+                    }
+                  } ]
+                }
+                """);
+        Pose pose = BbModelSampler.INSTANCE.sample(animation, 0.0f);
+
+        Quaternionf zyx = new Quaternionf()
+                .mul(new Quaternionf().rotationZ(0f))
+                .mul(new Quaternionf().rotationY((float) Math.toRadians(60f)))
+                .mul(new Quaternionf().rotationX((float) Math.toRadians(30f)));
+        Vector3f expected = new Vector3f(0f, 0f, 1f).rotate(zyx);
+        Vector3f actual = bone(pose, "arm").transform().apply(new Vector3f(0f, 0f, 1f));
+
+        assertEquals(expected.x, actual.x, 1e-4f);
+        assertEquals(expected.y, actual.y, 1e-4f);
+        assertEquals(expected.z, actual.z, 1e-4f);
     }
 
     @Test

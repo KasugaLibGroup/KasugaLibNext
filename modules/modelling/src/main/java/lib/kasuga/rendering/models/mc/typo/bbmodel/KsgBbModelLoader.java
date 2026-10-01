@@ -184,12 +184,9 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
         KasugaTextureManager textureManager = Constants.TEXTURE_BASIC;
         Object sourceIdentifier;
         ResourceLocation textureIdentifier;
-        int width = positiveOr(texture.width(), definition.textureWidth());
-        int height = positiveOr(texture.height(), definition.textureHeight());
+        int[] canvas = uvCanvas(texture, definition);
         if (texture.source().startsWith("data:image/")) {
             BufferedImage image = decodeImage(texture.source(), modelIdentifier);
-            width = image.getWidth();
-            height = image.getHeight();
             textureIdentifier = embeddedTextureLocation(modelIdentifier, texture.index());
             sourceIdentifier = Pair.of(textureIdentifier, image);
         } else {
@@ -199,8 +196,23 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
         textureManager.load(sourceIdentifier);
         net.minecraft.client.resources.model.Material material =
                 new net.minecraft.client.resources.model.Material(RenderState.KSG_LAYER_0, textureIdentifier);
-        return new MCTexture(texture.id(), () -> material, width, height,
+        // The MCTexture size is the divisor normalizePixelUv() uses, so it must be the UV canvas — never the
+        // decoded image size, which only supplies the sprite content.
+        return new MCTexture(texture.id(), () -> material, canvas[0], canvas[1],
                 new MCTextureData(sourceIdentifier, textureManager, true));
+    }
+
+    /**
+     * Blockbench records face and mesh UVs in the texture's UV canvas: {@code uv_width}/{@code uv_height}
+     * when the file declares them, otherwise the declared (or project) texture size. It is deliberately
+     * independent of the decoded image, because Blockbench stretches an image over its canvas — a 64×64 png
+     * under a 128×128 canvas still carries UVs up to 128 (see {@code qj_bogey_main.bbmodel}).
+     */
+    static int[] uvCanvas(BbModelDefinition.Texture texture, BbModelDefinition definition) {
+        return new int[]{
+                positiveOr(texture.uvWidth(), positiveOr(texture.width(), definition.textureWidth())),
+                positiveOr(texture.uvHeight(), positiveOr(texture.height(), definition.textureHeight()))
+        };
     }
 
     /**
@@ -299,7 +311,7 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
             Vector2f uv = face.uvs().get(name);
             if (position == null || uv == null) return;
             positions[index] = new Vector3f(position).mul(1.0f / 16.0f);
-            // MCTextureData divides these Blockbench pixel coordinates by the loaded image size.
+            // Kept in Blockbench pixels; appendFace() normalizes them by the material's UV canvas.
             uvs[index] = new Vector2f(uv);
         }
         appendFace(positions, uvs, transform, material, bindTarget, vertices, meshes);
@@ -378,7 +390,9 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
         private BlockBenchTransform child(Vector3f pivot, Vector3f localRotation) {
             Vector3f scaledPivot = new Vector3f(pivot).mul(1.0f / 16.0f);
             Vector3f origin = scaledPivot.sub(parentPivot).rotate(rotation).add(absoluteOrigin);
-            Quaternionf combinedRotation = new Quaternionf(rotation).mul(QuaternionHelper.fromXYZDegrees(localRotation));
+            // Blockbench composes Z→Y→X (see QuaternionHelper.fromZYXAngle): a group's or element's own
+            // rotation is applied in its parent's already-rotated frame, around its own origin.
+            Quaternionf combinedRotation = new Quaternionf(rotation).mul(QuaternionHelper.fromZYXDegrees(localRotation));
             return new BlockBenchTransform(combinedRotation, origin, scaledPivot);
         }
 
@@ -387,21 +401,37 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
         }
     }
 
+    /**
+     * Corner order of each cube face, as seen from OUTSIDE the cube: top-left, bottom-left, bottom-right,
+     * top-right of the face's UV rectangle.
+     *
+     * <p>This is the order Blockbench maps a face's {@code uv} rectangle onto ({@code CubeFace.UVToLocal}):
+     * for every face {@code u} runs to the viewer's right and {@code v} downward, with the top face using
+     * {@code u = +X, v = +Z} and the bottom face {@code u = +X, v = -Z}. It is also the vanilla
+     * {@code FaceInfo} corner order, and it is the winding the backend needs for outward normals — the
+     * rectangle's natural top-left → top-right → bottom-right → bottom-left order is back-facing.
+     */
     private static Vector3f[] cubeFacePositions(lib.kasuga.rendering.models.mc.util.Direction direction, Vector3f min, Vector3f max) {
         return switch (direction) {
-            case DOWN -> new Vector3f[]{new Vector3f(min.x, min.y, max.z), new Vector3f(max.x, min.y, max.z), new Vector3f(max.x, min.y, min.z), new Vector3f(min.x, min.y, min.z)};
-            case UP -> new Vector3f[]{new Vector3f(min.x, max.y, min.z), new Vector3f(max.x, max.y, min.z), new Vector3f(max.x, max.y, max.z), new Vector3f(min.x, max.y, max.z)};
-            case NORTH -> new Vector3f[]{new Vector3f(max.x, min.y, min.z), new Vector3f(min.x, min.y, min.z), new Vector3f(min.x, max.y, min.z), new Vector3f(max.x, max.y, min.z)};
-            case SOUTH -> new Vector3f[]{new Vector3f(min.x, min.y, max.z), new Vector3f(max.x, min.y, max.z), new Vector3f(max.x, max.y, max.z), new Vector3f(min.x, max.y, max.z)};
-            case WEST -> new Vector3f[]{new Vector3f(min.x, min.y, min.z), new Vector3f(min.x, min.y, max.z), new Vector3f(min.x, max.y, max.z), new Vector3f(min.x, max.y, min.z)};
-            case EAST -> new Vector3f[]{new Vector3f(max.x, min.y, max.z), new Vector3f(max.x, min.y, min.z), new Vector3f(max.x, max.y, min.z), new Vector3f(max.x, max.y, max.z)};
+            case DOWN -> new Vector3f[]{new Vector3f(min.x, min.y, max.z), new Vector3f(min.x, min.y, min.z), new Vector3f(max.x, min.y, min.z), new Vector3f(max.x, min.y, max.z)};
+            case UP -> new Vector3f[]{new Vector3f(min.x, max.y, min.z), new Vector3f(min.x, max.y, max.z), new Vector3f(max.x, max.y, max.z), new Vector3f(max.x, max.y, min.z)};
+            case NORTH -> new Vector3f[]{new Vector3f(max.x, max.y, min.z), new Vector3f(max.x, min.y, min.z), new Vector3f(min.x, min.y, min.z), new Vector3f(min.x, max.y, min.z)};
+            case SOUTH -> new Vector3f[]{new Vector3f(min.x, max.y, max.z), new Vector3f(min.x, min.y, max.z), new Vector3f(max.x, min.y, max.z), new Vector3f(max.x, max.y, max.z)};
+            case WEST -> new Vector3f[]{new Vector3f(min.x, max.y, min.z), new Vector3f(min.x, min.y, min.z), new Vector3f(min.x, min.y, max.z), new Vector3f(min.x, max.y, max.z)};
+            case EAST -> new Vector3f[]{new Vector3f(max.x, max.y, max.z), new Vector3f(max.x, min.y, max.z), new Vector3f(max.x, min.y, min.z), new Vector3f(max.x, max.y, min.z)};
         };
     }
 
+    /**
+     * UV rectangle corners for {@link #cubeFacePositions}: left-top, left-bottom, right-bottom, right-top —
+     * the same top-left → bottom-left → bottom-right → top-right tour. {@code rotation} turns the texture
+     * clockwise (Blockbench/vanilla semantics), so the corner feeding the face's top-left slot walks
+     * backwards through the rectangle.
+     */
     static Vector2f[] rectangularUvs(float[] uv, int rotation) {
         Vector2f[] result = {
-                new Vector2f(uv[0], uv[1]), new Vector2f(uv[2], uv[1]),
-                new Vector2f(uv[2], uv[3]), new Vector2f(uv[0], uv[3])
+                new Vector2f(uv[0], uv[1]), new Vector2f(uv[0], uv[3]),
+                new Vector2f(uv[2], uv[3]), new Vector2f(uv[2], uv[1])
         };
         int turns = Math.floorMod(rotation / 90, 4);
         if (turns == 0) return result;
