@@ -1,5 +1,11 @@
 # 模型渲染调度（Render Scheduling）
 
+公共调度与 buffer/后端契约见 [UML 渲染 framework](uml-render-framework.md)。
+本文的 `ModelRenderScheduler` 是 MC 兼容适配器，策略与帧标记由
+`uml.framework.schedule` 管理；`VANILLA_RENDERER` 对应公共 `HOST_RENDERER`。
+多机位的可见性标记按视角清空，动画采样按共享帧 token 去重，见
+[多机位与离屏输出文档](../docs/offline_rendering_and_multi_cam.md)。
+
 UML 模型挂载到 `mc_backend` 之后由分阶段 world pipeline 绘制。本文回答
 "模型什么时候该渲染、什么时候不该渲染"，以及如何与 Minecraft 原版的
 渲染器（renderer）调度机制对接。

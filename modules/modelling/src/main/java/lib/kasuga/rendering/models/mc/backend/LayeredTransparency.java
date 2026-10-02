@@ -2,6 +2,7 @@ package lib.kasuga.rendering.models.mc.backend;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.logging.LogUtils;
+import lib.kasuga.rendering.models.uml.backend.gpu.GlslProgram;
 import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.client.GlStateBackup;
 import org.lwjgl.opengl.*;
@@ -31,8 +32,7 @@ public final class LayeredTransparency implements AutoCloseable {
     private int phase;
     private int captureFrames;
     private final java.util.Map<Integer, Integer> enabledUniforms = new java.util.HashMap<>();
-    private final QueryBatch[] queryRing = {new QueryBatch(), new QueryBatch(), new QueryBatch()};
-    private final QueryResultRing querySlots = new QueryResultRing(queryRing.length);
+    private final PeelLayerLoop peelLoop = new PeelLayerLoop();
     private int observedPassBound, ringBusyFrames;
     private long profileFrames, profileStart, profileElapsed, profileWaiting, profilePeeling;
     private int profileLayers, profileQueries;
@@ -174,12 +174,6 @@ public final class LayeredTransparency implements AutoCloseable {
             }
             int limit = Math.clamp(Integer.getInteger("kasuga.transparencyLayers", 32), 1, 256);
             int queryBatch = Math.clamp(Integer.getInteger("kasuga.transparencyQueryBatch", 4), 1, 16);
-            int slot = querySlots.acquire(
-                    index -> queryRing[index].ready(), index -> pollQueries(queryRing[index]));
-            QueryBatch queries = slot < 0 ? null : queryRing[slot];
-            if (queries != null) queries.prepare(limit, queryBatch);
-            else ringBusyFrames++;
-            int layers = 0;
             long peelingStarted = System.nanoTime();
             active = this;
             phase = FOOTPRINT;
@@ -188,49 +182,33 @@ public final class LayeredTransparency implements AutoCloseable {
                 capture.target("footprint", footprint);
             }
             phase = PEEL;
-            for (; layers < limit; layers++) {
-                boolean probe = queries != null && ((layers + 1) % queryBatch == 0 || layers + 1 == limit);
-                int group = layers / queryBatch;
-                // A completed empty batch also lets the CPU stop submitting.
-                // Unavailable results never cause a wait or reuse an old frame's bound.
-                if (queries != null && group > 0 && layers % queryBatch == 0
-                        && queries.completedEmpty(group - 1)) break;
-                boolean conditional = queries != null && group > 0;
-                // The GPU decides whether the preceding batch contained any
-                // fragments. QUERY_WAIT waits in the command stream, not on
-                // the CPU. Never include fullscreen resolves in the query.
-                if (conditional) GL30.glBeginConditionalRender(queries.ids[group - 1], GL30.GL_QUERY_WAIT);
-                try {
-                    // Clear and resolve share the same predicate. Once empty,
-                    // skip the full-resolution color/depth writes as well as
-                    // geometry; stale ping-pong contents are never composited.
-                    current.clear(1.0);
-                    if (probe) GL15.glBeginQuery(GL33.GL_ANY_SAMPLES_PASSED, queries.ids[group]);
-                    try {
-                        terrain.run();
-                        if (capture != null && layers < 4) capture.target("layer" + layers + "-terrain", current);
-                        for (var model : models) model.draw(context, 4);
-                        if (capture != null && layers < 4) capture.target("layer" + layers + "-mixed", current);
-                    } finally {
-                        if (probe) {
-                            GL15.glEndQuery(GL33.GL_ANY_SAMPLES_PASSED);
-                            queries.issued = group + 1;
-                        }
-                    }
-                    // This copy is between identical float depth formats, not
-                    // into Minecraft's potentially different main depth format.
-                    if (layers == 0) nearest.copyDepth(current.framebuffer);
-                    accumulation.bind();
-                    // premultiplied front-to-back: C += (1-A) * layer, A likewise.
-                    fullscreen(current.color, GL11.GL_ONE_MINUS_DST_ALPHA, GL11.GL_ONE, false);
-                } finally {
-                    if (conditional) GL30.glEndConditionalRender();
+            var result = peelLoop.render(limit, queryBatch, new PeelLayerLoop.Layers() {
+                @Override public void clear() { current.clear(1.0); }
+                @Override public void draw(int layer) {
+                    terrain.run();
+                    if (capture != null && layer < 4) capture.target("layer" + layer + "-terrain", current);
+                    for (var model : models) model.draw(context, 4);
+                    if (capture != null && layer < 4) capture.target("layer" + layer + "-mixed", current);
                 }
-                PeelTarget swap = previous;
-                previous = current;
-                current = swap;
+                @Override public void pinNearestDepth() { nearest.copyDepth(current.framebuffer); }
+                @Override public void accumulate() {
+                    accumulation.bind();
+                    fullscreen(current.color, GL11.GL_ONE_MINUS_DST_ALPHA, GL11.GL_ONE, false);
+                }
+                @Override public void swap() {
+                    PeelTarget swap = previous;
+                    previous = current;
+                    current = swap;
+                }
+            });
+            int layers = result.submittedLayers();
+            observedPassBound = result.observedPassBound();
+            if (result.ringBusy()) ringBusyFrames++;
+            if (result.observedOverflowLimit() > 0 && !overflowLogged) {
+                overflowLogged = true;
+                LOGGER.warn("Unified transparency reached {} layers; deeper layers may be omitted. "
+                        + "Increase kasuga.transparencyLayers for this scene (maximum 256).", result.observedOverflowLimit());
             }
-            if (queries != null) querySlots.submit(slot);
             long peelingNanos = System.nanoTime() - peelingStarted;
             if (capture != null) capture.target("accumulation", accumulation);
             PeelTarget.checkError("unified depth peeling");
@@ -254,7 +232,7 @@ public final class LayeredTransparency implements AutoCloseable {
                 LOGGER.info("Kasuga unified terrain/model depth peeling active (pixel footprint + prepared models + 3-slot RingBuffer): {} queued passes, limit {}, query batch {}",
                         layers, limit, queryBatch);
             }
-            recordProfile(started, peelingNanos, 0, layers, queries == null ? 0 : queries.issued);
+            recordProfile(started, peelingNanos, 0, layers, result.issuedQueries());
             return true;
         } catch (RuntimeException failure) {
             disabled = true;
@@ -281,51 +259,6 @@ public final class LayeredTransparency implements AutoCloseable {
     private static void activeTexture(int unit) {
         RenderSystem.activeTexture(unit);
         GL13.glActiveTexture(unit);
-    }
-
-    private void pollQueries(QueryBatch batch) {
-        // acquire() has checked the final query is ready, so all earlier
-        // queries in this same GL command stream are ready as well.
-        observedPassBound = batch.limit;
-        boolean empty = false;
-        for (int i = 0; i < batch.issued; i++) {
-            if (GL15.glGetQueryObjecti(batch.ids[i], GL15.GL_QUERY_RESULT) == 0) {
-                observedPassBound = Math.min(batch.limit, (i + 1) * batch.size);
-                empty = true;
-                break;
-            }
-        }
-        if (!empty && !overflowLogged) {
-            overflowLogged = true;
-            LOGGER.warn("Unified transparency reached {} layers; deeper layers may be omitted. "
-                    + "Increase kasuga.transparencyLayers for this scene (maximum 256).", batch.limit);
-        }
-    }
-
-    private static final class QueryBatch {
-        int[] ids = new int[0];
-        int issued, limit, size;
-
-        boolean ready() {
-            return GL15.glGetQueryObjecti(ids[issued - 1], GL15.GL_QUERY_RESULT_AVAILABLE) != 0;
-        }
-
-        boolean completedEmpty(int group) {
-            return GL15.glGetQueryObjecti(ids[group], GL15.GL_QUERY_RESULT_AVAILABLE) != 0
-                    && GL15.glGetQueryObjecti(ids[group], GL15.GL_QUERY_RESULT) == 0;
-        }
-
-        void prepare(int limit, int size) {
-            this.limit = limit;
-            this.size = size;
-            issued = 0;
-            int count = (limit + size - 1) / size;
-            int old = ids.length;
-            if (old < count) {
-                ids = java.util.Arrays.copyOf(ids, count);
-                for (int i = old; i < count; i++) ids[i] = GL15.glGenQueries();
-            }
-        }
     }
 
     private void recordProfile(long started, long peeling, long waiting, int layers, int queries) {
@@ -384,51 +317,18 @@ public final class LayeredTransparency implements AutoCloseable {
 
     private void ensureProgram() {
         if (program != 0) return;
-        int vertex = compile(GL20.GL_VERTEX_SHADER, """
-                #version 150
-                void main() {
-                    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-                    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-                }
-                """);
-        int fragment;
         try (var resource = LayeredTransparency.class.getResourceAsStream(
                 "/assets/kasuga_lib/shaders/core/ksglib_peel_resolve.fsh")) {
             if (resource == null) throw new java.io.IOException("Missing peel resolve shader");
-            fragment = compile(GL20.GL_FRAGMENT_SHADER,
+            program = GlslProgram.link(GlslProgram.FULLSCREEN_VERTEX,
                     new String(resource.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
-        } catch (RuntimeException | java.io.IOException failure) {
-            GL20.glDeleteShader(vertex);
+        } catch (java.io.IOException failure) {
             throw new IllegalStateException("Cannot load peel resolve shader", failure);
-        }
-        program = GL20.glCreateProgram();
-        GL20.glAttachShader(program, vertex);
-        GL20.glAttachShader(program, fragment);
-        GL20.glLinkProgram(program);
-        GL20.glDeleteShader(vertex);
-        GL20.glDeleteShader(fragment);
-        if (GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) == 0) {
-            String log = GL20.glGetProgramInfoLog(program);
-            GL20.glDeleteProgram(program);
-            program = 0;
-            throw new IllegalStateException(log);
         }
         vao = GL30.glGenVertexArrays();
         layerSampler = GL20.glGetUniformLocation(program, "Layer");
         nearestSampler = GL20.glGetUniformLocation(program, "NearestDepth");
         writeDepthUniform = GL20.glGetUniformLocation(program, "WriteDepth");
-    }
-
-    private static int compile(int type, String source) {
-        int shader = GL20.glCreateShader(type);
-        GL20.glShaderSource(shader, source);
-        GL20.glCompileShader(shader);
-        if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == 0) {
-            String log = GL20.glGetShaderInfoLog(shader);
-            GL20.glDeleteShader(shader);
-            throw new IllegalStateException(log);
-        }
-        return shader;
     }
 
     @Override
@@ -437,11 +337,7 @@ public final class LayeredTransparency implements AutoCloseable {
         scene.close(); previous.close(); current.close(); accumulation.close(); footprint.close(); nearest.close();
         if (program != 0) GL20.glDeleteProgram(program);
         if (vao != 0) GL30.glDeleteVertexArrays(vao);
-        for (QueryBatch batch : queryRing) {
-            for (int id : batch.ids) GL15.glDeleteQueries(id);
-            batch.ids = new int[0];
-        }
-        querySlots.reset();
+        peelLoop.close();
         program = vao = 0;
     }
 }

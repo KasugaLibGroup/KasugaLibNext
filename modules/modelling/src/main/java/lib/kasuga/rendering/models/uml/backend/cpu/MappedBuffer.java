@@ -1,12 +1,14 @@
 package lib.kasuga.rendering.models.uml.backend.cpu;
 
+import lib.kasuga.rendering.models.uml.framework.buffer.TypedBuffer;
 import lombok.Getter;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Objects;
 
-public abstract class MappedBuffer<T> implements AutoCloseable {
+public abstract class MappedBuffer<T> implements TypedBuffer<T> {
 
     protected static final MemoryUtil.MemoryAllocator ALLOCATOR = MemoryUtil.getAllocator(false);
 
@@ -28,31 +30,35 @@ public abstract class MappedBuffer<T> implements AutoCloseable {
     @Getter
     protected final long address;
 
+    private final int capacity;
+
     public MappedBuffer(int dataSize, Class<T> type) {
-        this.type = type;
-        buffer = MemoryUtil.memAlloc(sizeOfType() * dataSize);
+        if (dataSize < 0) throw new IllegalArgumentException("Negative element capacity");
+        this.type = Objects.requireNonNull(type, "type");
+        capacity = dataSize;
+        buffer = MemoryUtil.memAlloc(Math.multiplyExact(sizeOfType(), dataSize));
         address = MemoryUtil.memAddress(buffer);
         this.order = buffer.order();
         data = new Object[dataSize];
     }
 
     public MappedBuffer(T[] data, Class<T> type) {
-        this.type = type;
-        buffer = MemoryUtil.memAlloc(sizeOfType() * data.length);
+        Objects.requireNonNull(data, "data");
+        this.type = Objects.requireNonNull(type, "type");
+        capacity = data.length;
+        buffer = MemoryUtil.memAlloc(Math.multiplyExact(sizeOfType(), data.length));
         address = MemoryUtil.memAddress(buffer);
         this.order = buffer.order();
         this.data = data;
     }
 
     public T getDataFromBuffer(int index) {
-        if (index < 0 || index >= data.length) {
-            throw new IllegalArgumentException("Index is out of bounds.");
-        }
         return getData(slice(index));
     }
 
     public ByteBuffer slice(int index) {
-        return buffer.slice(index * sizeOfType(), sizeOfType());
+        checkIndex(index);
+        return buffer.slice(index * sizeOfType(), sizeOfType()).order(order);
     }
 
     public abstract T getData(ByteBuffer slice);
@@ -62,20 +68,21 @@ public abstract class MappedBuffer<T> implements AutoCloseable {
     public abstract int sizeOfType();
 
     public void updateAll(T[] newData) {
-        if (newData.length > data.length) {
+        checkOpen("Buffer is closed");
+        Objects.requireNonNull(newData, "newData");
+        if (newData.length > capacity) {
             throw new IllegalArgumentException("New data size exceeds buffer capacity.");
         }
-        this.data = newData;
+        System.arraycopy(newData, 0, data, 0, newData.length);
         for (int i = 0; i < newData.length; i++) {
             writeData(newData[i], i);
         }
     }
 
     public void updateRange(T[] newData, int offset) {
-        if (offset < 0 || offset >= data.length) {
-            throw new IllegalArgumentException("Offset is out of bounds.");
-        }
-        if (newData.length + offset > data.length) {
+        checkOpen("Buffer is closed");
+        Objects.requireNonNull(newData, "newData");
+        if (offset < 0 || offset > capacity || newData.length > capacity - offset) {
             throw new IllegalArgumentException("New data size exceeds buffer capacity from the given offset.");
         }
         System.arraycopy(newData, 0, data, offset, newData.length);
@@ -101,7 +108,12 @@ public abstract class MappedBuffer<T> implements AutoCloseable {
     }
 
     public int arrayCapacity() {
-        return data.length;
+        return capacity;
+    }
+
+    protected final void checkIndex(int index) {
+        checkOpen("Buffer is closed");
+        if (index < 0 || index >= capacity) throw new IllegalArgumentException("Index is out of bounds.");
     }
 
     public void checkOpen(String operation) {
@@ -112,9 +124,10 @@ public abstract class MappedBuffer<T> implements AutoCloseable {
 
     @Override
     public void close() throws Exception {
+        if (isClosed) return;
+        isClosed = true;
         MemoryUtil.memFree(buffer);
         data = null;
-        isClosed = true;
     }
 
     public boolean isLittleEndian() {

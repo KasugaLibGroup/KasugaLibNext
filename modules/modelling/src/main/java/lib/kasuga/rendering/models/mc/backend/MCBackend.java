@@ -5,7 +5,6 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import lib.kasuga.rendering.models.mc.backend.data_type.KasugaShaderInstance;
 import lib.kasuga.rendering.models.mc.backend.data_type.MCRenderableContext;
-import lib.kasuga.rendering.models.mc.backend.schedule.ModelRenderScheduler;
 import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
 import lib.kasuga.rendering.models.mc.util.RotHelper;
 import lib.kasuga.rendering.models.uml.backend.Backend;
@@ -13,6 +12,10 @@ import lib.kasuga.rendering.models.uml.backend.BackendContext;
 import lib.kasuga.rendering.models.uml.bridge.Bridge;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.SkeletonInstance;
+import lib.kasuga.rendering.models.uml.framework.schedule.ModelRenderScheduling;
+import lib.kasuga.rendering.models.uml.framework.schedule.RenderScheduler;
+import lib.kasuga.rendering.models.uml.framework.schedule.FrameSampleCache;
+import lib.kasuga.rendering.output.mc.MinecraftWorldViews;
 import lib.kasuga.rendering.models.uml.math.QuaternionHelper;
 import lib.kasuga.rendering.models.uml.structure.basic.Vertex;
 import lib.kasuga.rendering.models.uml.structure.skeleton.Bone;
@@ -36,12 +39,10 @@ import org.joml.Vector3f;
 
 import java.util.Map;
 import java.util.Objects;
-import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
 import java.util.Vector;
 import java.util.concurrent.ExecutorService;
 
@@ -56,7 +57,8 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
     private final GlobalModelBatcher globalBatcher = new GlobalModelBatcher();
     private final OitRenderer oitRenderer = new OitRenderer();
     private final LayeredTransparency layeredTransparency = new LayeredTransparency(this);
-    private final Set<ModelInstance> sampledThisFrame = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final FrameSampleCache<ModelInstance> sampledThisFrame = new FrameSampleCache<>();
+    private Object renderFrameToken = new Object();
     /** Static bounding radius per instance, computed on first frustum test. */
     private final Map<ModelInstance, Float> boundsCache = new IdentityHashMap<>();
     // Reused scratch for the per-frame visibility box (render thread only).
@@ -65,6 +67,16 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
 
     public MCBackend() {
         executor = newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+    }
+
+    public RenderScheduler<ModelInstance> getScheduler() {
+        return ModelRenderScheduling.scheduler();
+    }
+
+    @Override
+    protected MCRenderableContext createContext(MCBridge bridge, ModelInstance instance) {
+        return new MCRenderableContext(bridge, instance,
+                model -> bridge.createRenderable(model, executor));
     }
 
     @Override
@@ -86,6 +98,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
     private void render(BackendContext<MCBridge, BackendInstance, MCBackendContext, BackendTransform> renderable,
                         MCBackendContext context, ModelRenderPass pass, RenderType renderType,
                         int oitMode, @Nullable List<PreparedModelDraw> prepared) {
+        checkOpen();
         // Scheduling gate, mirroring vanilla's "renderer not called" semantics:
         // schedule mode → view distance → frustum. Culled instances neither
         // sample animation nor touch GPU buffers this frame.
@@ -106,7 +119,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
         // Animation is sampled once per rendered frame. Configured ragdoll
         // physics is advanced by MinecraftRagdollRuntime independently of
         // render visibility; tying it to this method froze culled instances.
-        if (sampledThisFrame.add(model)) {
+        if (sampledThisFrame.firstSample(model)) {
             model.sample(context.getPartialTickFraction());
         }
 
@@ -128,6 +141,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
         }
 
         BackendInstance instance = renderable.apply();
+        instance.renderInFrame(renderFrameToken);
         float ambientLightEnhancement = effectiveAmbientLightEnhancement(
                 model, BackendInstance.isIrisEnabled());
         instance.updateLightData(lightData.packedLight(), overlay, lightData.brightness());
@@ -192,7 +206,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
     private boolean passesSchedule(ModelInstance model,
                                    @Nullable BackendTransform transform,
                                    MCBackendContext context) {
-        if (!ModelRenderScheduler.shouldRender(model)) return false;
+        if (!getScheduler().shouldRender(model)) return false;
 
         Vector3f position = transform == null ? null : transform.getPosition();
         if (position == null && !hasEvaluatedBones(model)) return true;
@@ -218,7 +232,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
                 + (visibleBoundsScratchMin.z + visibleBoundsScratchMax.z) * 0.5;
 
         Vec3 camera = context.getCamera() != null ? context.getCamera().getPosition() : null;
-        if (camera != null && !ModelRenderScheduler.withinRenderDistance(model,
+        if (camera != null && !getScheduler().withinRenderDistance(model,
                 (float) camera.distanceToSqr(centerX, centerY, centerZ))) {
             return false;
         }
@@ -286,17 +300,22 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
 
     /**
      * Renders one material pass. The frame is flipped once before OPAQUE and
-     * the sampled-instance cache is cleared after the final BLEND pass, so a
+     * the sampled-instance cache is shared by all views of a multi-view frame, so a
      * model mounted through a vanilla renderer is sampled at most once even
      * though its geometry can participate in multiple passes. Native BLEND
      * rendering selects WBOIT; unsupported paths use the sorted fallback.
      */
     public void renderAllObjects(MCBackendContext context, ModelRenderPass pass,
                                  boolean frameStart, boolean frameEnd) {
+        checkOpen();
         if (frameStart) {
+            Object sharedFrame = MinecraftWorldViews.currentFrameToken();
+            Object nextFrame = sharedFrame == null ? new Object() : sharedFrame;
+            sampledThisFrame.beginFrame(nextFrame);
+            renderFrameToken = nextFrame;
+            globalBatcher.beginFrame();
             layeredTransparency.beginFrame();
-            sampledThisFrame.clear();
-            ModelRenderScheduler.flipFrame();
+            getScheduler().flipFrame();
         }
 
         try {
@@ -321,7 +340,11 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
                 layeredTransparency.arm(context);
             }
         } finally {
-            if (frameEnd) sampledThisFrame.clear();
+            if (frameEnd) {
+                if (MinecraftWorldViews.currentFrameToken() == null)
+                    sampledThisFrame.clear();
+                globalBatcher.endFrame();
+            }
         }
     }
 
@@ -375,22 +398,31 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
     }
 
     @Override
-    public boolean remove(Object key) {
-        boolean removed = super.remove(key);
-        if (removed && key instanceof ModelInstance model) {
-            boundsCache.remove(model);
-            ModelRenderScheduler.detach(model);
-        }
-        return removed;
+    protected void onContextReleased(BackendContext<MCBridge, BackendInstance, MCBackendContext, BackendTransform> mounted) {
+        ModelInstance model = mounted.getModelInstance();
+        boundsCache.remove(model);
+        sampledThisFrame.forget(model);
+        boolean stillMounted = getRenderingObjects().values().stream()
+                .anyMatch(context -> context.getModelInstance() == model);
+        if (!stillMounted) getScheduler().detach(model);
     }
 
     @Override
     public void close() throws Exception {
-        layeredTransparency.close();
-        oitRenderer.close();
-        globalBatcher.close();
+        if (isClosed()) return;
+        Exception failure = null;
+        AutoCloseable[] resources = {super::close, layeredTransparency, oitRenderer, globalBatcher};
+        for (AutoCloseable resource : resources) {
+            try { resource.close(); }
+            catch (Exception cleanup) {
+                if (failure == null) failure = cleanup;
+                else failure.addSuppressed(cleanup);
+            }
+        }
         boundsCache.clear();
+        sampledThisFrame.clear();
         executor.shutdown();
+        if (failure != null) throw failure;
     }
 
     public record LightData(int blockLight, int skyLight, int packedLight, float brightness) {

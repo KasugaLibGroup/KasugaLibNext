@@ -18,6 +18,7 @@ public class PackedNormalBuffer extends MappedV3fBuffer {
 
     @Override
     public Vector3f getData(ByteBuffer slice) {
+        checkOpen("Buffer is closed");
         return new Vector3f(
             byteToNormal(slice.get(0)),
             byteToNormal(slice.get(1)),
@@ -27,6 +28,7 @@ public class PackedNormalBuffer extends MappedV3fBuffer {
 
     @Override
     public void writeData(Vector3f value, int index) {
+        checkIndex(index);
         long address = super.address + (long) index * sizeOfType();
         MemoryUtil.memPutFloat(address, normalToByte(value.x));
         MemoryUtil.memPutFloat(address + Byte.BYTES, normalToByte(value.y));

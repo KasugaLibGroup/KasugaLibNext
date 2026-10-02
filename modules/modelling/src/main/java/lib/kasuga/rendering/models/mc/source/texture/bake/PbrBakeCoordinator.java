@@ -8,13 +8,8 @@ import org.slf4j.Logger;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -261,19 +256,7 @@ public final class PbrBakeCoordinator {
     }
 
     private String computeCacheKey(BufferedImage source, PbrBakeProfile profile) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update(profile.cacheDescriptor().getBytes(StandardCharsets.UTF_8));
-            ByteBuffer dimensions = ByteBuffer.allocate(8).putInt(source.getWidth()).putInt(source.getHeight());
-            digest.update(dimensions.array());
-            int[] pixels = source.getRGB(0, 0, source.getWidth(), source.getHeight(), null, 0, source.getWidth());
-            ByteBuffer pixelBuffer = ByteBuffer.allocate(pixels.length * Integer.BYTES);
-            for (int pixel : pixels) pixelBuffer.putInt(pixel);
-            digest.update(pixelBuffer.array());
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is unavailable", exception);
-        }
+        return PbrCacheKey.compute(source, profile.cacheDescriptor());
     }
 
     public record PbrBakeStats(

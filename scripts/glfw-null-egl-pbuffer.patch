@@ -1,0 +1,25 @@
+--- a/src/egl_context.c
++++ b/src/egl_context.c
+@@ -136,2 +136,3 @@
+-        // Only consider window EGLConfigs
+-        if (!(getEGLConfigAttrib(n, EGL_SURFACE_TYPE) & EGL_WINDOW_BIT))
++        // Null platform uses a pbuffer; display platforms keep window surfaces.
++        const EGLint surfaceBit = _glfw.platform.platformID == GLFW_PLATFORM_NULL ? 0x0001 /* EGL_PBUFFER_BIT */ : EGL_WINDOW_BIT;
++        if (!(getEGLConfigAttrib(n, EGL_SURFACE_TYPE) & surfaceBit))
+@@ -716 +717,15 @@
+-    if (_glfw.egl.platform && _glfw.egl.platform != EGL_PLATFORM_ANGLE_ANGLE)
++    if (_glfw.platform.platformID == GLFW_PLATFORM_NULL)
++    {
++        typedef EGLSurface (APIENTRY * CreatePbuffer)(EGLDisplay, EGLConfig, const EGLint*);
++        CreatePbuffer createPbuffer = (CreatePbuffer)
++            _glfwPlatformGetModuleSymbol(_glfw.egl.handle, "eglCreatePbufferSurface");
++        const EGLint pbufferAttributes[] = {
++            0x3057 /* EGL_WIDTH */, window->null.width,
++            0x3056 /* EGL_HEIGHT */, window->null.height, EGL_NONE
++        };
++        if (createPbuffer)
++            window->context.egl.surface = createPbuffer(_glfw.egl.display, config, pbufferAttributes);
++        else
++            window->context.egl.surface = EGL_NO_SURFACE;
++    }
++    else if (_glfw.egl.platform && _glfw.egl.platform != EGL_PLATFORM_ANGLE_ANGLE)

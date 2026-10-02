@@ -81,7 +81,7 @@ class ModelInstancePoseSinkApplyPoseTest {
                 null, null, null, null);
         Material material = new Material(new Texture[]{texture}, null);
         material.addSprite(new SpriteSet(null, sprite));
-        // Collection constructor populates indexByMaterial (the single-arg MaterialSet does not — setCurrentMatFrame would no-op).
+        material.addSprite(new SpriteSet(null, sprite));
         MaterialSet materialSet = new MaterialSet(List.of(texture), List.of(material));
         ModelInstance instance = fixture(materialSet, null, null);
         ModelInstancePoseSink sink = new ModelInstancePoseSink(instance);

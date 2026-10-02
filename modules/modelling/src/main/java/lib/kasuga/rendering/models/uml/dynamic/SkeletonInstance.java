@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.uml.dynamic;
 
 import lib.kasuga.rendering.models.uml.bridge.Bridge;
+import lib.kasuga.rendering.models.uml.framework.render.ModelGeometryAdapter;
 import lib.kasuga.rendering.models.uml.math.binding.BoneBindingFunc;
 import lib.kasuga.rendering.models.uml.math.BoneContext;
 import lib.kasuga.rendering.models.uml.math.Transform;
@@ -949,11 +950,16 @@ public class SkeletonInstance {
         }
     }
 
-    public HashMap<Vertex, Vertex> getVertexTransforms(Model model, Bridge bridge) {
+    /** Compatibility overload for bridge callers. */
+    public HashMap<Vertex, Vertex> getVertexTransforms(Model model, Bridge<?> bridge) {
+        return getVertexTransforms(model, (ModelGeometryAdapter) bridge);
+    }
+
+    public HashMap<Vertex, Vertex> getVertexTransforms(Model model, ModelGeometryAdapter adapter) {
         HashMap<Vertex, Vertex> vertexTransforms = new HashMap<>();
         List<BoneContext> contexts = new ArrayList<>();
         for (Vertex vertex : model.getVertices()) {
-            BoneBindingFunc func = bridge.getBoneBindingFunc(model, this, vertex);
+            BoneBindingFunc func = adapter.getBoneBindingFunc(model, this, vertex);
             if (func == null) continue;
             collectBoneContexts(contexts, vertex);
             Vertex result = func.apply(vertex, contexts);

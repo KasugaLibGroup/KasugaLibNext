@@ -165,6 +165,8 @@ void ksg_applyQdefSkinning(inout vec3 position, inout vec3 normal, inout vec4 ta
     vec4 blend_qr = vec4(0.0);
     vec4 blend_qd = vec4(0.0);
     float totalWeight = 0.0;
+    vec4 reference_qr = vec4(0.0);
+    bool hasReference = false;
     for (int i = 0; i < 4; i++) {
         float weight = BoneWeights[i];
         if (weight <= 0.0) continue;
@@ -176,17 +178,26 @@ void ksg_applyQdefSkinning(inout vec3 position, inout vec3 normal, inout vec4 ta
         vec4 qr = quat_from_mat3(mat3(composite));
         vec3 t = composite[3].xyz;
         vec4 qd = 0.5 * quat_mul(vec4(t, 0.0), qr);
-        if (dot(blend_qr, qr) < 0.0) {
+        totalWeight += weight; // Coverage uses the original positive weight, not the hemisphere sign.
+        if (!hasReference) {
+            reference_qr = qr;
+            hasReference = true;
+        }
+        if (dot(reference_qr, qr) < 0.0) {
             weight = -weight;
         }
         blend_qr += qr * weight;
         blend_qd += qd * weight;
-        totalWeight += weight;
     }
     if (totalWeight <= 0.0) {
         return;
     }
-    blend_qr = normalize(blend_qr);
+    // Both DQ components must use the SAME real-quaternion norm. Normalizing
+    // only the real part shrinks blended translations when bones rotate apart.
+    float blendLength = length(blend_qr);
+    if (blendLength <= 1.0e-6) return;
+    blend_qr /= blendLength;
+    blend_qd /= blendLength;
     blend_qd -= dot(blend_qr, blend_qd) * blend_qr;
     // Apply blended DQ directly to model-space position
     vec3 rotatedPos = quat_rotate(blend_qr, position);

@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.uml.dynamic.morph;
 
 import lib.kasuga.rendering.models.uml.dynamic.morph.blender.BlenderType;
+import lib.kasuga.rendering.models.uml.backend.ElementChanges;
 import lib.kasuga.rendering.models.uml.dynamic.morph.holder.GroupMorph;
 import lib.kasuga.rendering.models.uml.dynamic.morph.holder.IMorphHolder;
 import lib.kasuga.rendering.models.uml.dynamic.morph.results.*;
@@ -59,6 +60,7 @@ public class MorphInstance<IdType> {
     protected final BitSet lastUpdatedBones;
     protected final BitSet lastUpdatedMeshes;
     protected final BitSet lastUpdatedMaterials;
+    protected final ElementChanges vertexChanges, materialChanges;
 
     // ── Morph results (index arrays for the hot per-vertex render path) ──
     protected final VertexResult[] vertexResults;
@@ -103,6 +105,8 @@ public class MorphInstance<IdType> {
         this.lastUpdatedBones = new BitSet(bc);
         this.lastUpdatedMeshes = new BitSet(mc);
         this.lastUpdatedMaterials = new BitSet(mac);
+        this.vertexChanges = new ElementChanges(vc);
+        this.materialChanges = new ElementChanges(mac);
 
         this.vertexResults = new VertexResult[vc];
         this.boneResults = new HashMap<>();
@@ -246,8 +250,7 @@ public class MorphInstance<IdType> {
     }
 
     public boolean shouldUpdate() {
-        return !lastUpdatedBones.isEmpty() || !lastUpdatedVertices.isEmpty() ||
-                !lastUpdatedMeshes.isEmpty() || !lastUpdatedMaterials.isEmpty();
+        return isDirty() || !lastUpdatedBones.isEmpty();
     }
 
     public void clearLastChanged() {
@@ -267,11 +270,7 @@ public class MorphInstance<IdType> {
     public void update() {
         if (!isDirty()) return;
 
-        // Reset all accumulated deltas before this update cycle
-        for (VertexResult r : vertexResults) if (r != null) r.reset();
-        boneResults.values().forEach(BoneResult::reset);
-        meshResults.values().forEach(MeshResult::reset);
-        materialResults.values().forEach(MaterialResult::reset);
+        // Plateau results must survive updates to unrelated elements.
 
         if (isVerticesDirty()) {
             for (int i = dirtyVertices.nextSetBit(0); i >= 0; i = dirtyVertices.nextSetBit(i + 1)) {
@@ -283,6 +282,7 @@ public class MorphInstance<IdType> {
                     r = new VertexResult(v);
                     vertexResults[i] = r;
                 }
+                r.reset();
                 morphVertex(v, set, r);
                 lastUpdatedVertices.set(i);
             }
@@ -294,6 +294,7 @@ public class MorphInstance<IdType> {
                 Set<MorphType<Bone, ?, IdType>> set = morph.getBoneMorphs().get(b);
                 if (set == null || set.isEmpty()) continue;
                 BoneResult r = boneResults.computeIfAbsent(b, BoneResult::new);
+                r.reset();
                 morphBone(b, set, r);
                 lastUpdatedBones.set(i);
             }
@@ -310,11 +311,14 @@ public class MorphInstance<IdType> {
                 Set<MorphType<Material, ?, IdType>> set = morph.getMaterialMorphs().get(m);
                 if (set == null || set.isEmpty()) continue;
                 MaterialResult r = materialResults.computeIfAbsent(m, MaterialResult::new);
+                r.reset();
                 morphMaterial(m, set, r);
                 lastUpdatedMaterials.set(i);
             }
         }
 
+        vertexChanges.mark(dirtyVertices);
+        materialChanges.mark(dirtyMaterials);
         clearAllDirtyMarks();
     }
 
@@ -327,7 +331,15 @@ public class MorphInstance<IdType> {
             if (value <= 0f) continue;
             float factor = factorFactor(mt);
 
-            if (mt instanceof VertexPosMorph) {
+            if (mt.getClass() == VertexPosMorph.class) {
+                VertexPosMorph<?> position = (VertexPosMorph<?>) mt;
+                Vector3f origin = position.getOriginal().getPosition();
+                Vector3f target = position.getTargetPosition();
+                float weight = value * factor;
+                r.addPosition((target.x - origin.x) * weight, (target.y - origin.y) * weight,
+                        (target.z - origin.z) * weight);
+            } else if (mt instanceof VertexPosMorph) {
+                // Keep overridden morph() behavior for third-party subclasses.
                 r.addPosition((Vector3f) mt.morph(v, value, factor));
             } else if (mt instanceof VertexNormalMorph<?> vnm) {
                 r.addNormal(vnm.getMesh(), (Vector3f) mt.morph(v, value, factor));
@@ -388,6 +400,13 @@ public class MorphInstance<IdType> {
         meshResults.values().forEach(MeshResult::reset);
         materialResults.values().forEach(MaterialResult::reset);
         transformCache.clear();
+        BitSet all = new BitSet();
+        all.set(0, vertices.length);
+        vertexChanges.mark(all);
+        all.clear();
+        all.set(0, materials.length);
+        materialChanges.mark(all);
+        lastUpdatedBones.set(0, bones.length);
     }
 
     public void resetLastUpdated() {
@@ -519,13 +538,17 @@ public class MorphInstance<IdType> {
     @NotNull
     public Integer getMaterialSpriteFrame(Material m) {
         MaterialResult r = materialResults.get(m);
-        return r != null ? r.getSpriteFrame() : -1;
+        if (r != null && r.getSpriteFrame() != null) return r.getSpriteFrame();
+        Set<MorphType<Material, ?, IdType>> definitions = morph.getMaterialMorphs().get(m);
+        return definitions != null && definitions.stream().anyMatch(mt -> mt instanceof SpriteFrameMorph) ? 0 : -1;
     }
 
     @NotNull
     public Integer getMaterialFrameIndex(Material m) {
         MaterialResult r = materialResults.get(m);
-        return r != null ? r.getMaterialFrame() : -1;
+        if (r != null && r.getMaterialFrame() != null) return r.getMaterialFrame();
+        Set<MorphType<Material, ?, IdType>> definitions = morph.getMaterialMorphs().get(m);
+        return definitions != null && definitions.stream().anyMatch(mt -> mt instanceof MaterialFrameMorph) ? 0 : -1;
     }
 
     public Sprite getSprite(Material material) {

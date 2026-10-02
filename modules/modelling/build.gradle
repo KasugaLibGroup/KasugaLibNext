@@ -87,6 +87,11 @@ sourceSets {
         compileClasspath += sourceSets.main.compileClasspath
         runtimeClasspath += sourceSets.main.runtimeClasspath
     }
+
+    renderHarness {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
 }
 
 tasks.named('processContentTestingResources', ProcessResources) {
@@ -124,6 +129,21 @@ neoForge {
             if (quickPlayWorld.isPresent()) {
                 programArguments.addAll '--quickPlaySingleplayer', quickPlayWorld.get()
             }
+        }
+
+        clientHeadless {
+            client()
+            gameDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/headless-client'))
+            systemProperty 'kasuga.headless', providers.gradleProperty('kasugaHeadlessBackend').getOrElse(
+                    System.getProperty('os.name').toLowerCase().contains('linux') ? 'egl' : 'hidden')
+            systemProperty 'kasuga.headless.fps', providers.gradleProperty('kasugaHeadlessFps').getOrElse('60')
+            systemProperty 'java.awt.headless', 'true'
+            def glfwLibrary = providers.gradleProperty('kasugaHeadlessGlfwLibrary')
+            if (glfwLibrary.isPresent()) systemProperty 'org.lwjgl.glfw.libname', file(glfwLibrary.get()).absolutePath
+            def quickPlayWorld = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (quickPlayWorld.isPresent()) programArguments.addAll '--quickPlaySingleplayer', quickPlayWorld.get()
+            def serverAddress = providers.gradleProperty('kasugaHeadlessServer')
+            if (serverAddress.isPresent()) programArguments.addAll '--quickPlayMultiplayer', serverAddress.get()
         }
 
         clientProfile {
@@ -177,6 +197,30 @@ neoForge {
             if (kasugaTestFmtModel.isPresent()) {
                 systemProperty 'kasuga.testFmtModel', kasugaTestFmtModel.get()
             }
+            def frameOutputSmoke = providers.gradleProperty('kasugaTestFrameOutput')
+            if (frameOutputSmoke.isPresent()) {
+                systemProperty 'kasuga.testFrameOutput', frameOutputSmoke.get()
+            }
+            def cameraPerformance = providers.gradleProperty('kasugaTestCameraPerformance')
+            if (cameraPerformance.isPresent()) systemProperty 'kasuga.testCameraPerformance', cameraPerformance.get()
+            def cameraMotion = providers.gradleProperty('kasugaTestCameraMotion')
+            if (cameraMotion.isPresent()) systemProperty 'kasuga.testCameraMotion', cameraMotion.get()
+            def dualCameraDebug = providers.gradleProperty('kasugaDebugDualCamera')
+            if (dualCameraDebug.isPresent()) systemProperty 'kasuga.debugDualCamera', dualCameraDebug.get()
+            def multiWindowDebug = providers.gradleProperty('kasugaDebugMultiWindow')
+            if (multiWindowDebug.isPresent()) systemProperty 'kasuga.debugMultiWindow', multiWindowDebug.get()
+            def windowSmoke = providers.gradleProperty('kasugaTestFrameWindows')
+            if (windowSmoke.isPresent()) systemProperty 'kasuga.testFrameWindows', windowSmoke.get()
+            def headlessSmoke = providers.gradleProperty('kasugaTestHeadless')
+            if (headlessSmoke.isPresent()) systemProperty 'kasuga.testHeadless', headlessSmoke.get()
+            def dualCameraCapture = providers.gradleProperty('kasugaDebugDualCameraCaptureFrames')
+            if (dualCameraCapture.isPresent()) systemProperty 'kasuga.debugDualCamera.captureFrames', dualCameraCapture.get()
+            def cameraIrisSmoke = providers.gradleProperty('kasugaTestCameraIris')
+            if (cameraIrisSmoke.isPresent()) systemProperty 'kasuga.testCameraIris', cameraIrisSmoke.get()
+            def worldViewSmoke = providers.gradleProperty('kasugaTestWorldViews')
+            if (worldViewSmoke.isPresent()) {
+                systemProperty 'kasuga.testWorldViews', worldViewSmoke.get()
+            }
             def transparencyProfile = providers.gradleProperty('kasugaProfileTransparency')
             if (transparencyProfile.isPresent()) {
                 systemProperty 'kasuga.profileTransparency', transparencyProfile.get()
@@ -218,6 +262,23 @@ neoForge {
         enable()
         testedMod = mods.named(mod_id)
     }
+}
+
+// NeoForge's splash window starts before game mixins. Disable it before launching, not after GLFW initialization.
+tasks.register('prepareHeadlessClient') {
+    def headlessDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/headless-client'))
+    doLast {
+        def config = new File(headlessDirectory, 'config/fml.toml')
+        config.parentFile.mkdirs()
+        def text = config.exists() ? config.getText('UTF-8') : ''
+        if (text =~ /(?m)^\s*earlyWindowControl\s*=/) {
+            text = text.replaceAll(/(?m)^\s*earlyWindowControl\s*=.*$/, 'earlyWindowControl = false')
+        } else text += '\nearlyWindowControl = false\n'
+        config.setText(text, 'UTF-8')
+    }
+}
+tasks.matching { it.name == 'runClientHeadless' || it.name == 'prepareClientHeadlessRun' }.configureEach {
+    dependsOn 'prepareHeadlessClient'
 }
 
 configurations {
@@ -285,6 +346,12 @@ dependencies {
     jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
     jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
 
+    // Match Minecraft 1.21.1's LWJGL version; the harness starts a plain JVM, not a ModDev run.
+    renderHarnessImplementation 'org.lwjgl:lwjgl:3.3.3'
+    renderHarnessImplementation project(':modules:core')
+    renderHarnessImplementation 'org.lwjgl:lwjgl-glfw:3.3.3'
+    renderHarnessImplementation 'org.lwjgl:lwjgl-opengl:3.3.3'
+
     compileOnly("org.projectlombok:lombok:1.18.42")
     annotationProcessor("org.projectlombok:lombok:1.18.42")
 
@@ -296,8 +363,10 @@ dependencies {
     // Optional renderer integrations belong to development runs only. Keeping
     // them on localRuntime preserves the client test setup without publishing
     // the non-resolvable flatDir coordinates to downstream consumers.
-    localRuntime("libs:iris:neoforge-mc1.21.1-1.8.12")
-    localRuntime("libs:sodium:neoforge-mc1.21.1-0.6.13")
+    if (providers.gradleProperty('kasugaRendererMods').getOrElse('true').toBoolean()) {
+        localRuntime("libs:iris:neoforge-mc1.21.1-1.8.12")
+        localRuntime("libs:sodium:neoforge-mc1.21.1-0.6.13")
+    }
 }
 
 // The gameTest source set re-declares its resource dir (srcDir 'src/gameTest/resources') on top of Gradle's
@@ -349,6 +418,55 @@ def box3dArch = {
     return value.replaceAll('[^a-z0-9_-]', '_')
 }.call()
 def box3dClassifier = "${box3dOs}-${box3dArch}"
+def renderHarnessNatives = 'natives-' + (box3dOs == 'macos' ? 'macos' : box3dOs == 'windows' ? 'windows' : 'linux')
+if (box3dArch == 'aarch64') renderHarnessNatives += '-arm64'
+dependencies {
+    ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl'].each { library ->
+        renderHarnessRuntimeOnly "org.lwjgl:${library}:3.3.3:${renderHarnessNatives}"
+    }
+}
+
+['renderGlTest': 'test', 'renderPreview': 'preview', 'renderBench': 'bench'].each { taskName, mode ->
+    tasks.register(taskName, JavaExec) {
+        group = mode == 'preview' ? 'application' : 'verification'
+        description = "Runs standalone ${mode} rendering with the shared production GL core, without Minecraft."
+        mainClass = 'lib.kasuga.rendering.models.mc.backend.StandaloneRenderHarness'
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+        classpath = sourceSets.renderHarness.runtimeClasspath
+        systemProperty 'kasuga.render.commit', providers.exec {
+            workingDir rootProject.projectDir
+            commandLine 'git', 'rev-parse', 'HEAD'
+        }.standardOutput.asText.map { it.trim() }.get()
+        systemProperty 'kasuga.render.dirty', providers.exec {
+            workingDir rootProject.projectDir
+            commandLine 'git', 'status', '--porcelain'
+        }.standardOutput.asText.map { !it.trim().isEmpty() }.get()
+        if (box3dOs == 'macos') jvmArgs '-XstartOnFirstThread'
+        args '--mode', mode,
+                '--report', layout.buildDirectory.file("reports/renderHarness/${mode}/report.json").get().asFile.absolutePath,
+                '--width', providers.gradleProperty('kasugaRenderWidth').getOrElse(mode == 'test' ? '64' : '1280'),
+                '--height', providers.gradleProperty('kasugaRenderHeight').getOrElse(mode == 'test' ? '64' : '720'),
+                '--frames', providers.gradleProperty('kasugaRenderFrames').getOrElse(mode == 'preview' ? '0' : '120'),
+                '--warmup', providers.gradleProperty('kasugaRenderWarmup').getOrElse('30')
+        // GPU execution must never be considered up-to-date based only on source files.
+        outputs.upToDateWhen { false }
+    }
+}
+
+tasks.register('modelBench', JavaExec) {
+    group = 'verification'
+    description = 'Runs modelling CPU microbenchmarks in forked JMH JVMs without Minecraft startup.'
+    mainClass = 'org.openjdk.jmh.Main'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    classpath = sourceSets.jmh.runtimeClasspath
+    def resultFile = layout.buildDirectory.file('reports/jmh/results.json').get().asFile
+    args providers.gradleProperty('kasugaBenchmark').getOrElse('.*(StateMachine|Multiplexer|RenderPreparation)Benchmark.*'),
+            '-rf', 'json', '-rff', resultFile.absolutePath,
+            '-wi', providers.gradleProperty('kasugaBenchmarkWarmup').getOrElse('3'),
+            '-i', providers.gradleProperty('kasugaBenchmarkIterations').getOrElse('5'),
+            '-w', '1s', '-r', '1s', '-f', '1', '-prof', 'gc', '-foe', 'true'
+    doFirst { resultFile.parentFile.mkdirs() }
+}
 def box3dSourceDirectory = layout.projectDirectory.dir('src/main/native')
 def box3dBuildDirectory = layout.buildDirectory.dir('native/box3d')
 def box3dResourceDirectory = box3dBuildDirectory.map { it.dir('resources') }

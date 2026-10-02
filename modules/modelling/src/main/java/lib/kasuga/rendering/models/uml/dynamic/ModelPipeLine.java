@@ -35,7 +35,7 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
 
     private final Map<StorageIdentifierType, Model> models;
 
-    private final Map<String, Backend<Bridge, BackendInputType, ?, ?>> backends;
+    private final Map<String, Backend<Bridge<BackendInputType>, BackendInputType, ?, ?>> backends;
 
     private final Map<Model,
             HashMap<InstanceIdentifierType, ModelInstance>> modelInstances;
@@ -43,7 +43,7 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
     private ModelPipeLine(SourceManager<SourceOutputType> sourceManager,
                           ModelLoader<SourceOutputType, StorageIdentifierType, TextureIdentifierType> loader,
                           Map<String, Bridge<BackendInputType>> bridges,
-                          Map<String, Backend<Bridge, BackendInputType, ?, ?>> backends,
+                          Map<String, Backend<Bridge<BackendInputType>, BackendInputType, ?, ?>> backends,
                           Map<SourceType, HashMap<String, SourceManager<?>>> sidedSources
     ) {
         this.sourceManager = sourceManager;
@@ -97,19 +97,22 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
      * models. Call this on the game thread after dependent textures are ready.
      */
     public void publishModels(Map<StorageIdentifierType, Model> prepared) {
+        RuntimeException failure = null;
         for (Map.Entry<StorageIdentifierType, Model> entry : prepared.entrySet()) {
             Model previous = models.put(entry.getKey(), entry.getValue());
             if (previous == null || previous == entry.getValue()) continue;
             HashMap<InstanceIdentifierType, ModelInstance> staleInstances = modelInstances.remove(previous);
             if (staleInstances == null) continue;
             for (ModelInstance instance : staleInstances.values()) {
-                for (Backend<Bridge, BackendInputType, ?, ?> backend : backends.values()) {
-                    backend.remove(instance);
+                try { retireInstance(instance); }
+                catch (RuntimeException cleanup) {
+                    if (failure == null) failure = cleanup;
+                    else failure.addSuppressed(cleanup);
                 }
-                instance.close();
             }
             staleInstances.clear();
         }
+        if (failure != null) throw failure;
     }
 
     @Nullable
@@ -176,12 +179,28 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
         if (instances == null) return false;
         ModelInstance instance = instances.remove(instanceIdentifier);
         if (instance == null) return false;
-        for (Backend<Bridge, BackendInputType, ?, ?> backend : backends.values()) {
-            backend.remove(instance);
-        }
-        instance.close();
         if (instances.isEmpty()) modelInstances.remove(model);
+        retireInstance(instance);
         return true;
+    }
+
+    /** Release failures must not strand the instance in another backend or its runtime. */
+    private void retireInstance(ModelInstance instance) {
+        RuntimeException failure = null;
+        for (var backend : backends.values()) {
+            try { backend.remove(instance); }
+            catch (RuntimeException cleanup) {
+                if (failure == null) failure = cleanup;
+                else failure.addSuppressed(cleanup);
+            }
+        }
+        lib.kasuga.rendering.models.uml.framework.schedule.ModelRenderScheduling.scheduler().detach(instance);
+        try { instance.close(); }
+        catch (RuntimeException cleanup) {
+            if (failure == null) failure = cleanup;
+            else failure.addSuppressed(cleanup);
+        }
+        if (failure != null) throw failure;
     }
 
     public void addToRenderer(
@@ -201,7 +220,7 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
         if (bridge == null) {
             throw new IllegalArgumentException("No bridge found with name: " + bridgeName);
         }
-        Backend<Bridge, BackendInputType, ?, ?> backend = backends.get(backendName);
+        Backend<Bridge<BackendInputType>, BackendInputType, ?, ?> backend = backends.get(backendName);
         if (backend == null) {
             throw new IllegalArgumentException("No backend found with name: " + backendName);
         }
@@ -221,12 +240,12 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
             return false;
         }
         if (backendName != null) {
-            Backend<Bridge, BackendInputType, ?, ?> backend = backends.get(backendName);
+            Backend<Bridge<BackendInputType>, BackendInputType, ?, ?> backend = backends.get(backendName);
             if (backend != null) {
                 return backend.contains(instance);
             }
         }
-        for (Backend<Bridge, BackendInputType, ?, ?> backend : backends.values()) {
+        for (Backend<Bridge<BackendInputType>, BackendInputType, ?, ?> backend : backends.values()) {
             if (backend.contains(instance)) {
                 return true;
             }
@@ -246,7 +265,7 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
             boolean visible) {
         ModelInstance instance = getInstance(modelName, instanceIdentifier);
         if (instance != null) {
-            lib.kasuga.rendering.models.mc.backend.schedule.ModelRenderScheduler.setVisible(instance, visible);
+            lib.kasuga.rendering.models.uml.framework.schedule.ModelRenderScheduling.scheduler().setVisible(instance, visible);
         }
     }
 
@@ -263,15 +282,22 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
             return false;
         }
         boolean removed = false;
+        RuntimeException failure = null;
         if (backendName != null) {
-            Backend<Bridge, BackendInputType, ?, ?> backend = backends.get(backendName);
+            Backend<Bridge<BackendInputType>, BackendInputType, ?, ?> backend = backends.get(backendName);
             if (backend != null) {
                 return backend.remove(instance);
             }
         }
-        for (Backend<Bridge, BackendInputType, ?, ?> backend : backends.values()) {
-            removed |= backend.remove(instance);
+        for (Backend<Bridge<BackendInputType>, BackendInputType, ?, ?> backend : backends.values()) {
+            // Each backend must get its release attempt even if an earlier one fails.
+            try { removed |= backend.remove(instance); }
+            catch (RuntimeException cleanup) {
+                if (failure == null) failure = cleanup;
+                else failure.addSuppressed(cleanup);
+            }
         }
+        if (failure != null) throw failure;
         return removed;
     }
 
@@ -282,7 +308,7 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
         private final Map<SourceType, HashMap<String, SourceManager<?>>> sidedSources = new HashMap<>();
         private ModelLoader<SourceOutputType, StorageIdentifierType, TextureIdentifierType> loader;
         private final Map<String, Bridge<BackendInputType>> bridges = new HashMap<>();
-        private final Map<String, Backend<Bridge, BackendInputType, ?, ?>> backends = new HashMap<>();
+        private final Map<String, Backend<Bridge<BackendInputType>, BackendInputType, ?, ?>> backends = new HashMap<>();
 
         public Builder<SourceOutputType, BackendInputType, StorageIdentifierType,
                 InstanceIdentifierType, TextureIdentifierType> withModelSource(
@@ -316,7 +342,7 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
         public Builder<SourceOutputType,
                 BackendInputType, StorageIdentifierType,
                 InstanceIdentifierType, TextureIdentifierType> withBackend(String name, Backend backend) {
-            this.backends.put(name, (Backend<Bridge, BackendInputType, ?, ?>) backend);
+            this.backends.put(name, (Backend<Bridge<BackendInputType>, BackendInputType, ?, ?>) backend);
             return this;
         }
 

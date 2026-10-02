@@ -17,6 +17,7 @@ public class VBOVec2fBuffer extends MappedBuffer<Vector2f> {
 
     @Override
     public Vector2f getData(ByteBuffer slice) {
+        checkOpen("Buffer is closed");
         return new Vector2f(
             slice.getFloat(0),
             slice.getFloat(Float.BYTES)
@@ -25,6 +26,7 @@ public class VBOVec2fBuffer extends MappedBuffer<Vector2f> {
 
     @Override
     public void writeData(Vector2f value, int index) {
+        checkIndex(index);
         long address = super.address + (long) index * sizeOfType();
         MemoryUtil.memPutFloat(address, value.x);
         MemoryUtil.memPutFloat(address + Float.BYTES, value.y);

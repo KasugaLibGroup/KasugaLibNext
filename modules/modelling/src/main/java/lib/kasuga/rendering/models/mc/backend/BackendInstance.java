@@ -44,6 +44,19 @@ public class BackendInstance implements AutoCloseable {
     @Nullable
     private final BoneTransformTBO tbo;
     private final Matrix4f matrixCache = new Matrix4f();
+    private Object renderFrameToken;
+
+    void renderInFrame(Object token) { renderFrameToken = token; }
+
+    private void updateData(FlatModelData data) {
+        if (renderFrameToken == null) {
+            if (model.checkForUpdate()) model.update();
+        } else {
+            model.prepareRenderFrame(renderFrameToken);
+        }
+        data.updateModel(false);
+        if (tbo != null) tbo.updateForVersion();
+    }
 
     public BackendInstance(ModelInstance instance, ExecutorService executor, boolean cpuSkinning) {
         this.model = instance;
@@ -113,10 +126,8 @@ public class BackendInstance implements AutoCloseable {
     boolean prepareForGlobalBatch(ModelRenderPass pass) {
         RenderPart part = parts.get(pass);
         if (part == null) return false;
-        boolean updated = part.data.updateModel();
-        if (!cpuSkinning && tbo != null && updated) {
-            tbo.updateForVersion();
-        }
+        updateData(part.data);
+        part.lastUsedBuffer = null;
         return true;
     }
 
@@ -157,9 +168,9 @@ public class BackendInstance implements AutoCloseable {
         GLContext context = part.getContext();
         IVertexBuffer buffer = part.getBuffer();
         if (context == null || buffer == null) return false;
-        boolean updated = part.data.updateModel();
-        if (!cpuSkinning && tbo != null && updated) tbo.updateForVersion();
-        buffer.updateGpuBuffer(part.data.getDirtyVertices(), false);
+        updateData(part.data);
+        buffer.updateGpuBuffer(part.data.getDirtyVertices(), part.lastUsedBuffer != buffer);
+        part.lastUsedBuffer = buffer;
         part.data.getDirtyVertices().clear();
         context.dispatchSkinning(part.data.getVertexCount());
         return true;
@@ -192,7 +203,11 @@ public class BackendInstance implements AutoCloseable {
             // Every context's enter() sets default/custom uniforms, applies
             // the shader and binds the VAO (including Iris' skinned attributes).
             // Reapplying here repeats that work and can undo the OIT rebind.
-            buffer.getVertexBuffer().draw();
+            try { buffer.getVertexBuffer().draw(); }
+            finally {
+                buffer.markSubmitted();
+                if (tbo != null) tbo.markSubmitted();
+            }
         } finally {
             context.exit(shader, renderType);
         }
@@ -267,6 +282,7 @@ public class BackendInstance implements AutoCloseable {
 
     private final class RenderPart implements AutoCloseable {
         private final FlatModelData data;
+        private IVertexBuffer lastUsedBuffer;
         @Nullable
         private final CpuSkinningContext cpuContext;
         @Nullable

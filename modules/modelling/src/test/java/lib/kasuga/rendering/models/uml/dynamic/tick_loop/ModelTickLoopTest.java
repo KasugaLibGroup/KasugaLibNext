@@ -28,6 +28,32 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ModelTickLoopTest {
+    @Test
+    void renderFrameEvaluatesProceduralStagesOnceAndRetriesFailedPreparation() {
+        Fixture fixture = fixture();
+        int[] calls = {0};
+        fixture.instance().getTickLoop().addPreIk("probe", new ModelTickLoopModule() {
+            @Override public void tick(Model model, PendingTransform[] transforms, ModelTickLoop loop, float dt) {
+                if (++calls[0] == 1) throw new IllegalStateException("injected module failure");
+            }
+            @Override public void destroy(Model model) {}
+        });
+        Object frame = new Object();
+        assertThrows(IllegalStateException.class, () -> fixture.instance().prepareRenderFrame(frame));
+        fixture.instance().prepareRenderFrame(frame);
+        fixture.instance().prepareRenderFrame(frame);
+        fixture.instance().prepareRenderFrame(frame);
+        assertEquals(2,calls[0]);
+        fixture.instance().prepareRenderFrame(new Object());
+        assertEquals(3,calls[0]);
+        fixture.instance().forceUpdate();
+        Object nextFrame = new Object();
+        fixture.instance().prepareRenderFrame(nextFrame);
+        fixture.instance().forceUpdate();
+        fixture.instance().prepareRenderFrame(nextFrame);
+        assertEquals(5,calls[0]);
+    }
+
 
     @Test
     void allocatesRootAndBoneTransformsInSkeletonOrder() {

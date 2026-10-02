@@ -2,7 +2,6 @@ package lib.kasuga.rendering.models.uml.dynamic.fsm;
 
 import com.mojang.serialization.Codec;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.state.StateVar;
-import net.minecraft.resources.ResourceLocation;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -29,7 +28,7 @@ public class StateMachineBenchmark {
     private static final int STATE_COUNT = 100;
 
     private static final StateVar<Boolean> NEXT = StateVar.builder(
-            ResourceLocation.fromNamespaceAndPath("kasuga_lib", "bench/next"),
+            Id.fromNamespaceAndPath("kasuga_lib", "bench/next"),
             Boolean.class,
             Codec.BOOL
     ).defaultValue(Boolean.FALSE).ephemeral().build();

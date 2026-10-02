@@ -3,23 +3,12 @@ package lib.kasuga.rendering.models.mc.backend.vbuffer;
 import com.mojang.blaze3d.vertex.VertexBuffer;
 import lib.kasuga.mixins.client.AccessorVertexBuffer;
 import lib.kasuga.rendering.models.mc.backend.FlatModelData;
+import lib.kasuga.rendering.models.uml.framework.buffer.RenderBuffer;
 import net.minecraft.client.renderer.ShaderInstance;
-import org.jetbrains.annotations.Nullable;
-import org.joml.Matrix4f;
 
-import java.util.BitSet;
-
-public interface IVertexBuffer extends AutoCloseable {
-
+/** Minecraft/OpenGL handles layered over the host-neutral upload/draw contract. */
+public interface IVertexBuffer extends RenderBuffer<FlatModelData, ShaderInstance> {
     VertexBuffer getVertexBuffer();
-
-    FlatModelData getModelData();
-
-    void uploadGpuBuffer();
-
-    void updateGpuBuffer(@Nullable BitSet dirtyVertices, boolean forceUploadAll);
-
-    void draw(Matrix4f modelViewMatrix, Matrix4f projectionMatrix, ShaderInstance shader);
 
     default int getBufferId() {
         return ((AccessorVertexBuffer) getVertexBuffer()).getVertexBufferId();

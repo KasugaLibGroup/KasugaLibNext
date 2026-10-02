@@ -2,87 +2,60 @@ package lib.kasuga.rendering.models.uml.backend;
 
 import lib.kasuga.rendering.models.uml.bridge.Bridge;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
-import lib.kasuga.rendering.models.uml.dynamic.SkeletonInstance;
-import lib.kasuga.rendering.models.uml.util.ModelProfiler;
+import lib.kasuga.rendering.models.uml.framework.render.RenderContext;
+import lib.kasuga.rendering.models.uml.framework.render.RenderableFactory;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.Objects;
+
+/** Cached render resource owned by one backend mount; pose updates are backend-owned. */
 public abstract class BackendContext<
-        BridgeType extends Bridge,
+        BridgeType extends Bridge<BackendRenderableType>,
         BackendRenderableType,
         BackendContextType,
-        BackendTransformType> implements AutoCloseable {
-
+        BackendTransformType>
+        implements RenderContext<BackendRenderableType, BackendContextType, BackendTransformType> {
     @Getter
     private final BridgeType bridge;
-
-    private BackendRenderableType cache;
-    private long skeletonVersion;
-
     @Getter
     private final ModelInstance modelInstance;
-
-    @Setter
+    private final RenderableFactory<? extends BackendRenderableType> factory;
+    private BackendRenderableType cache;
     @Getter
-    private boolean render;
+    @Setter
+    private boolean render = true;
+    @Getter
+    private boolean closed;
 
+    /** Compatibility constructor using the bridge's legacy resource factory. */
     public BackendContext(BridgeType bridge, ModelInstance modelInstance) {
-        this.bridge = bridge;
-        this.modelInstance = modelInstance;
-        this.cache = null;
-        this.skeletonVersion = Long.MIN_VALUE;
-        this.render = true;
+        this(bridge, modelInstance, bridge);
     }
 
-    @SuppressWarnings("unchecked")
-//    @SuppressWarnings("unchecked")
+    public BackendContext(BridgeType bridge, ModelInstance modelInstance,
+                          RenderableFactory<? extends BackendRenderableType> factory) {
+        this.bridge = Objects.requireNonNull(bridge, "bridge");
+        this.modelInstance = Objects.requireNonNull(modelInstance, "modelInstance");
+        this.factory = Objects.requireNonNull(factory, "factory");
+    }
+
+    @Override
     public BackendRenderableType apply() {
-//        SkeletonInstance skeleton = modelInstance.getSkeletonInstance();
-//        long tickStart = ModelProfiler.start();
-//        skeleton.tick();
-//        if (ModelProfiler.enabled()) {
-//            ModelProfiler.record("skeleton.tick", tickStart,
-//                    "version=" + skeleton.getVersion() +
-//                            ", full=" + skeleton.isLastFullUpdate() +
-//                            ", dirtyBones=" + skeleton.getLastDirtyBones().size());
-//        }
-//        long currentVersion = skeleton.getVersion();
-//        if (cache != null && skeletonVersion == currentVersion) return cache;
-//        if (cache instanceof VersionedBackendRenderable versioned) {
-//            long updateStart = ModelProfiler.start();
-//            versioned.updateForVersion(modelInstance, bridge);
-//            if (ModelProfiler.enabled()) {
-//                ModelProfiler.record("backend.updateForVersion", updateStart,
-//                        "version=" + currentVersion);
-//            }
-//            skeletonVersion = currentVersion;
-//            return cache;
-//        }
-//        closeCache();
-//        long buildStart = ModelProfiler.start();
-        if (cache == null)
-            cache = (BackendRenderableType) bridge.apply(modelInstance);
-//        if (ModelProfiler.enabled()) {
-//            ModelProfiler.record("backend.buildRenderable", buildStart,
-//                    "version=" + currentVersion);
-//        }
-//        skeletonVersion = currentVersion;
+        if (closed) throw new IllegalStateException("Render context is closed");
+        if (cache == null) cache = Objects.requireNonNull(factory.createRenderable(modelInstance), "renderable");
         return cache;
     }
 
-    private void closeCache() {
-        if (cache instanceof AutoCloseable closeable) {
-            try {
-                closeable.close();
-            } catch (Exception ignored) {}
-        }
-        cache = null;
-    }
-
+    @Override
     public abstract BackendTransformType beforeRender(BackendContextType context);
 
     @Override
     public void close() throws Exception {
-        closeCache();
+        if (closed) return;
+        closed = true;
+        BackendRenderableType retired = cache;
+        cache = null;
+        if (retired instanceof AutoCloseable closeable) closeable.close();
     }
 }

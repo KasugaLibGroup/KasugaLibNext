@@ -80,6 +80,9 @@ public class ModelInstance implements AutoCloseable {
     private boolean shouldUpdate;
     /** Last skeleton result consumed by {@link #update()}. */
     private long flushedSkeletonVersion;
+    private long materialMorphVersion;
+    private Object preparedRenderFrame;
+    private final BitSet materialMorphChanges = new BitSet();
 
     public ModelInstance(Model model, @Nullable Transform initTransform,
                          @Nullable ModelInstanceData data,
@@ -295,13 +298,25 @@ public class ModelInstance implements AutoCloseable {
         updateAllMaterials();
     }
 
+    /** One procedural evaluation per frame; explicit mutations can request another result. */
+    public void prepareRenderFrame(Object frameToken) {
+        java.util.Objects.requireNonNull(frameToken, "frameToken");
+        if (preparedRenderFrame != frameToken || morph.isDirty() || skeletonInstance.checkShouldUpdate()
+                || skeletonInstance.getVersion() != flushedSkeletonVersion) {
+            if (checkForUpdate()) update();
+            preparedRenderFrame = frameToken;
+        }
+    }
+
     public void updateAllMaterials() {
         if (materialInstance == null) return;
-        BitSet materialSet = morph.getDirtyMaterials();
+        materialMorphVersion = morph.getMaterialChanges().collectSince(materialMorphVersion, materialMorphChanges);
+        BitSet materialSet = materialMorphChanges;
         for (int i = materialSet.nextSetBit(0); i >= 0; i = materialSet.nextSetBit(i + 1)) {
             Material mat = materialInstance.getMaterials().getMaterials()[i];
             updateMaterialFrame(mat);
             updateSpriteFrame(mat);
+            materialInstance.markMaterialDirty(mat);
         }
         materialSet.clear();
     }
@@ -344,14 +359,14 @@ public class ModelInstance implements AutoCloseable {
 
     public int updateMaterialFrame(Material material) {
         int frame = morph.getMaterialFrameIndex(material);
-        if (materialInstance == null) return frame;
+        if (materialInstance == null || frame < 0) return frame;
         materialInstance.setCurrentMatFrame(material, frame);
         return frame;
     }
 
     public int updateSpriteFrame(Material material) {
         int frame = morph.getMaterialSpriteFrame(material);
-        if (materialInstance == null) return frame;
+        if (materialInstance == null || frame < 0) return frame;
         materialInstance.setCurrentSpriteFrame(material, frame);
         return frame;
     }
