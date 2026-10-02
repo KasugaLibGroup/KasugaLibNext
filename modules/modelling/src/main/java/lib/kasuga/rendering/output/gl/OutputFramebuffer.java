@@ -8,8 +8,8 @@ import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL30;
 
 import java.util.Objects;
-import java.nio.ByteBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 
 /** RGBA8 completed-frame destination; allocation and lifetime are render-thread-owned. */
 public final class OutputFramebuffer implements FrameOutputTarget<FrameTexture> {
@@ -81,11 +81,11 @@ public final class OutputFramebuffer implements FrameOutputTarget<FrameTexture> 
 
     /** The native screen blit writes RGB only; initialize output alpha to opaque. */
     private void clearOpaque(boolean alphaOnly) {
-        float[] clear = new float[4];
-        GL11.glGetFloatv(GL11.GL_COLOR_CLEAR_VALUE, clear);
         try (var stack = MemoryStack.stackPush()) {
-            ByteBuffer mask = stack.malloc(4);
-            GL11.glGetBooleanv(GL11.GL_COLOR_WRITEMASK, mask);
+            long clear = stack.nmalloc(4, 16);
+            long mask = stack.nmalloc(1, 4);
+            GL11.nglGetFloatv(GL11.GL_COLOR_CLEAR_VALUE, clear);
+            GL11.nglGetBooleanv(GL11.GL_COLOR_WRITEMASK, mask);
             boolean scissor = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
             try {
                 GL11.glDisable(GL11.GL_SCISSOR_TEST);
@@ -93,8 +93,10 @@ public final class OutputFramebuffer implements FrameOutputTarget<FrameTexture> 
                 GL11.glClearColor(0, 0, 0, 1);
                 GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
             } finally {
-                GL11.glClearColor(clear[0], clear[1], clear[2], clear[3]);
-                GL11.glColorMask(mask.get(0) != 0, mask.get(1) != 0, mask.get(2) != 0, mask.get(3) != 0);
+                GL11.glClearColor(MemoryUtil.memGetFloat(clear), MemoryUtil.memGetFloat(clear + 4),
+                        MemoryUtil.memGetFloat(clear + 8), MemoryUtil.memGetFloat(clear + 12));
+                GL11.glColorMask(MemoryUtil.memGetByte(mask) != 0, MemoryUtil.memGetByte(mask + 1) != 0,
+                        MemoryUtil.memGetByte(mask + 2) != 0, MemoryUtil.memGetByte(mask + 3) != 0);
                 if (scissor) GL11.glEnable(GL11.GL_SCISSOR_TEST);
             }
         }

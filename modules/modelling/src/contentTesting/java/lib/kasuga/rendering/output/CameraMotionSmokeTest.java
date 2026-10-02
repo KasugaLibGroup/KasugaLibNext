@@ -58,6 +58,8 @@ public final class CameraMotionSmokeTest {
         try {
             if (replica == source || !replica.getUUID().equals(source.getUUID()))
                 throw new IllegalStateException("Player replica is not independently owned");
+            lib.kasuga.rendering.output.mc.stream.CameraEntityVisualsChecks.verifyStableBounds(
+                    mc.level, (net.minecraft.client.multiplayer.ClientLevel) source.level(), replica);
             for (float partial : new float[]{0, .25f, .75f, 1}) {
                 if (!replica.getPosition(partial).equals(source.getPosition(partial)))
                     throw new IllegalStateException("Player position lagged at " + partial + ": "

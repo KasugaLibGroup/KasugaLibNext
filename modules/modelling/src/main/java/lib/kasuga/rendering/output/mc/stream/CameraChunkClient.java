@@ -52,6 +52,7 @@ public final class CameraChunkClient {
         private final Set<Long> loaded = new HashSet<>();
         private final Map<Long, Assembly> assembling = new HashMap<>();
         private long epoch, lastRequest;
+        private long lastEntityVisualTick = Long.MIN_VALUE;
         private int x = Integer.MIN_VALUE, z = Integer.MIN_VALUE;
         private boolean subscribed, closed;
         public Session(ClientLevel main, LevelRenderer renderer, int radius) {
@@ -81,7 +82,9 @@ public final class CameraChunkClient {
             level.setGameTime(main.getGameTime()); level.setDayTime(main.getDayTime());
             level.setRainLevel(main.getRainLevel(1)); level.setThunderLevel(main.getThunderLevel(1));
             level.updateSkyBrightness();
-            CameraEntityVisuals.synchronize(level, main);
+            long tick = main.getGameTime();
+            CameraEntityVisuals.synchronize(level, main, tick != lastEntityVisualTick);
+            lastEntityVisualTick = tick;
             long now = System.nanoTime();
             if (!subscribed || now - lastRequest > 5_000_000_000L) {
                 if (!NetworkRegistry.hasChannel(Minecraft.getInstance().getConnection(), CameraChunkChannel.REQUEST.getEntry().id()))

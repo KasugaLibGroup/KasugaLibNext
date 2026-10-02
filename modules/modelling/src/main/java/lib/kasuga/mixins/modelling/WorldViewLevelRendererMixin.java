@@ -1,6 +1,7 @@
 package lib.kasuga.mixins.modelling;
 
 import lib.kasuga.rendering.output.mc.MinecraftWorldViews;
+import lib.kasuga.rendering.output.mc.ViewFrustumCache;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -31,12 +32,20 @@ abstract class WorldViewLevelRendererMixin {
     @Shadow protected abstract void applyFrustum(Frustum frustum);
     @Unique private int kasuga$originX = Integer.MIN_VALUE;
     @Unique private int kasuga$originZ = Integer.MIN_VALUE;
+    @Unique private static Boolean kasuga$sodium;
+    @Unique private final ViewFrustumCache kasuga$frustumCache = new ViewFrustumCache();
+    @Unique private boolean kasuga$frustumDirty = true;
+
+    @Unique private static boolean kasuga$hasSodium() {
+        if (kasuga$sodium == null) kasuga$sodium = ModList.get().isLoaded("sodium");
+        return kasuga$sodium;
+    }
 
     @WrapOperation(method = "renderLevel", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/LevelRenderer;setupRender(Lnet/minecraft/client/Camera;Lnet/minecraft/client/renderer/culling/Frustum;ZZ)V"), require = 1)
     private void kasuga$viewTerrain(LevelRenderer renderer, Camera camera, Frustum frustum,
                                     boolean captured, boolean spectator, Operation<Void> original) {
-        if (MinecraftWorldViews.currentView() == null || ModList.get().isLoaded("sodium") || viewArea == null) {
+        if (MinecraftWorldViews.currentView() == null || kasuga$hasSodium() || viewArea == null) {
             original.call(renderer, camera, frustum, captured, spectator);
             return;
         }
@@ -48,12 +57,16 @@ abstract class WorldViewLevelRendererMixin {
         if (x != kasuga$originX || z != kasuga$originZ) {
             viewArea.repositionCamera(position.x, position.z);
             kasuga$originX = x; kasuga$originZ = z;
+            kasuga$frustumDirty = true;
         }
         // Direct frustum checks avoid waiting for a graph rooted at a different pose.
-        visibleSections.clear();
         sectionRenderDispatcher.setCamera(position);
-        for (var section : viewArea.sections)
-            if (frustum.isVisible(section.getBoundingBox())) visibleSections.add(section);
+        if (kasuga$frustumDirty) {
+            visibleSections.clear();
+            for (var section : viewArea.sections)
+                if (frustum.isVisible(section.getBoundingBox())) visibleSections.add(section);
+            kasuga$frustumDirty = false;
+        }
     }
 
     @ModifyExpressionValue(method = "renderLevel", at = @At(value = "FIELD",
@@ -64,9 +77,12 @@ abstract class WorldViewLevelRendererMixin {
 
     @Inject(method = "prepareCullFrustum", at = @At("RETURN"))
     private void kasuga$refreshVisibility(Vec3 position, Matrix4f view, Matrix4f projection, CallbackInfo ci) {
-        // Also refresh when only the FOV/aspect changes at the same pose.
-        if (MinecraftWorldViews.currentFrameToken() != null)
-            applyFrustum(LevelRenderer.offsetFrustum(cullingFrustum));
+        if (MinecraftWorldViews.currentFrameToken() == null || kasuga$hasSodium()) return;
+        // Vanilla's own setup misses FOV/aspect changes. Detached views use the
+        // direct section-grid checks above, so avoid a second graph traversal.
+        boolean changed = kasuga$frustumCache.update(position, view, projection, viewArea);
+        if (MinecraftWorldViews.currentView() != null) kasuga$frustumDirty |= changed;
+        else if (changed) applyFrustum(LevelRenderer.offsetFrustum(cullingFrustum));
     }
 
     @Inject(method = "shouldShowEntityOutlines", at = @At("HEAD"), cancellable = true)

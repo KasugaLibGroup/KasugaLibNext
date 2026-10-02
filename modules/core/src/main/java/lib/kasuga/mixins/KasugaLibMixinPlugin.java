@@ -26,7 +26,7 @@ public class KasugaLibMixinPlugin extends ServiceMixinPlugin {
                     "modelling.WorldViewGameRendererMixin",
                     "modelling.WorldViewLevelRendererMixin",
                     "modelling.WorldViewSodiumMixin",
-                    "modelling.WorldViewShaderMixin", "modelling.WorldViewGaussianSamplerMixin",
+                    "modelling.WorldViewShaderMixin", "modelling.WorldViewGaussianSamplerMixin", "modelling.WorldViewSkyColorMixin",
                     "modelling.WorldViewMinecraftAccessor", "modelling.WorldViewNativeBuffersAccessor",
                     "modelling.WorldViewSkyBuffersAccessor", "modelling.WorldViewOutlineBuffersAccessor",
                     "modelling.WorldViewBufferPoolMixin", "modelling.WorldViewVanillaChunkJobMixin",
