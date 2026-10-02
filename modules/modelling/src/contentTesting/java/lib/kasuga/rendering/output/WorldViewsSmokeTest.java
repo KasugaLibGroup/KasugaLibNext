@@ -120,10 +120,7 @@ public final class WorldViewsSmokeTest {
             try {
                 if (IRIS) {
                     var mainPack = shaderFixture("camera-smoke-main", "0.3, 1.0, 0.3");
-                    Iris.getIrisConfig().setShaderPackName(mainPack.getFileName().toString());
-                    Iris.getIrisConfig().setShadersEnabled(true);
-                    Iris.getIrisConfig().save();
-                    Iris.reload();
+                    loadMainShaderFixture(mainPack);
                     mainIrisManager = Iris.getPipelineManager();
                     mainIrisCaptured = net.irisshaders.iris.uniforms.CapturedRenderingState.INSTANCE;
                     mainModels = mc.getModelManager(); mainTextures = mc.getTextureManager();
@@ -488,6 +485,21 @@ public final class WorldViewsSmokeTest {
             GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, read);
             GL30.glDeleteFramebuffers(framebuffer);
             RenderSystem.bindTexture(previousTexture);
+        }
+    }
+
+    private static void loadMainShaderFixture(java.nio.file.Path pack) throws Exception {
+        var configFile = Minecraft.getInstance().gameDirectory.toPath().resolve("config/iris.properties");
+        byte[] previousConfig = Files.exists(configFile) ? Files.readAllBytes(configFile) : null;
+        try {
+            Iris.getIrisConfig().setShaderPackName(pack.getFileName().toString());
+            Iris.getIrisConfig().setShadersEnabled(true);
+            Iris.getIrisConfig().save();
+            // Iris.reload() reads from disk; persist the fixture only for that call.
+            Iris.reload();
+        } finally {
+            if (previousConfig == null) Files.deleteIfExists(configFile);
+            else Files.write(configFile, previousConfig);
         }
     }
 
