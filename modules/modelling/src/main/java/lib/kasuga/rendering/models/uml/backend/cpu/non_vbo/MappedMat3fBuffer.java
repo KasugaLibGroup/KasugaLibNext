@@ -18,6 +18,7 @@ public class MappedMat3fBuffer extends MappedBuffer<Matrix3f> {
 
     @Override
     public Matrix3f getData(ByteBuffer slice) {
+        checkOpen("Buffer is closed");
         float m00 = slice.getFloat(0);
         float m01 = slice.getFloat(Float.BYTES);
         float m02 = slice.getFloat(2 * Float.BYTES);
@@ -39,6 +40,7 @@ public class MappedMat3fBuffer extends MappedBuffer<Matrix3f> {
 
     @Override
     public void writeData(Matrix3f value, int index) {
+        checkIndex(index);
         long address = super.address + (long) index * sizeOfType();
         MemoryUtil.memPutFloat(address, value.m00());
         MemoryUtil.memPutFloat(address + Float.BYTES, value.m01());

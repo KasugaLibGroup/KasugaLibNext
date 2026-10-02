@@ -17,6 +17,7 @@ public class MappedV4fBuffer extends MappedBuffer<Vector4f> {
 
     @Override
     public Vector4f getData(ByteBuffer slice) {
+        checkOpen("Buffer is closed");
         return new Vector4f(
             slice.getFloat(0),
             slice.getFloat(Float.BYTES),
@@ -27,6 +28,7 @@ public class MappedV4fBuffer extends MappedBuffer<Vector4f> {
 
     @Override
     public void writeData(Vector4f value, int index) {
+        checkIndex(index);
         long address = super.address + (long) index * sizeOfType();
         MemoryUtil.memPutFloat(address, value.x);
         MemoryUtil.memPutFloat(address + Float.BYTES, value.y);

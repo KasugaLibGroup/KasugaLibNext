@@ -1,6 +1,8 @@
 package lib.kasuga.rendering.models.uml.backend.gpu;
 
 import lib.kasuga.rendering.models.uml.backend.ElementChanges;
+import lib.kasuga.rendering.models.uml.framework.buffer.UploadBuffer;
+import lib.kasuga.rendering.models.uml.framework.buffer.UploadDevice;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL30;
@@ -19,19 +21,9 @@ import java.util.Objects;
  * Busy storage is orphaned, never overwritten or explicitly waited for. Call
  * markSubmitted after every GPU consumer, including repeated draws of unchanged data.
  */
-public final class GpuUploadRing implements AutoCloseable {
-    public interface Device {
-        default boolean orphanEveryUpload() { return false; }
-        default String strategy() { return "common-fenced-mapping"; }
-        default void uploadOrphaned(int buffer, ByteBuffer snapshot) { throw new UnsupportedOperationException(); }
-        int createBuffer();
-        void deleteBuffer(int buffer);
-        long fence();
-        boolean ready(long fence);
-        void deleteFence(long fence);
-        void allocate(int buffer, int bytes);
-        void write(int buffer, ByteBuffer snapshot, BitSet elements, int stride, int mergeGap);
-    }
+public final class GpuUploadRing implements UploadBuffer {
+    /** Compatibility name for existing host devices. */
+    public interface Device extends UploadDevice {}
 
     public record Stats(long uploads, long bytesUploaded, long storageAllocations,
                         long busyOrphans, long fencePolls, long fencesCreated, long policyOrphans) {}
@@ -42,7 +34,7 @@ public final class GpuUploadRing implements AutoCloseable {
         boolean read;
     }
 
-    private final Device device;
+    private final UploadDevice device;
     private final Slot[] slots;
     private final BitSet updates = new BitSet();
     private ElementChanges changes;
@@ -52,7 +44,7 @@ public final class GpuUploadRing implements AutoCloseable {
 
     public GpuUploadRing() { this(3, new GlDevice()); }
 
-    public GpuUploadRing(int capacity, Device device) {
+    public GpuUploadRing(int capacity, UploadDevice device) {
         if (capacity < 1) throw new IllegalArgumentException("Ring capacity must be positive");
         this.device = Objects.requireNonNull(device);
         slots = new Slot[capacity];

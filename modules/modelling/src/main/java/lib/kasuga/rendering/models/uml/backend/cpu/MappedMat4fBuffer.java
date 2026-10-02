@@ -17,6 +17,7 @@ public class MappedMat4fBuffer extends MappedBuffer<Matrix4f> {
 
     @Override
     public Matrix4f getData(ByteBuffer slice) {
+        checkOpen("Buffer is closed");
         return new Matrix4f(
                 slice.getFloat(0), slice.getFloat(Float.BYTES), slice.getFloat(2 * Float.BYTES), slice.getFloat(3 * Float.BYTES),
                 slice.getFloat(4 * Float.BYTES), slice.getFloat(5 * Float.BYTES), slice.getFloat(6 * Float.BYTES), slice.getFloat(7 * Float.BYTES),
@@ -27,6 +28,7 @@ public class MappedMat4fBuffer extends MappedBuffer<Matrix4f> {
 
     @Override
     public void writeData(Matrix4f value, int index) {
+        checkIndex(index);
         long address = super.address + (long) index * sizeOfType();
         for (int i = 0; i < 16; i++) {
             MemoryUtil.memPutFloat(address + i * Float.BYTES,

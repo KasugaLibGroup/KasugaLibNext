@@ -131,6 +131,21 @@ neoForge {
             }
         }
 
+        clientHeadless {
+            client()
+            gameDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/headless-client'))
+            systemProperty 'kasuga.headless', providers.gradleProperty('kasugaHeadlessBackend').getOrElse(
+                    System.getProperty('os.name').toLowerCase().contains('linux') ? 'egl' : 'hidden')
+            systemProperty 'kasuga.headless.fps', providers.gradleProperty('kasugaHeadlessFps').getOrElse('60')
+            systemProperty 'java.awt.headless', 'true'
+            def glfwLibrary = providers.gradleProperty('kasugaHeadlessGlfwLibrary')
+            if (glfwLibrary.isPresent()) systemProperty 'org.lwjgl.glfw.libname', file(glfwLibrary.get()).absolutePath
+            def quickPlayWorld = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (quickPlayWorld.isPresent()) programArguments.addAll '--quickPlaySingleplayer', quickPlayWorld.get()
+            def serverAddress = providers.gradleProperty('kasugaHeadlessServer')
+            if (serverAddress.isPresent()) programArguments.addAll '--quickPlayMultiplayer', serverAddress.get()
+        }
+
         clientProfile {
             client()
             gameDirectory = file('run/clientProfile')
@@ -182,6 +197,30 @@ neoForge {
             if (kasugaTestFmtModel.isPresent()) {
                 systemProperty 'kasuga.testFmtModel', kasugaTestFmtModel.get()
             }
+            def frameOutputSmoke = providers.gradleProperty('kasugaTestFrameOutput')
+            if (frameOutputSmoke.isPresent()) {
+                systemProperty 'kasuga.testFrameOutput', frameOutputSmoke.get()
+            }
+            def cameraPerformance = providers.gradleProperty('kasugaTestCameraPerformance')
+            if (cameraPerformance.isPresent()) systemProperty 'kasuga.testCameraPerformance', cameraPerformance.get()
+            def cameraMotion = providers.gradleProperty('kasugaTestCameraMotion')
+            if (cameraMotion.isPresent()) systemProperty 'kasuga.testCameraMotion', cameraMotion.get()
+            def dualCameraDebug = providers.gradleProperty('kasugaDebugDualCamera')
+            if (dualCameraDebug.isPresent()) systemProperty 'kasuga.debugDualCamera', dualCameraDebug.get()
+            def multiWindowDebug = providers.gradleProperty('kasugaDebugMultiWindow')
+            if (multiWindowDebug.isPresent()) systemProperty 'kasuga.debugMultiWindow', multiWindowDebug.get()
+            def windowSmoke = providers.gradleProperty('kasugaTestFrameWindows')
+            if (windowSmoke.isPresent()) systemProperty 'kasuga.testFrameWindows', windowSmoke.get()
+            def headlessSmoke = providers.gradleProperty('kasugaTestHeadless')
+            if (headlessSmoke.isPresent()) systemProperty 'kasuga.testHeadless', headlessSmoke.get()
+            def dualCameraCapture = providers.gradleProperty('kasugaDebugDualCameraCaptureFrames')
+            if (dualCameraCapture.isPresent()) systemProperty 'kasuga.debugDualCamera.captureFrames', dualCameraCapture.get()
+            def cameraIrisSmoke = providers.gradleProperty('kasugaTestCameraIris')
+            if (cameraIrisSmoke.isPresent()) systemProperty 'kasuga.testCameraIris', cameraIrisSmoke.get()
+            def worldViewSmoke = providers.gradleProperty('kasugaTestWorldViews')
+            if (worldViewSmoke.isPresent()) {
+                systemProperty 'kasuga.testWorldViews', worldViewSmoke.get()
+            }
             def transparencyProfile = providers.gradleProperty('kasugaProfileTransparency')
             if (transparencyProfile.isPresent()) {
                 systemProperty 'kasuga.profileTransparency', transparencyProfile.get()
@@ -223,6 +262,23 @@ neoForge {
         enable()
         testedMod = mods.named(mod_id)
     }
+}
+
+// NeoForge's splash window starts before game mixins. Disable it before launching, not after GLFW initialization.
+tasks.register('prepareHeadlessClient') {
+    def headlessDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/headless-client'))
+    doLast {
+        def config = new File(headlessDirectory, 'config/fml.toml')
+        config.parentFile.mkdirs()
+        def text = config.exists() ? config.getText('UTF-8') : ''
+        if (text =~ /(?m)^\s*earlyWindowControl\s*=/) {
+            text = text.replaceAll(/(?m)^\s*earlyWindowControl\s*=.*$/, 'earlyWindowControl = false')
+        } else text += '\nearlyWindowControl = false\n'
+        config.setText(text, 'UTF-8')
+    }
+}
+tasks.matching { it.name == 'runClientHeadless' || it.name == 'prepareClientHeadlessRun' }.configureEach {
+    dependsOn 'prepareHeadlessClient'
 }
 
 configurations {
@@ -307,8 +363,10 @@ dependencies {
     // Optional renderer integrations belong to development runs only. Keeping
     // them on localRuntime preserves the client test setup without publishing
     // the non-resolvable flatDir coordinates to downstream consumers.
-    localRuntime("libs:iris:neoforge-mc1.21.1-1.8.12")
-    localRuntime("libs:sodium:neoforge-mc1.21.1-0.6.13")
+    if (providers.gradleProperty('kasugaRendererMods').getOrElse('true').toBoolean()) {
+        localRuntime("libs:iris:neoforge-mc1.21.1-1.8.12")
+        localRuntime("libs:sodium:neoforge-mc1.21.1-0.6.13")
+    }
 }
 
 // The gameTest source set re-declares its resource dir (srcDir 'src/gameTest/resources') on top of Gradle's

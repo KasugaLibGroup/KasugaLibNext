@@ -5,6 +5,7 @@ import lib.kasuga.rendering.models.mc.backend.*;
 import lib.kasuga.rendering.models.uml.backend.BackendContext;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.math.Transform;
+import lib.kasuga.rendering.models.uml.framework.render.RenderableFactory;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -29,6 +30,11 @@ public class MCRenderableContext extends BackendContext<MCBridge, BackendInstanc
 
     public MCRenderableContext(MCBridge bridge, ModelInstance modelInstance) {
         super(bridge, modelInstance);
+    }
+
+    public MCRenderableContext(MCBridge bridge, ModelInstance modelInstance,
+                              RenderableFactory<BackendInstance> factory) {
+        super(bridge, modelInstance, factory);
     }
 
     /**

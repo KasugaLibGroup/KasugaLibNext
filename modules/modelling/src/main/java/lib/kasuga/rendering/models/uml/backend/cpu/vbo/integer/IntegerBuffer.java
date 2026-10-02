@@ -21,11 +21,13 @@ public abstract class IntegerBuffer<T> extends MappedBuffer<T> {
 
     @Override
     public T getData(ByteBuffer slice) {
+        checkOpen("Buffer is closed");
         return convertFromInt(slice.getInt(0));
     }
 
     @Override
     public void writeData(T value, int index) {
+        checkIndex(index);
         MemoryUtil.memPutInt(super.address + (long) index * sizeOfType(), convertToInt(value));
     }
 

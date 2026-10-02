@@ -75,6 +75,8 @@ public final class StandaloneRenderHarness {
             run(results, "target-resize-and-failure", suite::targetLifecycle);
             run(results, "production-transform-feedback", SkinningRegression::run);
             run(results, "fenced-upload-ring", UploadRingRegression::run);
+            run(results, "completed-frame-output", FrameOutputRegression::run);
+            run(results, "shared-preview-windows", lib.kasuga.rendering.output.gl.PreviewWindowRegression::run);
             if (results.stream().anyMatch(result -> !Boolean.TRUE.equals(result.get("passed")))) {
                 throw new AssertionError("Standalone GPU regression failed; inspect report.json");
             }

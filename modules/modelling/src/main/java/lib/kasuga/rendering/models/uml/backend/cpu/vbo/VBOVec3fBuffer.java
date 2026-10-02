@@ -19,6 +19,7 @@ public class VBOVec3fBuffer extends MappedBuffer<Vector3f> {
 
     @Override
     public Vector3f getData(ByteBuffer slice) {
+        checkOpen("Buffer is closed");
         return new Vector3f(
             slice.getFloat(0),
             slice.getFloat(Float.BYTES),
@@ -28,6 +29,7 @@ public class VBOVec3fBuffer extends MappedBuffer<Vector3f> {
 
     @Override
     public void writeData(Vector3f value, int index) {
+        checkIndex(index);
         long address = super.address + (long) index * sizeOfType();
         MemoryUtil.memPutFloat(address, value.x);
         MemoryUtil.memPutFloat(address + Float.BYTES, value.y);

@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.mc.backend.schedule;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.framework.schedule.ModelRenderScheduling;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.uml.structure.Model;
 import lib.kasuga.rendering.models.uml.structure.basic.Mesh;
@@ -19,6 +20,26 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ModelRenderSchedulerTest {
+
+    @Test
+    void compatibilityFacadeAndFrameworkSharePoliciesAndFrameMarks() {
+        ModelInstance instance = fakeInstance();
+        var scheduler = ModelRenderScheduling.scheduler();
+        try {
+            scheduler.setVisible(instance, false);
+            assertFalse(ModelRenderScheduler.shouldRender(instance));
+            ModelRenderScheduler.setMode(instance, RenderScheduleMode.VANILLA_RENDERER);
+            assertEquals(lib.kasuga.rendering.models.uml.framework.schedule.RenderScheduleMode.HOST_RENDERER,
+                    scheduler.mode(instance));
+            ModelRenderScheduler.markRenderedThisFrame(instance);
+            scheduler.flipFrame();
+            assertTrue(ModelRenderScheduler.shouldRender(instance));
+            scheduler.flipFrame();
+            assertFalse(ModelRenderScheduler.shouldRender(instance));
+        } finally {
+            scheduler.detach(instance);
+        }
+    }
 
     @Test
     void defaultModeAlwaysRenders() {
@@ -115,4 +136,3 @@ class ModelRenderSchedulerTest {
         return new ModelInstance(model, null, null, null, null, null);
     }
 }
-

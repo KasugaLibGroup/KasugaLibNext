@@ -34,6 +34,7 @@ import org.joml.Vector4f;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 
 public class MCBridge implements Bridge<BackendInstance> {
 
@@ -61,9 +62,17 @@ public class MCBridge implements Bridge<BackendInstance> {
     }
 
     @Override
-    public BackendInstance getBackendRenderable(ModelInstance instance, HashMap vertexMap, Mesh[] meshes) {
-        Backend backend = getBackends().get("mc_backend");
-        return new BackendInstance(instance, ((MCBackend) backend).getExecutor(), false);
+    public BackendInstance getBackendRenderable(ModelInstance instance, HashMap<Vertex, Vertex> vertexMap, Mesh[] meshes) {
+        Backend<?, BackendInstance, ?, ?> backend = getBackends() == null ? null : getBackends().get("mc_backend");
+        if (!(backend instanceof MCBackend mcBackend)) {
+            throw new IllegalStateException("Legacy MCBridge factory requires a registered mc_backend");
+        }
+        return createRenderable(instance, mcBackend.getExecutor());
+    }
+
+    /** Backend services are supplied explicitly; geometry conversion owns no executor. */
+    public BackendInstance createRenderable(ModelInstance instance, ExecutorService executor) {
+        return new BackendInstance(instance, executor, false);
     }
 
     public static Vector2f getUVPosition(Vector2f uv, float u0, float v0, float u1, float v1, float u2, float v2, float u3, float v3) {
