@@ -18,6 +18,10 @@ sourceSets {}
 
 useModProject(project(':modules:core'))
 useModProject(project(':modules:modelling'))
+// NeoForge source-set registration is not transitive. Keep the rendering classes in the
+// same mod class loader as their Minecraft callers in dev runs and integration tests.
+useModProject(project(':modules:render-core'))
+useModProject(project(':modules:render-opengl'))
 
 
 configurations {}
