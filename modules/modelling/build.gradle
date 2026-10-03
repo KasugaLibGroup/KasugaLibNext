@@ -24,6 +24,8 @@ repositories {
 }
 
 useModProject(project(":modules:core"))
+useModProject(project(':modules:render-core'))
+useModProject(project(':modules:render-opengl'))
 
 
 configurations {
@@ -287,6 +289,8 @@ configurations {
 
 dependencies {
     api project(":modules:shader")
+    api project(':modules:render-core')
+    api project(':modules:render-opengl')
     additionalRuntimeClasspath project(":modules:shader")
 
     implementation ("io.micronaut:micronaut-inject:4.9.10") {

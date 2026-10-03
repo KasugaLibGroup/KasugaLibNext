@@ -27,6 +27,8 @@ repositories {
 
 useModProject(project(':modules:scripting'))
 useModProject(project(':modules:modelling'))
+useModProject(project(':modules:render-core'))
+useModProject(project(':modules:render-opengl'))
 useModProject(project(':modules:core'))
 useModProject(project(':modules:create'))
 useModProject(project(':modules:data-driven'))
@@ -146,6 +148,15 @@ dependencies {
 
     api project(":modules:shader")
     shadowLibrary project(":modules:shader")
+
+    api project(':modules:render-core')
+    api project(':modules:render-opengl')
+    // useModProject embeds project classes; these parser dependencies need to
+    // be embedded separately, as they are not provided by Minecraft.
+    shadowLibrary 'de.javagl:jgltf-model:2.0.4'
+    shadowLibrary 'de.javagl:jgltf-impl-v2:2.0.4'
+    additionalRuntimeClasspath 'de.javagl:jgltf-model:2.0.4'
+    additionalRuntimeClasspath 'de.javagl:jgltf-impl-v2:2.0.4'
 
 
     implementation("cc.tweaked:cc-tweaked-$minecraft_version-forge:$cct_version")

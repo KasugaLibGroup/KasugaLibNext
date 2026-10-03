@@ -1,0 +1,98 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = mod_group_id
+version = mod_version
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    withSourcesJar()
+    withJavadocJar()
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.neoforged.net/releases' }
+    maven { url = 'https://libraries.minecraft.net' }
+}
+
+dependencies {
+    // Shared Java types only; never inherit the host projects' ModDev classpath.
+    api(project(':modules:formula')) { transitive = false }
+    api(project(':modules:utils')) { transitive = false }
+    api 'org.joml:joml:1.10.5'
+    api 'com.mojang:datafixerupper:8.0.16'
+    api 'com.google.code.gson:gson:2.10.1'
+    api 'com.google.guava:guava:32.1.2-jre'
+    implementation 'com.mojang:logging:1.2.7'
+    implementation 'org.slf4j:slf4j-api:2.0.9'
+    api 'org.apache.logging.log4j:log4j-api:2.22.1'
+    implementation 'de.javagl:jgltf-model:2.0.4'
+    implementation 'de.javagl:jgltf-impl-v2:2.0.4'
+    compileOnly 'org.jetbrains:annotations:24.1.0'
+    compileOnly 'org.projectlombok:lombok:1.18.42'
+    annotationProcessor 'org.projectlombok:lombok:1.18.42'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+abstract class CheckGraphicsApiIsolation extends DefaultTask {
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract ConfigurableFileCollection getJavaSources()
+
+    @Input
+    abstract ListProperty<String> getDependencyCoordinates()
+
+    @TaskAction
+    void verify() {
+        def forbiddenGroups = ['org.lwjgl', 'net.minecraft', 'net.neoforged', 'net.fabricmc']
+        def forbiddenProjects = [':modules:render-opengl', ':modules:modelling', ':modules:core', ':modules:library']
+        def forbidden = dependencyCoordinates.get().findAll { coordinate ->
+            def dependencyGroup = coordinate.tokenize(':').first()
+            forbiddenGroups.any { dependencyGroup == it || dependencyGroup.startsWith(it + '.') } ||
+                    forbiddenProjects.any { coordinate == "project ${it}" }
+        }
+        if (!forbidden.empty) {
+            throw new GradleException("Rendering core inherits host/API dependencies: ${forbidden}")
+        }
+        def forbiddenImports = ~/import\s+(?:static\s+)?(?:org\.lwjgl\.|net\.minecraft\.|net\.neoforged\.|net\.fabricmc\.|com\.mojang\.blaze3d\.|lib\.kasuga\.mixins\.|lib\.kasuga\.rendering\.models\.mc\.(?!util\.Direction\s*;)|lib\.kasuga\.rendering\.models\.uml\.backend\.(?:gpu|cpu)\.|lib\.kasuga\.rendering\.output\.(?:gl|mc)\.)/
+        def violations = javaSources.files.findAll { it.text =~ forbiddenImports }
+        if (!violations.empty) {
+            throw new GradleException("Rendering core imports concrete host/API types: ${violations}")
+        }
+    }
+}
+
+// Declare only serializable inputs; this also works with configuration caching.
+def graphicsApiIsolation = tasks.register('checkGraphicsApiIsolation', CheckGraphicsApiIsolation) {
+    group = 'verification'
+    description = 'Checks that the portable rendering module has no graphics API or Minecraft dependencies.'
+    javaSources.from(sourceSets.main.allJava)
+    [configurations.compileClasspath, configurations.runtimeClasspath].each { configuration ->
+        dependencyCoordinates.addAll(configuration.incoming.artifacts.resolvedArtifacts.map { artifacts ->
+            artifacts.collect { artifact ->
+                def id = artifact.id.componentIdentifier
+                id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier
+                        ? "${id.group}:${id.module}:${id.version}".toString() : id.displayName
+            }
+        })
+    }
+}
+
+tasks.named('compileJava') { dependsOn graphicsApiIsolation }
+tasks.named('check') { dependsOn graphicsApiIsolation }
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) { from components.java }
+    }
+}
