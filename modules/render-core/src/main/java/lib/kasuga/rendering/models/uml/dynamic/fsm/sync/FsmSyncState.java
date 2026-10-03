@@ -4,7 +4,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Client-side per-key version bookkeeping for {@link lib.kasuga.rendering.models.mc.dynamic.fsm.sync.FsmSyncClient FsmSyncClient}. Tracks the <em>server</em>
+ * Client-side per-key version bookkeeping for the host's FSM sync client. Tracks the <em>server</em>
  * version last applied — deliberately not the client machine's own version, which local ticking
  * pollutes — so stale or duplicate packets can be dropped. {@code force} packets (heartbeat replays)
  * bypass the check.
@@ -31,7 +31,7 @@ public final class FsmSyncState {
     }
 
     /**
-     * Reset the version record for a key — invoked on {@link lib.kasuga.rendering.models.mc.dynamic.fsm.sync.FsmSyncClient#bind FsmSyncClient#bind} so a rebuilt
+     * Reset the version record for a key — invoked when the host rebinds so a rebuilt
      * machine whose server version rolled back is never permanently rejected.
      */
     public void clear(FsmSyncKey key) {

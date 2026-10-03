@@ -2,6 +2,10 @@ package lib.kasuga.rendering.models.mc.util;
 
 import org.joml.Vector3f;
 
+/**
+ * Pure axis directions. The historic package name is retained for caller
+ * compatibility; this type has no Minecraft or graphics API dependency.
+ */
 public enum Direction {
 
     NORTH, SOUTH, EAST, WEST, UP, DOWN;

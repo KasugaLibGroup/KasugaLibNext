@@ -43,6 +43,8 @@ tasks.register('renderingReleaseCheck') {
             gradle.includedBuild('gradle-plugin').task(':test'),
             ':modules:shader:test',
             ':modules:shader:assemble',
+            ':modules:render-core:assemble',
+            ':modules:render-opengl:assemble',
             ':modules:modelling:modelUnitTest',
             ':modules:modelling:compileContentTestingJava',
             ':modules:modelling:jar',

@@ -1,30 +1,18 @@
-package lib.kasuga.rendering.models.uml.backend.gpu;
+package lib.kasuga.rendering.models.uml.framework.buffer;
 
 import lib.kasuga.rendering.models.uml.backend.ElementChanges;
-import lib.kasuga.rendering.models.uml.framework.buffer.UploadBuffer;
-import lib.kasuga.rendering.models.uml.framework.buffer.UploadDevice;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL15;
-import org.lwjgl.opengl.GL30;
-import org.lwjgl.opengl.GL31;
-import org.lwjgl.opengl.GL32;
-import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
-import java.nio.FloatBuffer;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Objects;
 
 /**
- * Single-context, render-thread upload ring using only OpenGL 3.2 facilities.
+ * Backend-independent upload ring. The supplied device owns all API operations.
  * Busy storage is orphaned, never overwritten or explicitly waited for. Call
  * markSubmitted after every GPU consumer, including repeated draws of unchanged data.
  */
-public final class GpuUploadRing implements UploadBuffer {
-    /** Compatibility name for existing host devices. */
-    public interface Device extends UploadDevice {}
-
+public final class UploadRing implements UploadBuffer {
     public record Stats(long uploads, long bytesUploaded, long storageAllocations,
                         long busyOrphans, long fencePolls, long fencesCreated, long policyOrphans) {}
 
@@ -42,9 +30,7 @@ public final class GpuUploadRing implements UploadBuffer {
     private boolean closed;
     private long uploads, bytesUploaded, allocations, orphans, polls, fences, policyOrphans;
 
-    public GpuUploadRing() { this(3, new GlDevice()); }
-
-    public GpuUploadRing(int capacity, UploadDevice device) {
+    public UploadRing(int capacity, UploadDevice device) {
         if (capacity < 1) throw new IllegalArgumentException("Ring capacity must be positive");
         this.device = Objects.requireNonNull(device);
         slots = new Slot[capacity];
@@ -59,12 +45,6 @@ public final class GpuUploadRing implements UploadBuffer {
     /** A complete snapshot; input position and limit are preserved. */
     public int upload(ByteBuffer snapshot) {
         return upload(snapshot, null, Math.max(1, snapshot.remaining()), 0, true);
-    }
-
-    public int upload(FloatBuffer snapshot) {
-        if (!snapshot.isDirect()) throw new IllegalArgumentException("Direct snapshot required");
-        return upload(MemoryUtil.memByteBuffer(MemoryUtil.memAddress(snapshot),
-                Math.multiplyExact(snapshot.remaining(), Float.BYTES)));
     }
 
     /**
@@ -137,8 +117,8 @@ public final class GpuUploadRing implements UploadBuffer {
                 if (capacity > Integer.MAX_VALUE / 2) { capacity = length; break; }
                 capacity *= 2;
             }
-            // glBufferData replaces the data store. Pending draws keep the old
-            // store alive in the driver; deleting a sync does not cancel GPU work.
+            // The device replaces storage without invalidating pending reads.
+            // Retiring its completion token must not cancel submitted work.
             device.allocate(slot.buffer, capacity);
             slot.capacity = capacity; slot.layout = -1; allocations++;
             if (busy) orphans++;
@@ -197,49 +177,4 @@ public final class GpuUploadRing implements UploadBuffer {
         if (failure != null) throw failure;
     }
 
-    /** COPY_WRITE avoids VAO changes and Minecraft's cached ARRAY_BUFFER binding. */
-    public static class GlDevice implements Device {
-        @Override public int createBuffer() { return GL15.glGenBuffers(); }
-        @Override public void deleteBuffer(int buffer) { GL15.glDeleteBuffers(buffer); }
-        @Override public long fence() { return GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0); }
-        @Override public boolean ready(long fence) {
-            int result = GL32.glClientWaitSync(fence, 0, 0L);
-            if (result == GL32.GL_WAIT_FAILED) throw new IllegalStateException("Upload fence poll failed");
-            return result == GL32.GL_ALREADY_SIGNALED || result == GL32.GL_CONDITION_SATISFIED;
-        }
-        @Override public void deleteFence(long fence) { GL32.glDeleteSync(fence); }
-        @Override public void allocate(int buffer, int bytes) {
-            int previous = GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER);
-            try {
-                GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, buffer);
-                GL15.glBufferData(GL31.GL_COPY_WRITE_BUFFER, bytes, GL15.GL_STREAM_DRAW);
-            } finally { GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, previous); }
-        }
-        @Override public void write(int buffer, ByteBuffer snapshot, BitSet elements, int stride, int gap) {
-            if (elements.isEmpty()) return;
-            int previous = GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER);
-            try {
-                GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, buffer);
-                int first = elements.nextSetBit(0) * stride;
-                int length = elements.length() * stride - first;
-                // The ring has already retired or orphaned this store. Let the
-                // CPU write it without a second, implicit driver synchronization.
-                ByteBuffer mapped = GL30.glMapBufferRange(GL31.GL_COPY_WRITE_BUFFER, first, length,
-                        GL30.GL_MAP_WRITE_BIT | GL30.GL_MAP_UNSYNCHRONIZED_BIT);
-                if (mapped == null) throw new IllegalStateException("Cannot map upload buffer");
-                try {
-                    for (int start = elements.nextSetBit(0); start >= 0;) {
-                        int end = elements.nextClearBit(start), next = elements.nextSetBit(end);
-                        while (next >= 0 && next - end <= gap) { end = elements.nextClearBit(next); next = elements.nextSetBit(end); }
-                        MemoryUtil.memCopy(MemoryUtil.memAddress(snapshot) + (long) start * stride,
-                                MemoryUtil.memAddress(mapped) + (long) start * stride - first, (long) (end - start) * stride);
-                        start = next;
-                    }
-                } finally {
-                    if (!GL15.glUnmapBuffer(GL31.GL_COPY_WRITE_BUFFER))
-                        throw new IllegalStateException("Upload buffer contents lost while unmapping");
-                }
-            } finally { GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, previous); }
-        }
-    }
 }
