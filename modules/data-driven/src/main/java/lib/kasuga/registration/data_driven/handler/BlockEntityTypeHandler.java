@@ -6,6 +6,7 @@ import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.data_driven.TypeHandler;
 import lib.kasuga.registration.data_driven.context.BuildContext;
 import lib.kasuga.registration.data_driven.context.RegBuildContext;
+import lib.kasuga.registration.data_driven.dedup.EffectiveId;
 import lib.kasuga.registration.factory.FactoryRegistry;
 import net.minecraft.world.level.block.Block;
 import org.slf4j.Logger;
@@ -20,7 +21,7 @@ public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
     public String getTypeName() { return "block_entities"; }
 
     @Override
-    public int getPhase() { return 2; }
+    public int getPhase() { return PHASE_EMBEDDED; }
 
     @Override
     public String getParentTypeName() { return "blocks"; }
@@ -48,6 +49,21 @@ public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
         );
     }
 
+    /**
+     * A block entity has no id of its own in JSON: the loader keys it by the host block's id, so two
+     * block-entity entries sharing a parent block are duplicates. The parent id is normalized with
+     * {@link EffectiveId} so an explicit {@code minecraft:} prefix collides with a bare id, exactly as
+     * it does for the parent block itself.
+     *
+     * @param modId      the owning mod's id, used for parent ids without their own namespace
+     * @param definition the parsed block-entity definition
+     * @return the effective id of the host block
+     */
+    @Override
+    public String resolveIdentity(String modId, BlockEntityDef definition) {
+        return EffectiveId.of(modId, definition.parentBlockId());
+    }
+
     @Override
     public void apply(BlockEntityDef definition, BuildContext baseContext) {
         RegBuildContext context = (RegBuildContext) baseContext;
@@ -72,12 +88,12 @@ public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
         try {
             Reg<?, ?> beReg = factory.create(beName, () -> new Block[]{blockReg.getEntry()}, definition.params());
             blockReg.addChild(beReg);
-            context.putReg("block_entities", parentBlockId, beReg);
-            LOGGER.info("[BlockEntityHandler] BE '{}' attached to block '{}'", beName, parentBlockId);
+            context.putReg(getTypeName(), parentBlockId, beReg);
+            LOGGER.debug("Attached block entity '{}' to block '{}'", beName, parentBlockId);
         } catch (Exception e) {
             LOGGER.warn("Failed to apply block entity for '{}': {}",
                 parentBlockId, e.getMessage());
-            LOGGER.debug("Full stacktrace:", e);
+            LOGGER.debug("Full stack trace", e);
         }
     }
 }

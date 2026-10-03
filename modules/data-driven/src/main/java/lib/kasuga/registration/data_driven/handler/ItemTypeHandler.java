@@ -16,7 +16,7 @@ public class ItemTypeHandler extends RegTypeHandler<ItemDef> {
     public String getTypeName() { return "items"; }
 
     @Override
-    public int getPhase() { return 1; }
+    public int getPhase() { return PHASE_CONTENT; }
 
     @Override
     public ItemDef parse(JsonObject json) {
@@ -32,6 +32,11 @@ public class ItemTypeHandler extends RegTypeHandler<ItemDef> {
     @Override
     protected String resolveRawId(ItemDef definition) {
         return definition.id();
+    }
+
+    @Override
+    protected String resolveType(ItemDef definition) {
+        return definition.type();
     }
 
     @Override

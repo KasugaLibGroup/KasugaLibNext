@@ -1,0 +1,14 @@
+{
+  "sources": [
+    "kasuga_lib_content/block_entities.json",
+    "kasuga_lib_content/blocks.json",
+    "kasuga_lib_content/edge_cases_blocks.json",
+    "kasuga_lib_content/edge_cases_groups.json",
+    "kasuga_lib_content/groups.json",
+    "kasuga_lib_content/inheritance_blocks.json",
+    "kasuga_lib_content/inheritance_groups.json",
+    "kasuga_lib_content/items.json",
+    "kasuga_lib_content/sourced_blocks.json",
+    "kasuga_lib_content/sourced_items.json"
+  ]
+}

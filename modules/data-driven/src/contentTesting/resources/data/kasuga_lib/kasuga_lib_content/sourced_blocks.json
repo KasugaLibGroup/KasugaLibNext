@@ -1,0 +1,6 @@
+{
+  "blocks": [
+    { "id": "kasuga_lib:sourced_block_a", "type": "simple_block", "registry_group": "kasuga_lib:data_driven_group" },
+    { "id": "kasuga_lib:sourced_block_b", "type": "simple_block", "registry_group": "kasuga_lib:data_driven_group" }
+  ]
+}

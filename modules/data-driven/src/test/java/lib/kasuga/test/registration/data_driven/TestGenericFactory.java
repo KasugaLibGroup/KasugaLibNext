@@ -56,7 +56,7 @@ public class TestGenericFactory  {
 
             @Override
             public int getPhase(){
-                return 0;
+                return PHASE_GROUPS;
             }
 
             @Override
