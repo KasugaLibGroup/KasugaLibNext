@@ -33,6 +33,9 @@ background shader preparation and schema-driven runtime parameters.
 See [doc/EFFECT_RENDERING.md](doc/EFFECT_RENDERING.md) for the API behavior, examples and the GLSL-to-Java
 Shader DSL guide.
 
+Camera movement, rotation, zoom and keyframe playback are documented in
+[doc/camera-animation.md](doc/camera-animation.md).
+
 Run the focused release gate with:
 
 ```bash

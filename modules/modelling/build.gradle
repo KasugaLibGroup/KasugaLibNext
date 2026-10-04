@@ -207,6 +207,8 @@ neoForge {
             if (cameraPerformance.isPresent()) systemProperty 'kasuga.testCameraPerformance', cameraPerformance.get()
             def cameraMotion = providers.gradleProperty('kasugaTestCameraMotion')
             if (cameraMotion.isPresent()) systemProperty 'kasuga.testCameraMotion', cameraMotion.get()
+            def cameraAnimation = providers.gradleProperty('kasugaTestCameraAnimation')
+            if (cameraAnimation.isPresent()) systemProperty 'kasuga.testCameraAnimation', cameraAnimation.get()
             def dualCameraDebug = providers.gradleProperty('kasugaDebugDualCamera')
             if (dualCameraDebug.isPresent()) systemProperty 'kasuga.debugDualCamera', dualCameraDebug.get()
             def multiWindowDebug = providers.gradleProperty('kasugaDebugMultiWindow')
