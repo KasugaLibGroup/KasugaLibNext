@@ -33,4 +33,11 @@ public record MmdModelData(PmxHeader header, PmxTail tail, Vector3f modelScale,
     public boolean isMeshTriangles() {
         return true;
     }
+
+    @Override
+    public void configureSkeleton(lib.kasuga.rendering.models.uml.structure.skeleton.Skeleton skeleton) {
+        new lib.kasuga.rendering.models.uml.loaders.SkeletonDynamicsBuilder(skeleton)
+                .read(this, new lib.kasuga.rendering.models.uml.typo.miku_miku_dance.MmdSkeletonDynamicsReader())
+                .attach();
+    }
 }

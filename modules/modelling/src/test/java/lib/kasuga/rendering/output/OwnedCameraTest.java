@@ -2,6 +2,8 @@ package lib.kasuga.rendering.output;
 
 import lib.kasuga.rendering.output.camera.CameraState;
 import lib.kasuga.rendering.output.camera.OwnedCamera;
+import lib.kasuga.rendering.output.camera.CameraAnimationClip;
+import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -58,5 +60,44 @@ class OwnedCameraTest {
         OwnedCamera b = new OwnedCamera("test:b", () -> POSE, new Producer(), new Output(), () -> {}, () -> {});
         a.updatePose(new WorldCameraView(8, 9, 10, 0, 0, 0, 70, 320, 180)); a.close();
         assertEquals(CameraState.READY, b.state()); assertEquals(POSE, b.samplePose()); b.close();
+    }
+
+    @Test void directControlsCaptureAnimationAndKeepOtherPoseComponents() throws Exception {
+        var camera = new OwnedCamera("test:controls", () -> POSE, new Producer(), new Output(), () -> {}, () -> {});
+        camera.animation().play(CameraAnimationClip.builder(Id.parse("test:move"), 1)
+                .move(0, 1, 2, 3, null).move(1, 11, 2, 3, null).build(), false);
+        camera.tick(.5f);
+        assertEquals(3.5, camera.samplePose(.5f).x());
+        camera.moveBy(2, 3, 4);
+        assertEquals(8, camera.pose().x()); assertEquals(5, camera.pose().y()); assertEquals(7, camera.pose().z());
+        assertNull(camera.animation().currentClip());
+        camera.rotateTo(30, 10, 20); camera.rotateBy(5, -2, 1); camera.zoom(2);
+        assertEquals(35, camera.pose().yaw()); assertEquals(8, camera.pose().pitch()); assertEquals(21, camera.pose().roll());
+        assertEquals(POSE.zoom(2).verticalFov(), camera.pose().verticalFov());
+        camera.setVerticalFov(60); camera.moveTo(9, 8, 7);
+        assertEquals(new WorldCameraView(9, 8, 7, 35, 8, 21, 60, 320, 180), camera.pose());
+        camera.close();
+    }
+
+    @Test void cameraPauseAndCloseGovernItsAnimationClockAndRetainedController() throws Exception {
+        var camera = new OwnedCamera("test:clock", () -> POSE, new Producer(), new Output(), () -> {}, () -> {});
+        var animation = camera.animation();
+        animation.play(CameraAnimationClip.builder(Id.parse("test:clock"), 1)
+                .move(0, 1, 2, 3, null).move(1, 11, 2, 3, null).build(), true);
+        camera.tick(.25f); camera.pause(); camera.tick(.5f);
+        assertEquals(.25, animation.currentTime());
+        camera.resume(); camera.tick(.25f); assertEquals(.5, animation.currentTime());
+        camera.close();
+        assertThrows(IllegalStateException.class, animation::resume);
+        assertThrows(IllegalStateException.class, () -> camera.moveBy(1, 0, 0));
+    }
+
+    @Test void invalidDirectControlLeavesTheCurrentAnimationIntact() throws Exception {
+        var camera = new OwnedCamera("test:invalid", () -> POSE, new Producer(), new Output(), () -> {}, () -> {});
+        var clip = CameraAnimationClip.builder(Id.parse("test:clip"), 1).zoom(0, 2, null).build();
+        camera.animation().play(clip, true);
+        assertThrows(IllegalArgumentException.class, () -> camera.zoom(0));
+        assertSame(clip, camera.animation().currentClip());
+        assertEquals(CameraState.READY, camera.state()); camera.close();
     }
 }

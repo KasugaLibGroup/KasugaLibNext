@@ -8,7 +8,7 @@ import org.joml.Vector3f;
 import java.util.Objects;
 
 /**
- * Writes a world-space position target for one PMX IK controller into the
+ * Writes a world-space position target for one named skeleton IK chain into the
  * skeleton as a transient, single-tick target. Mounted pre-IK via
  * {@code loop.addPreIk(...)}; the IK stage consumes (and the next tick's
  * preamble clears) whatever this module publishes.

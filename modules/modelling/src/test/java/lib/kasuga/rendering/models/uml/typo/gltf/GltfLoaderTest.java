@@ -125,14 +125,14 @@ class GltfLoaderTest {
                     assertTrue(ragdoll.bodies().stream().allMatch(body -> body.source().linearDamping() == 0f
                                     && body.source().angularDamping() == 0f),
                             name + " profile bodies must preserve gravity-driven free fall");
-                    Map<Integer, Integer> configuredParents = new java.util.HashMap<>();
+                    Map<lib.kasuga.rendering.models.uml.structure.skeleton.Bone, lib.kasuga.rendering.models.uml.structure.skeleton.Bone> configuredParents = new java.util.HashMap<>();
                     config.profile().bodies().forEach(body ->
-                            configuredParents.put(body.rigidBodyIndex(), body.parentRigidBodyIndex()));
+                            configuredParents.put(((GltfModelData) model.getModelData()).boneByNode().get(body.rigidBodyIndex()), ((GltfModelData) model.getModelData()).boneByNode().get(body.parentRigidBodyIndex())));
                     for (var joint : ragdoll.joints()) {
-                        int child = ((lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll.Body)
-                                joint.bodyB()).source().boneIndex();
-                        int parent = ((lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll.Body)
-                                joint.bodyA()).source().boneIndex();
+                        var child = ((lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll.Body)
+                                joint.bodyB()).bone();
+                        var parent = ((lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll.Body)
+                                joint.bodyA()).bone();
                         assertEquals(configuredParents.get(child), parent,
                                 name + " must use the configured humanoid parent for body " + child);
                     }
@@ -152,8 +152,8 @@ class GltfLoaderTest {
                     // affine delta of their nearest physical ancestor; a TR-only
                     // approximation creates the characteristic torn face and open seams.
                     var head = ragdoll.bodies().stream()
-                            .filter(body -> body.source().boneIndex()
-                                    == (name.equals("maribel") ? 86 : 35))
+                            .filter(body -> body.bone()
+                                    == ((GltfModelData) model.getModelData()).boneByNode().get(name.equals("maribel") ? 86 : 35))
                             .findFirst().orElseThrow();
                     assertTrue(ragdoll.applyAngularImpulse(head, new org.joml.Vector3f(0.2f, 0.3f, -0.15f)));
                     for (int step = 0; step < 12; step++) ragdoll.step(1f / 120f);

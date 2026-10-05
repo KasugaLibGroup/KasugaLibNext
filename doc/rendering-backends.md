@@ -76,16 +76,10 @@ macOS TBO 的 orphan 策略继续由 OpenGL 模块中的 `MacTboUploadDevice` �
 `T` 由后端定义。`FrameTexture` 是 OpenGL 的 framebuffer/texture 载体，属于
 OpenGL 模块；其他 API 应提供自己的输出载体和 target。
 
-## 接入其他 API
+## 适配边界
 
-1. 新建独立 Java 后端模块，仅依赖 `render-core` 和目标 API 的绑定。
-2. 实现 `RenderBackend` / `RenderContext`，或扩展默认 `Backend` / `BackendContext`。
-   模型、骨骼及姿态数据直接从现有 `ModelInstance` 读取；适配器负责目标 API 的
-   顶点布局、骨骼数据表示、shader、同步和提交。
-3. 由宿主注入对应后端及宿主帧上下文。`ModelPipeLine.Builder` 已支持注册后端；
-   默认实现可扩展 `Backend`，独立的 `RenderBackend` 实现也可直接挂载模型实例。
-4. 实现 `FrameOutputTarget<YourFrame>`，复用核心输出路由和摄像机生命周期。
-5. 在宿主适配层处理窗口、资源重载、渲染阶段以及其他平台互操作。
+新后端实现自己的资源表示、shader、同步与提交；窗口、宿主事件和互操作留在宿主适配层。
+扩展步骤见 [API reference](../api/rendering-backends.md)。
 
 现有公共类名保留，以维持调用和序列化名称兼容。因此部分 GL 类仍使用历史上的
 `uml.backend.gpu` 包名，纯数学 `Direction` 也保留历史 `models.mc.util` 包名。

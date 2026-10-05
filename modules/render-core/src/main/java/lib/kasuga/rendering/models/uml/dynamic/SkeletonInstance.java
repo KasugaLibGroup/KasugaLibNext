@@ -11,11 +11,11 @@ import lib.kasuga.rendering.models.uml.structure.skeleton.Anchor;
 import lib.kasuga.rendering.models.uml.structure.skeleton.Bone;
 import lib.kasuga.rendering.models.uml.structure.skeleton.Skeleton;
 import lib.kasuga.rendering.models.uml.structure.skeleton.data.SkeletonInstanceData;
-import lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.bone.IKLimitation;
+import lib.kasuga.rendering.models.uml.dynamic.ik.CalikoIkSolver;
+import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics.IkChain;
+import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics.TargetMode;
 import lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.bone.ParentBoneInherit;
 import lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.bone.PmxBone;
-import lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.bone.PmxIKBone;
-import lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.bone.PmxIKChain;
 import lib.kasuga.structure.Pair;
 import lombok.Getter;
 import lombok.NonNull;
@@ -41,8 +41,8 @@ public class SkeletonInstance {
     private final HashMap<Bone, Transform> ikTransforms;
     private final HashMap<Bone, Transform> physicsTransforms;
     private final HashMap<String, Boolean> ikEnabled;
-    private final HashMap<Bone, IkTarget> ikTargets;
-    private final HashMap<Bone, IkTarget> frameIkTargets;
+    private final HashMap<String, IkTarget> ikTargets;
+    private final HashMap<String, IkTarget> frameIkTargets;
     private final Set<Bone> dirtyBones;
     private Set<Bone> lastDirtyBones;
 
@@ -66,28 +66,7 @@ public class SkeletonInstance {
     private final Matrix4f fixedAxisMatrixScratch = new Matrix4f();
     private final Matrix4f anchorDeltaScratch = new Matrix4f();
     private final Matrix4f anchorBlendScratch = new Matrix4f();
-    private final Vector3f ikTargetPositionScratch = new Vector3f();
-    private final Vector3f ikLinkPositionScratch = new Vector3f();
-    private final Vector3f ikEffectorPositionScratch = new Vector3f();
-    private final Vector3f ikEffectorDirectionScratch = new Vector3f();
-    private final Vector3f ikTargetDirectionScratch = new Vector3f();
-    private final Vector3f ikAxisScratch = new Vector3f();
-    private final Quaternionf ikWorldDeltaScratch = new Quaternionf();
-    private final Quaternionf ikWorldRotationScratch = new Quaternionf();
-    private final Quaternionf ikLocalDeltaScratch = new Quaternionf();
-    private final Vector3f ikEulerScratch = new Vector3f();
-    private final Vector3f ikDirectionScratch = new Vector3f();
-    private final Matrix4f ikMatrixScratch = new Matrix4f();
-
-    /**
-     * bone → IK controllers whose chain includes this bone. MMD semantics:
-     * while such a controller's IK is enabled, the link bones are driven by the
-     * IK solver alone — authored pose rotations (e.g. VMD thigh keyframes) are
-     * ignored, otherwise a motion that animates both the IK target and the thigh
-     * directly would double-drive the leg. Built lazily from PMX IK data.
-     */
-    private Map<Bone, List<Bone>> ikLinksByBone;
-    private boolean ikLinksBuilt;
+    private final CalikoIkSolver ikSolver;
 
     /**
      * Bumped by every pose-input mutation (bone locals, root, IK targets,
@@ -138,6 +117,15 @@ public class SkeletonInstance {
         this.fullUpdateRequested = true;
         this.lastFullUpdate = true;
         this.version = 0;
+        this.ikSolver = new CalikoIkSolver(skeleton, new CalikoIkSolver.PoseAccess() {
+            public Transform absolute(Bone bone) { return absoluteTransforms.get(bone); }
+            public Transform correction(Bone bone) {
+                return ikTransforms.computeIfAbsent(bone, ignored -> new Transform());
+            }
+            public Vector3f target(IkChain chain) { return ikTargetPosition(chain); }
+            public boolean enabled(String name) { return isIkEnabled(name); }
+            public void refresh(Bone driver, Bone endpoint) { evaluateHierarchyFrom(driver, endpoint); }
+        });
         updateTransform();
     }
 
@@ -165,8 +153,12 @@ public class SkeletonInstance {
         Set<Bone> updatedBones = collectUpdatedBones();
         if (solveIk) ikTransforms.clear();
         evaluateHierarchy();
-        if (solveIk) solvePmxIk();
-        lastFullUpdate = fullUpdateRequested || updatedBones.isEmpty();
+        if (solveIk) {
+            ikSolver.solve();
+            if (!skeleton.getDynamics().ikChains().isEmpty()) evaluateHierarchy();
+        }
+        lastFullUpdate = fullUpdateRequested || updatedBones.isEmpty()
+                || solveIk && !skeleton.getDynamics().ikChains().isEmpty();
         lastDirtyBones = lastFullUpdate ? Collections.emptySet() : updatedBones;
         dirtyBones.clear();
         fullUpdateRequested = false;
@@ -455,8 +447,7 @@ public class SkeletonInstance {
     }
 
     public boolean setIkEnabled(String boneName, boolean enabled) {
-        Bone bone = skeleton.getBoneMap().get(boneName);
-        if (bone == null || !(bone.getBoneData() instanceof PmxBone pmx) || pmx.ik == null) return false;
+        if (ikController(boneName) == null) return false;
         ikEnabled.put(boneName, enabled);
         requestFullUpdate();
         return true;
@@ -472,18 +463,16 @@ public class SkeletonInstance {
         return ikEnabled.getOrDefault(boneName, true);
     }
 
-    /** Sets a persistent world-space target for a PMX IK controller. */
+    /** Sets a persistent world-space target for a named IK chain. */
     public boolean setIkTarget(String controllerBone, Vector3f worldTarget, float weight) {
-        Bone bone = ikController(controllerBone);
-        if (bone == null) return false;
-        ikTargets.put(bone, ikTarget(worldTarget, weight));
+        if (ikController(controllerBone) == null) return false;
+        ikTargets.put(controllerBone, ikTarget(worldTarget, weight));
         requestFullUpdate();
         return true;
     }
 
     public boolean clearIkTarget(String controllerBone) {
-        Bone bone = skeleton.getBoneMap().get(controllerBone);
-        if (bone == null || ikTargets.remove(bone) == null) return false;
+        if (ikTargets.remove(controllerBone) == null) return false;
         requestFullUpdate();
         return true;
     }
@@ -496,21 +485,48 @@ public class SkeletonInstance {
 
     /** Sets an IK target valid only for the current pose-pipeline evaluation. */
     public boolean setFrameIkTarget(String controllerBone, Vector3f worldTarget, float weight) {
-        Bone bone = ikController(controllerBone);
-        if (bone == null) return false;
-        frameIkTargets.put(bone, ikTarget(worldTarget, weight));
+        if (ikController(controllerBone) == null) return false;
+        frameIkTargets.put(controllerBone, ikTarget(worldTarget, weight));
+        requestFullUpdate();
         return true;
     }
 
     /** Called by the model pose pipeline before its BEFORE_IK effectors. */
     public void clearFrameIkTargets() {
+        if (frameIkTargets.isEmpty()) return;
         frameIkTargets.clear();
+        requestFullUpdate();
     }
 
-    private Bone ikController(String name) {
-        Bone bone = skeleton.getBoneMap().get(name);
-        return bone != null && bone.getBoneData() instanceof PmxBone pmx && pmx.ik != null
-                ? bone : null;
+    private IkChain ikController(String name) {
+        return skeleton.getDynamics().chainsByName().get(name);
+    }
+
+    /** Diagnostics distinguish an unreachable/limited target from a satisfied solve. */
+    public Map<String, CalikoIkSolver.SolveResult> ikSolveResults() { return ikSolver.results(); }
+
+    private Vector3f ikTargetPosition(IkChain chain) {
+        Vector3f target = absoluteTransforms.get(chain.controller()).getPosition();
+        IkTarget override = frameIkTargets.getOrDefault(chain.name(), ikTargets.get(chain.name()));
+        if (chain.targetMode() == TargetMode.DIRECTION && override == null) {
+            Bone base = chain.links().getFirst().bone();
+            Vector3f direction = skeleton.getBindingAbsolute(chain.effector()).getPosition()
+                    .sub(skeleton.getBindingAbsolute(base).getPosition());
+            Quaternionf rotation = absoluteTransforms.get(chain.controller()).getRotation()
+                    .mul(skeleton.getBindingAbsolute(chain.controller()).getRotation().invert());
+            rotation.transform(direction);
+            float length = absoluteTransforms.get(chain.effector()).getPosition()
+                    .distance(absoluteTransforms.get(base).getPosition());
+            if (direction.lengthSquared() > 1e-12f) direction.normalize().mul(length);
+            return absoluteTransforms.get(base).getPosition().add(direction);
+        }
+        if (override != null) {
+            Vector3f local = new Vector3f(override.position);
+            if (floatingOriginEnabled) local.set((float) ((double) local.x - worldOrigin.x),
+                    (float) ((double) local.y - worldOrigin.y), (float) ((double) local.z - worldOrigin.z));
+            target.lerp(local, override.weight);
+        }
+        return target;
     }
 
     private static IkTarget ikTarget(Vector3f target, float weight) {
@@ -599,32 +615,15 @@ public class SkeletonInstance {
 
     /**
      * Whether this bone is a link of at least one IK controller whose IK is
-     * currently enabled. Chain membership is derived once from PMX data; the
+     * currently enabled. Chain membership comes from the shared reverse mapping; the
      * enable check is a per-frame map lookup (IK enable defaults to true, per
-     * MMD). Non-PMX skeletons and non-link bones always return false.
+     * MMD). Chains may opt into this authored-pose replacement behavior.
      */
     private boolean isIkDriven(Bone bone) {
-        if (!ikLinksBuilt) buildIkLinks();
-        List<Bone> controllers = ikLinksByBone.get(bone);
-        if (controllers == null || controllers.isEmpty()) return false;
-        for (Bone controller : controllers) {
-            if (isIkEnabled(controller.getName())) return true;
+        for (IkChain chain : skeleton.getDynamics().ikChainsByBone().getOrDefault(bone, List.of())) {
+            if (chain.replaceAuthoredRotation() && isIkEnabled(chain.name())) return true;
         }
         return false;
-    }
-
-    private void buildIkLinks() {
-        ikLinksByBone = new HashMap<>();
-        for (Bone controller : pmxBones) {
-            if (!(controller.getBoneData() instanceof PmxBone pmx) || pmx.ik == null) continue;
-            if (pmx.ik.chains == null) continue;
-            for (PmxIKChain chain : pmx.ik.chains) {
-                Bone link = pmxBone(chain.boneIndex.intValue());
-                if (link == null) continue;
-                ikLinksByBone.computeIfAbsent(link, ignored -> new ArrayList<>()).add(controller);
-            }
-        }
-        ikLinksBuilt = true;
     }
 
     /**
@@ -730,110 +729,6 @@ public class SkeletonInstance {
         result.set(matrix);
     }
 
-    private void solvePmxIk() {
-        for (Bone controller : skeleton.getBones()) {
-            if (!(controller.getBoneData() instanceof PmxBone pmx) || pmx.ik == null
-                    || !isIkEnabled(controller.getName())) continue;
-            solveIk(controller, pmx.ik);
-        }
-    }
-
-    /**
-     * MMD 方向型 IK 判别：控制器骨与 effector 骨在 bind 姿态下重合（{@code つま先ＩＫ} 挂在
-     * {@code 足ＩＫ} 下而 つま先 挂在 足首 下，bind 时都在脚趾）且 IK 链只有一根 link。
-     * 普通位置型 IK（{@code 足ＩＫ}）链有两根（ひざ, 足），不会被误判。
-     */
-    private boolean isDirectionIk(Bone controller, PmxIKBone ik, Bone effector) {
-        if (ik.chains == null || ik.chains.length != 1) return false;
-        if (controller.getBoneData() instanceof PmxBone pmx
-                && pmx.tailObject instanceof Vector3f) {
-            Transform controllerBind = controller.getTransform();
-            Transform effectorBind = effector.getTransform();
-            return controllerBind.getPosition().distanceSquared(effectorBind.getPosition()) < 1e-4f;
-        }
-        return false;
-    }
-
-    private void solveIk(Bone controller, PmxIKBone ik) {
-        Bone effector = pmxBone(ik.boneIndex.intValue());
-        if (effector == null || absoluteTransforms.get(controller) == null) return;
-        Matrix4f controllerAbsolute = absoluteTransforms.get(controller).transform();
-        IkTarget override = frameIkTargets.getOrDefault(controller, ikTargets.get(controller));
-        // Lives for the whole controller solve; never aliased by inner-loop scratches.
-        Vector3f targetPosition = ikTargetPositionScratch.set(controllerAbsolute.m30(),
-                controllerAbsolute.m31(), controllerAbsolute.m32());
-        if (override != null) targetPosition.lerp(override.position, override.weight);
-        // MMD 方向型 IK（つま先ＩＫ 等）：控制器骨与 effector 骨在 bind 姿态下重合、且链只有一根
-        // （足首）—— 目标不是"把 effector 拉向控制器位置"，而是"让 effector 骨的方向对齐控制器
-        // 的方向"。目标 = effector 的 bind 脚趾方向 × 控制器动画旋转偏移（VMD 只写 つま先ＩＫ 的
-        // 旋转来控制脚尖）：bind 时零修正，脚趾方向只跟随 VMD。用位置语义时，控制器挂 IK 骨下、
-        // effector 挂腿链下，父链移动差异会把目标甩离脚趾 → 踝关节猛转、脚底板翻起。
-        if (isDirectionIk(controller, ik, effector)) {
-            Transform effectorAbsolute = absoluteTransforms.get(effector);
-            if (effectorAbsolute != null) {
-                Vector3f dir = ikDirectionScratch.set(effector.getTransform().getPosition()).normalize();
-                Transform animRotation = transforms.get(controller);
-                if (animRotation != null) animRotation.getRotation().transform(dir);
-                targetPosition.set(effectorAbsolute.getPosition()).add(dir);
-            }
-        }
-        int iterations = Math.min(Math.max(ik.CCD_Count, 0), 256);
-        boolean corrected = false;
-                for (int iteration = 0; iteration < iterations; iteration++) {
-            boolean converged = false;
-            for (PmxIKChain chain : ik.chains) {
-                Bone link = pmxBone(chain.boneIndex.intValue());
-                Transform linkState = link == null ? null : absoluteTransforms.get(link);
-                if (linkState == null) continue;
-                Matrix4f linkAbsolute = linkState.transform();
-                Vector3f linkPosition = ikLinkPositionScratch.set(linkAbsolute.m30(),
-                        linkAbsolute.m31(), linkAbsolute.m32());
-                Matrix4f effectorAbsolute = absoluteTransforms.get(effector).transform();
-                Vector3f effectorDirection = ikEffectorDirectionScratch.set(effectorAbsolute.m30(),
-                        effectorAbsolute.m31(), effectorAbsolute.m32()).sub(linkPosition);
-                Vector3f targetDirection = ikTargetDirectionScratch.set(targetPosition).sub(linkPosition);
-                if (effectorDirection.lengthSquared() < 1e-10f || targetDirection.lengthSquared() < 1e-10f) continue;
-                effectorDirection.normalize();
-                targetDirection.normalize();
-                float angle = (float) Math.acos(Math.clamp(effectorDirection.dot(targetDirection), -1f, 1f));
-                angle = Math.min(angle, Math.abs(ik.boneRotationLimit));
-                if (angle < 1e-6f) continue;
-                Vector3f axis = effectorDirection.cross(targetDirection, ikAxisScratch);
-                if (axis.lengthSquared() < 1e-10f) {
-                    if (effectorDirection.dot(targetDirection) > 0f) continue;
-                    if (Math.abs(effectorDirection.x) < 0.9f) {
-                        axis.set(effectorDirection).cross(1f, 0f, 0f);
-                    } else {
-                        axis.set(effectorDirection).cross(0f, 1f, 0f);
-                    }
-                }
-                Vector3f normalizedAxis = axis.normalize();
-                Quaternionf worldDelta = ikWorldDeltaScratch.rotationAxis(angle,
-                        normalizedAxis.x, normalizedAxis.y, normalizedAxis.z);
-                Quaternionf worldRotation = ikWorldRotationScratch.setFromUnnormalized(linkAbsolute).normalize();
-                Quaternionf delta = ikLocalDeltaScratch.set(worldRotation).invert()
-                        .mul(worldDelta)
-                        .mul(worldRotation)
-                        .normalize();
-                Transform correction = ikTransforms.computeIfAbsent(link, ignored -> new Transform());
-                correction.mul(delta);
-                if (chain.useRotationLimit && chain.limit != null) clampIk(correction, chain.limit);
-                corrected = true;
-                evaluateHierarchyFrom(link, effector);
-                Matrix4f refreshedEffector = absoluteTransforms.get(effector).transform();
-                if (ikLinkPositionScratch.set(refreshedEffector.m30(), refreshedEffector.m31(), refreshedEffector.m32())
-                        .distanceSquared(targetPosition) < 1e-8f) {
-                    converged = true;
-                    break;
-                }
-            }
-            if (converged) break;
-        }
-        // Refresh grant dependencies and other branches once per controller.
-        // Previously this full traversal happened after every chain correction.
-        if (corrected) evaluateHierarchy();
-    }
-
     private void evaluateHierarchyFrom(Bone root, Bone requiredDescendant) {
         if (!isAncestorOf(root, requiredDescendant)) {
             evaluateHierarchy();
@@ -866,15 +761,6 @@ public class SkeletonInstance {
             if (current == ancestor) return true;
         }
         return false;
-    }
-
-    private void clampIk(Transform correction, IKLimitation limit) {
-        Vector3f euler = correction.getRotation().getEulerAnglesXYZ(ikEulerScratch);
-        euler.set(
-                Math.clamp(euler.x, limit.min().x, limit.max().x),
-                Math.clamp(euler.y, limit.min().y, limit.max().y),
-                Math.clamp(euler.z, limit.min().z, limit.max().z));
-        correction.set(ikMatrixScratch.rotationXYZ(euler.x, euler.y, euler.z));
     }
 
     private Bone pmxBone(int pmxIndex) {

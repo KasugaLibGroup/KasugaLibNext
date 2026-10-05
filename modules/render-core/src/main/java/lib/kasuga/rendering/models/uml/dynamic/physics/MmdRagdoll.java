@@ -13,10 +13,9 @@ import lib.kasuga.rendering.models.uml.dynamic.physics.core.StaticBoxCollider;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.StaticEnvironmentMesh;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.uml.structure.skeleton.Bone;
-import lib.kasuga.rendering.models.uml.typo.gltf.GltfModelData;
-import lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.MmdModelData;
-import lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.PmxTail.PmxJoint;
-import lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.PmxTail.PmxRigidBody;
+import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics;
+import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics.RigidBody;
+import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics.Physics;
 import lib.kasuga.rendering.models.uml.util.ModelProfiler;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -35,7 +34,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * PMX/PMD and explicitly-profiled glTF adapter over the native Box3D-backed
+ * Format-neutral skeleton adapter over the native Box3D-backed
  * {@link RigidBodyWorld}.
  *
  * <p>All integration, collision, joints, sleeping and dragging constraints
@@ -51,10 +50,9 @@ public final class MmdRagdoll implements AutoCloseable {
     private final ModelInstance instance;
     private final SkeletonInstance skeleton;
     private final Vector3f modelScale;
-    private final int pmxBoneOffset;
-    private final Map<Integer, Bone> indexedBones;
-    private final Set<Bone> gltfSkinBones;
-    private final Map<Bone, Transform> gltfBindWorlds;
+    private final Physics definition;
+    private final Set<Bone> bindPoseFollowers;
+    private final Map<Bone, Transform> followerBindWorlds;
     private final List<Body> bodies;
     private final List<Body> exposedBodies;
     private final List<Joint> joints;
@@ -110,42 +108,23 @@ public final class MmdRagdoll implements AutoCloseable {
         else this.skeleton.rebaseFloatingOrigin(physicsScene.worldOrigin());
         this.skeleton.updateTransform();
         this.profile = profile;
-        List<PmxRigidBody> bodyDefinitions;
-        List<PmxJoint> jointDefinitions;
-        if (instance.getModel().getModelData() instanceof MmdModelData data) {
-            this.modelScale = data.modelScale();
-            this.pmxBoneOffset = data.pmxBoneCount() >= 0
-                    && skeleton.getSkeleton().getBones().length == data.pmxBoneCount() + 1 ? 1 : 0;
-            this.indexedBones = null;
-            this.gltfSkinBones = Set.of();
-            this.gltfBindWorlds = Map.of();
-            bodyDefinitions = data.tail().rigidBodies();
-            jointDefinitions = data.tail().joints();
-        } else if (instance.getModel().getModelData() instanceof GltfModelData data && profile != null) {
-            this.modelScale = data.modelScale();
-            this.pmxBoneOffset = 0;
-            this.indexedBones = data.boneByNode();
-            Set<Bone> skinBones = new HashSet<>();
-            data.asset().skins().forEach(skin -> {
-                for (int node : skin.jointNodeIndices()) {
-                    Bone bone = data.boneByNode().get(node);
-                    if (bone != null) skinBones.add(bone);
-                }
-            });
-            this.gltfSkinBones = Set.copyOf(skinBones);
-            Map<Bone, Transform> bindWorlds = new IdentityHashMap<>();
-            data.boneByNode().values().forEach(bone -> {
-                Transform bind = skeleton.getAbsoluteTransforms().get(bone);
-                if (bind != null) bindWorlds.put(bone, bind.copy());
-            });
-            this.gltfBindWorlds = Collections.unmodifiableMap(bindWorlds);
-            bodyDefinitions = gltfBodyDefinitions(data);
-            jointDefinitions = List.of();
-        } else {
-            throw new IllegalArgumentException(profile == null
-                    ? "Model does not contain authored PMX/PMD physics metadata; glTF requires an explicit profile"
-                    : "Model format does not expose a skeleton usable by the ragdoll adapter");
+        this.definition = skeleton.getSkeleton().getDynamics().physics();
+        this.modelScale = definition.unitScale();
+        if (definition.bodies().isEmpty()) {
+            throw new IllegalArgumentException("Skeleton has no rigid-body definitions");
         }
+        if (profile == null && definition.profileRequired()) {
+            throw new IllegalArgumentException("Skeleton body candidates require an explicit physics profile");
+        }
+        this.bindPoseFollowers = definition.bindPoseFollowers();
+        Map<Bone, Transform> bindWorlds = new IdentityHashMap<>();
+        for (Bone bone : skeleton.getSkeleton().getBones()) {
+            Transform bind = skeleton.getAbsoluteTransforms().get(bone);
+            if (bind != null) bindWorlds.put(bone, bind.copy());
+        }
+        this.followerBindWorlds = Collections.unmodifiableMap(bindWorlds);
+        List<RigidBody> bodyDefinitions = definition.bodies();
+        List<SkeletonDynamics.Joint> jointDefinitions = definition.joints();
         if (profile == null) {
             this.bodies = buildBodies(bodyDefinitions);
             this.joints = buildJoints(jointDefinitions);
@@ -789,11 +768,11 @@ public final class MmdRagdoll implements AutoCloseable {
             }
         }
         Map<Bone, Transform> physicsPose = new IdentityHashMap<>();
-        if (indexedBones != null) {
+        if (definition.affineWriteback()) {
             Map<Bone, Transform> affineDesired = new IdentityHashMap<>();
             desired.forEach((bone, pose) -> affineDesired.put(bone,
                     preserveAffine(skeleton.getAbsoluteTransforms().get(bone), pose)));
-            followGltfSkinJoints(affineDesired);
+            followBindPoseBones(affineDesired);
             collectAffinePhysicsPose(skeleton.getSkeleton().getRoot(), null, affineDesired, physicsPose);
         } else {
             if (profile != null) followNonPhysicalBones(desired);
@@ -849,14 +828,14 @@ public final class MmdRagdoll implements AutoCloseable {
      * facial, eye and hair joints, and opens seams at elbows and knees once a
      * physical ancestor rotates.</p>
      */
-    private void followGltfSkinJoints(Map<Bone, Transform> desired) {
-        for (Bone bone : gltfSkinBones) {
+    private void followBindPoseBones(Map<Bone, Transform> desired) {
+        for (Bone bone : bindPoseFollowers) {
             if (desired.containsKey(bone) || bodyByBone.containsKey(bone)) continue;
             Bone physicalAncestor = nearestPhysicalAncestor(bone);
             if (physicalAncestor == null) continue;
             Transform physicalWorld = desired.get(physicalAncestor);
-            Transform bindPhysical = gltfBindWorlds.get(physicalAncestor);
-            Transform bindJoint = gltfBindWorlds.get(bone);
+            Transform bindPhysical = followerBindWorlds.get(physicalAncestor);
+            Transform bindJoint = followerBindWorlds.get(bone);
             if (physicalWorld == null || bindPhysical == null || bindJoint == null) continue;
             desired.put(bone, physicalWorld.copy().mul(bindPhysical.copy().invert()).mul(bindJoint));
         }
@@ -938,30 +917,6 @@ public final class MmdRagdoll implements AutoCloseable {
         return new Transform().set(desiredRigid.mul(affineRemainder));
     }
 
-    private Bone pmxBone(int pmxIndex) {
-        if (pmxIndex < 0) return null;
-        if (indexedBones != null) return indexedBones.get(pmxIndex);
-        Bone[] bones = skeleton.getSkeleton().getBones();
-        int skeletonIndex = pmxIndex + pmxBoneOffset;
-        if (skeletonIndex < 0 || skeletonIndex >= bones.length) return null;
-        Bone bone = bones[skeletonIndex];
-        return bone.getBoneData() instanceof lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.bone.PmxBone
-                ? bone : null;
-    }
-
-    private static List<PmxRigidBody> gltfBodyDefinitions(GltfModelData data) {
-        int count = data.asset().nodes().size();
-        List<PmxRigidBody> result = new ArrayList<>(count);
-        for (int node = 0; node < count; node++) {
-            String name = data.asset().nodes().names()[node];
-            result.add(new PmxRigidBody(name, name, node,
-                    0, 0, SimBody.SHAPE_CAPSULE,
-                    new Vector3f(0.05f), new Vector3f(), new Vector3f(),
-                    1f, 0f, 0f, 0f, 0.65f, 1));
-        }
-        return result;
-    }
-
     private Vector3f scaled(Vector3f value) {
         return new Vector3f(value).mul(modelScale);
     }
@@ -970,33 +925,33 @@ public final class MmdRagdoll implements AutoCloseable {
     // Topology construction
     // ------------------------------------------------------------------
 
-    private List<Body> buildBodies(List<PmxRigidBody> definitions) {
+    private List<Body> buildBodies(List<RigidBody> definitions) {
         List<Body> result = new ArrayList<>(definitions.size());
-        for (PmxRigidBody source : definitions) {
+        for (RigidBody source : definitions) {
             result.add(buildBody(source));
         }
         return result;
     }
 
-    private Body buildBody(PmxRigidBody source) {
+    private Body buildBody(RigidBody source) {
         return buildBody(source, false);
     }
 
-    private Body buildBody(PmxRigidBody source, boolean authoredSecondaryBody) {
+    private Body buildBody(RigidBody source, boolean authoredSecondaryBody) {
         if (authoredSecondaryBody) {
             // Keep PMX's 16 authored collision layers, but move them away from
             // the generated humanoid's layers. Secondary chains still collide
             // with each other according to their original mask and with the
             // environment, while they cannot feed contact impulses back into
             // the primary capsules.
-            source = new PmxRigidBody(source.localName(), source.universalName(), source.boneIndex(),
+            source = new RigidBody(source.name(), source.alias(), source.bone(),
                     source.collisionGroup() + 16, source.nonCollisionMask() << 16,
                     source.shape(), source.size(), source.position(), source.rotation(), source.mass(),
                     Math.max(source.linearDamping(), 2f), Math.max(source.angularDamping(), 4f),
                     source.restitution(),
                     source.friction(), source.mode());
         }
-        Bone bone = pmxBone(source.boneIndex());
+        Bone bone = source.bone();
         Frames.Pose pose = modelPose(scaled(source.position()), Frames.quaternionFromEuler(source.rotation()));
         Frames.Pose boneToBody = bone == null
                 ? new Frames.Pose()
@@ -1011,28 +966,28 @@ public final class MmdRagdoll implements AutoCloseable {
                                      Map<Integer, Body> bodyByDefinition,
                                      Bone motionRoot, Body rootBody) {}
 
-    private RegisteredPhysics buildRegisteredPhysics(List<PmxRigidBody> definitions,
-                                                      List<PmxJoint> authoredJoints,
+    private RegisteredPhysics buildRegisteredPhysics(List<RigidBody> definitions,
+                                                      List<SkeletonDynamics.Joint> authoredJoints,
                                                       Profile profile) {
         List<Body> registeredBodies = new ArrayList<>(profile.bodies.size());
         Map<Integer, Body> bodyByDefinition = new HashMap<>();
         Map<Body, Registration> registrationByBody = new IdentityHashMap<>();
         Map<Bone, Registration> registrationByBone = new IdentityHashMap<>();
-        Map<Registration, PmxRigidBody> definitionByRegistration = new IdentityHashMap<>();
+        Map<Registration, RigidBody> definitionByRegistration = new IdentityHashMap<>();
 
         for (Registration registration : profile.bodies) {
             if (registration.rigidBodyIndex < 0 || registration.rigidBodyIndex >= definitions.size()) {
-                throw new IllegalArgumentException("registered rigid body index is outside PMX data: "
+                throw new IllegalArgumentException("registered rigid body index is outside skeleton physics data: "
                         + registration.rigidBodyIndex);
             }
-            PmxRigidBody authored = definitions.get(registration.rigidBodyIndex);
+            RigidBody authored = definitions.get(registration.rigidBodyIndex);
             if (bodyByDefinition.containsKey(registration.rigidBodyIndex)) {
                 throw new IllegalArgumentException("duplicate registered rigid body index: "
                         + registration.rigidBodyIndex);
             }
-            Bone bone = pmxBone(authored.boneIndex());
+            Bone bone = authored.bone();
             if (bone == null) {
-                throw new IllegalArgumentException("registered rigid body has no PMX bone: "
+                throw new IllegalArgumentException("registered rigid body has no skeleton bone: "
                         + registration.rigidBodyIndex);
             }
             if (registrationByBone.put(bone, registration) != null) {
@@ -1045,8 +1000,8 @@ public final class MmdRagdoll implements AutoCloseable {
         }
 
         for (Registration registration : profile.bodies) {
-            PmxRigidBody authored = definitionByRegistration.get(registration);
-            Bone bone = pmxBone(authored.boneIndex());
+            RigidBody authored = definitionByRegistration.get(registration);
+            Bone bone = authored.bone();
             Transform boneTransform = skeleton.getAbsoluteTransforms().get(bone);
             Frames.Pose bonePose = Frames.poseOf(boneTransform);
             Vector3f start = new Vector3f(bonePose.position);
@@ -1081,7 +1036,7 @@ public final class MmdRagdoll implements AutoCloseable {
             // PMX bone positions have already been converted into world units
             // before the skeleton is built. glTF keeps its import scale as
             // model metadata, so only that path still needs the radius scaled.
-            float profileScale = indexedBones == null ? 1f : uniformScale(modelScale);
+            float profileScale = definition.profileRadiusScale();
             float radius = Math.min(profileRadius(registration.role) * profileScale,
                     Math.max(0.026f * profileScale, length * 0.32f));
             float mass = profileMass(registration.role, length, radius);
@@ -1089,8 +1044,8 @@ public final class MmdRagdoll implements AutoCloseable {
             // Primary humanoid bodies are generated from the actual skeleton
             // segment. PMX rigid bodies are authored
             // mostly for secondary motion and are often poor human colliders.
-            PmxRigidBody dynamic = new PmxRigidBody(
-                    authored.localName(), authored.universalName(), authored.boneIndex(),
+            RigidBody dynamic = new RigidBody(
+                    authored.name(), authored.alias(), authored.bone(),
                     authored.collisionGroup(), authored.nonCollisionMask() | 0xffff0000, 2,
                     authored.size(), authored.position(), authored.rotation(),
                     mass, 0f, 0f,
@@ -1121,13 +1076,12 @@ public final class MmdRagdoll implements AutoCloseable {
                 }
             }
             if (parent == null) continue;
-            Vector3f anchor = child.bone.getBoneData()
-                    instanceof lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.bone.PmxBone pmx
-                    ? new Vector3f(pmx.position) : new Vector3f();
+            Vector3f anchor = skeleton.getSkeleton().getBindingAbsolute(child.bone).getPosition()
+                    .div(modelScale);
             Vector3f minimum = childRegistration.rotationMinimum();
             Vector3f maximum = childRegistration.rotationMaximum();
-            PmxJoint source = new PmxJoint(
-                    child.bone.getName(), child.bone.getName(), 0,
+            SkeletonDynamics.Joint source = new SkeletonDynamics.Joint(
+                    child.bone.getName(), child.bone.getName(),
                     registeredBodies.indexOf(parent), registeredBodies.indexOf(child),
                     anchor, new Vector3f(), new Vector3f(), new Vector3f(),
                     minimum, maximum, new Vector3f(), new Vector3f());
@@ -1162,19 +1116,19 @@ public final class MmdRagdoll implements AutoCloseable {
         // damping and joints when secondary motion is requested. glTF has no
         // PMX rigid-body table, so its generated node placeholders are never
         // treated as authored secondary physics.
-        if (profile.includeSecondaryBodies && indexedBones == null) {
+        if (profile.includeSecondaryBodies && !definition.profileRequired()) {
             Set<Bone> primaryBones = Collections.newSetFromMap(new IdentityHashMap<>());
             primaryBones.addAll(registrationByBone.keySet());
             for (int index = 0; index < definitions.size(); index++) {
                 if (bodyByDefinition.containsKey(index)) continue;
-                PmxRigidBody definition = definitions.get(index);
-                Bone bone = pmxBone(definition.boneIndex());
+                RigidBody definition = definitions.get(index);
+                Bone bone = definition.bone();
                 if (bone != null && primaryBones.contains(bone)) continue;
                 Body secondary = buildBody(definition, true);
                 registeredBodies.add(secondary);
                 bodyByDefinition.put(index, secondary);
             }
-            for (PmxJoint authoredJoint : authoredJoints) {
+            for (SkeletonDynamics.Joint authoredJoint : authoredJoints) {
                 Body a = bodyByDefinition.get(authoredJoint.rigidBodyA());
                 Body b = bodyByDefinition.get(authoredJoint.rigidBodyB());
                 if (a == null || b == null) continue;
@@ -1195,15 +1149,15 @@ public final class MmdRagdoll implements AutoCloseable {
                 Map.copyOf(bodyByDefinition), motionRoot, rootBody);
     }
 
-    private Body secondaryAnchor(PmxRigidBody authored, Body primary, List<Body> allBodies) {
+    private Body secondaryAnchor(RigidBody authored, Body primary, List<Body> allBodies) {
         for (Body candidate : allBodies) {
             if (candidate.secondaryAnchorBody && candidate.kinematicFollowBody == primary) return candidate;
         }
         Frames.Pose pose = modelPose(scaled(authored.position()),
                 Frames.quaternionFromEuler(authored.rotation()));
-        PmxRigidBody source = new PmxRigidBody(
-                authored.localName() + "#secondary-anchor",
-                authored.universalName() + "#secondary-anchor", authored.boneIndex(),
+        RigidBody source = new RigidBody(
+                authored.name() + "#secondary-anchor",
+                authored.alias() + "#secondary-anchor", authored.bone(),
                 63, -1, SimBody.SHAPE_SPHERE,
                 new Vector3f(1.0e-4f), authored.position(), authored.rotation(),
                 0f, 0f, 0f, 0f, 0f, 0);
@@ -1224,8 +1178,11 @@ public final class MmdRagdoll implements AutoCloseable {
         float preferredDistance = -1f;
         float fallbackDistance = -1f;
         Vector3f parentPosition = skeleton.getAbsoluteTransforms().get(parent).getPosition();
-        for (Map.Entry<Bone, Registration> entry : registrationByBone.entrySet()) {
-            Bone child = entry.getKey();
+        // Symmetric hips/shoulders can have equal lengths. Skeleton order gives a stable
+        // tie-break; IdentityHashMap iteration used to flip the generated capsule across runs.
+        for (Bone child : skeleton.getSkeleton().getBones()) {
+            Registration childRegistration = registrationByBone.get(child);
+            if (childRegistration == null) continue;
             if (nearestRegisteredAncestor(child, registrationByBone) != parent) continue;
             float distance = parentPosition.distanceSquared(
                     skeleton.getAbsoluteTransforms().get(child).getPosition());
@@ -1233,7 +1190,7 @@ public final class MmdRagdoll implements AutoCloseable {
                 fallbackDistance = distance;
                 bestFallback = child;
             }
-            if (continues(parentRole, entry.getValue().role) && distance > preferredDistance) {
+            if (continues(parentRole, childRegistration.role) && distance > preferredDistance) {
                 preferredDistance = distance;
                 bestPreferred = child;
             }
@@ -1280,10 +1237,6 @@ public final class MmdRagdoll implements AutoCloseable {
         };
     }
 
-    private static float uniformScale(Vector3f scale) {
-        return (float)Math.cbrt(Math.abs((double)scale.x * scale.y * scale.z));
-    }
-
     private static float profileMass(BodyRole role, float length, float radius) {
         float anatomicalScale = switch (role) {
             case PELVIS, SPINE, CHEST -> 4.5f;
@@ -1304,9 +1257,9 @@ public final class MmdRagdoll implements AutoCloseable {
         return null;
     }
 
-    private List<Joint> buildJoints(List<PmxJoint> definitions) {
+    private List<Joint> buildJoints(List<SkeletonDynamics.Joint> definitions) {
         List<Joint> result = new ArrayList<>(definitions.size());
-        for (PmxJoint source : definitions) {
+        for (SkeletonDynamics.Joint source : definitions) {
             if (source.rigidBodyA() < 0 || source.rigidBodyA() >= bodies.size()
                     || source.rigidBodyB() < 0 || source.rigidBodyB() >= bodies.size()) continue;
             Body a = bodies.get(source.rigidBodyA());
@@ -1316,7 +1269,7 @@ public final class MmdRagdoll implements AutoCloseable {
         return result;
     }
 
-    private Joint buildJoint(PmxJoint source, Body a, Body b) {
+    private Joint buildJoint(SkeletonDynamics.Joint source, Body a, Body b) {
         Frames.Pose worldFrame = modelPose(scaled(source.position()),
                 Frames.quaternionFromEuler(source.rotation()));
         return new Joint(source, a, b,
@@ -1488,9 +1441,9 @@ public final class MmdRagdoll implements AutoCloseable {
     // Body and joint views
     // ------------------------------------------------------------------
 
-    /** One simulated rigid body backed by an authored PMX or generated profile shape. */
+    /** One simulated rigid body backed by a common skeleton definition or generated profile shape. */
     public static final class Body implements SimBody {
-        private final PmxRigidBody source;
+        private final RigidBody source;
         private final Bone bone;
         private final Frames.Pose pose;
         private final Frames.Pose previousPose;
@@ -1513,20 +1466,20 @@ public final class MmdRagdoll implements AutoCloseable {
         /** Kinematic/force target captured by the last {@code evaluateAnimationTarget()}; reused storage. */
         private final Frames.Pose animationTargetCache = new Frames.Pose();
 
-        private Body(PmxRigidBody source, Bone bone, Frames.Pose pose, Frames.Pose boneToBody,
+        private Body(RigidBody source, Bone bone, Frames.Pose pose, Frames.Pose boneToBody,
                      BoneWriteback writeback, Vector3f shapeSize, boolean profiledRagdollBody) {
             this(source, bone, pose, boneToBody, writeback, shapeSize,
                     profiledRagdollBody, false, false);
         }
 
-        private Body(PmxRigidBody source, Bone bone, Frames.Pose pose, Frames.Pose boneToBody,
+        private Body(RigidBody source, Bone bone, Frames.Pose pose, Frames.Pose boneToBody,
                      BoneWriteback writeback, Vector3f shapeSize, boolean profiledRagdollBody,
                      boolean ragdollAlignmentSpring) {
             this(source, bone, pose, boneToBody, writeback, shapeSize,
                     profiledRagdollBody, ragdollAlignmentSpring, false);
         }
 
-        private Body(PmxRigidBody source, Bone bone, Frames.Pose pose, Frames.Pose boneToBody,
+        private Body(RigidBody source, Bone bone, Frames.Pose pose, Frames.Pose boneToBody,
                      BoneWriteback writeback, Vector3f shapeSize, boolean profiledRagdollBody,
                      boolean ragdollAlignmentSpring, boolean authoredSecondaryBody) {
             this.source = source;
@@ -1545,7 +1498,7 @@ public final class MmdRagdoll implements AutoCloseable {
             this.inverseLinearMass = source.mode() == 0 ? 0f : inverseMass;
         }
 
-        public PmxRigidBody source() { return source; }
+        public RigidBody source() { return source; }
         public Bone bone() { return bone; }
         public Vector3f position() { return new Vector3f(pose.position); }
         public Quaternionf rotation() { return new Quaternionf(pose.rotation); }
@@ -1620,12 +1573,12 @@ public final class MmdRagdoll implements AutoCloseable {
         }
     }
 
-    /** Joint view keeping the authored PMX definition alongside its Box3D mapping. */
+    /** Joint view keeping the common skeleton definition alongside its Box3D mapping. */
     public static final class Joint extends BallJoint {
-        private final PmxJoint source;
+        private final SkeletonDynamics.Joint source;
 
         @SuppressWarnings("NullAway")
-        Joint(PmxJoint source, SimBody bodyA, SimBody bodyB, Frames.Pose localA, Frames.Pose localB,
+        Joint(SkeletonDynamics.Joint source, SimBody bodyA, SimBody bodyB, Frames.Pose localA, Frames.Pose localB,
               Vector3f positionMin, Vector3f positionMax,
               Vector3f rotationMinimum, Vector3f rotationMaximum,
               Vector3f springLinear, Vector3f springAngular,
@@ -1636,7 +1589,7 @@ public final class MmdRagdoll implements AutoCloseable {
             this.source = source;
         }
 
-        /** The authored PMX joint, or null for synthesized profile joints. */
-        public PmxJoint source() { return source; }
+        /** The common definition, including synthesized profile joints. */
+        public SkeletonDynamics.Joint source() { return source; }
     }
 }

@@ -1,5 +1,6 @@
 package lib.kasuga.rendering.models.uml.dynamic.math;
 
+import com.mojang.serialization.Codec;
 import java.util.Map;
 
 /**
@@ -227,6 +228,11 @@ public interface Easing {
     //endregion
 
     //region named registry (AnimationClip codec support)
+
+    Codec<Easing> CODEC = Codec.STRING.xmap(name -> {
+        Easing easing = byName(name);
+        return easing == null ? linear() : easing;
+    }, Easing::nameOf);
 
     /** Canonical snake_case names for the no-arg easings, used by {@code AnimationClip.EASING_CODEC}. */
     Map<String, Easing> NAMED = Map.ofEntries(

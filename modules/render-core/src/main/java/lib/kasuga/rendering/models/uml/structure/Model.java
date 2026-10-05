@@ -61,6 +61,7 @@ public class Model {
         this.bones = bones;
         this.skeleton = skeleton;
         this.modelData = modelData;
+        if (modelData != null) modelData.configureSkeleton(skeleton);
         this.materialSet = materialSet;
         this.meshMode = meshMode;
         this.morph = morph == null ? new Morph(this) : morph;
