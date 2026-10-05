@@ -285,6 +285,40 @@ public final class DefinitionStateMachineFactory<O> {
     }
 
     /**
+     * Collects a definition's unknown-clip references — one entry per {@code states[].clip} whose id has
+     * no entry in {@code clips}, in the form
+     * {@code "<layer id>: state '<state id>' references unknown clip '<clip id>'"}.
+     *
+     * <p>The rule for "a clip is known" is {@link FsmAnimationClips#get(Id)} returning an entry, and this
+     * method is the single implementation of that rule and of the message: {@link #validateDefinition}
+     * feeds its result into the build-time aggregate warning, and the reload orchestrator runs it over
+     * every definition it just loaded, so a dangling clip is reported even when no machine is ever built
+     * from the definition. Reporting never blocks anything — an unresolved clip keeps degrading the state
+     * to its static pose.
+     *
+     * @param definition the definition to inspect; {@code null} yields an empty result
+     * @param clips      the clip bucket the references are resolved against; {@code null} yields an empty result
+     * @return the unresolved references in layer order, then state order; empty when every reference resolves
+     */
+    public static List<String> unknownClipReferences(StateMachineDefinition definition, FsmAnimationClips clips) {
+        List<String> missing = new ArrayList<>();
+        if (definition == null || clips == null) {
+            return missing;
+        }
+        for (LayerDefinition layerDef : definition.layers()) {
+            for (StateDefinition stateDef : layerDef.states()) {
+                stateDef.clip().ifPresent(clipDef -> {
+                    if (clips.get(clipDef.id()) == null) {
+                        missing.add(layerDef.id() + ": state '" + stateDef.id() + "' references unknown clip '"
+                                + clipDef.id() + "'");
+                    }
+                });
+            }
+        }
+        return missing;
+    }
+
+    /**
      * Aggregate-log every missing or invalid reference — behavior refs (missing library functions) AND
      * structural typos (unknown {@code initial_state} / {@code from} / {@code to}) — as one warning for the
      * whole definition. The build still proceeds: missing conditions degrade to {@code false}, missing
@@ -292,15 +326,13 @@ public final class DefinitionStateMachineFactory<O> {
      */
     void validateDefinition(StateMachineDefinition definition) {
         Set<String> missing = new LinkedHashSet<>();
+        // Clip references come from the shared collector (also run by the reload orchestrator after a
+        // load), so the resolution rule and its message have exactly one implementation.
+        missing.addAll(unknownClipReferences(definition, clips));
         for (LayerDefinition layerDef : definition.layers()) {
             Set<String> stateIds = new HashSet<>();
             for (StateDefinition stateDef : layerDef.states()) {
                 stateIds.add(stateDef.id());
-                stateDef.clip().ifPresent(clipDef -> {
-                    if (clips.get(clipDef.id()) == null) {
-                        missing.add(layerDef.id() + ": state '" + stateDef.id() + "' references unknown clip '" + clipDef.id() + "'");
-                    }
-                });
                 for (Id id : stateDef.onEnter()) {
                     if (!library.hasAction(id)) missing.add(id.toString());
                 }

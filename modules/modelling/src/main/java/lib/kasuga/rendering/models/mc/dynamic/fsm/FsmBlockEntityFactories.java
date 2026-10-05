@@ -62,6 +62,9 @@ public final class FsmBlockEntityFactories {
             LOGGER.warn("[fsm_be] '{}' has no valid 'state_machine' param; its block entity will not run a machine", id);
         }
         ResourceLocation modelLoc = readResourceLocation(params, "model");
+        if (modelLoc == null) {
+            LOGGER.warn("[fsm_be] '{}' has no valid 'model' param; its block entity will not load a model", id);
+        }
         String modelName = readString(params, "model_name");
         BlockEntityReg<AnimationBlockEntity> reg = new BlockEntityReg<>(id,
                 r -> (pos, state) -> new AnimationBlockEntity(r.getEntry(), pos, state, machineId, modelLoc, modelName));
