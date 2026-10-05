@@ -22,7 +22,7 @@ import lib.kasuga.formula.compute.infrastructure.Formula;
 // A fresh namespace inherits every built-in function and constant from the root.
 Namespace ns = new Namespace(Code.ROOT_NAMESPACE);
 
-Formula f = Code.decodeFormula("sin(time * 180) * 30", ns);
+Formula f = Code.decodeFormula("sin(rad(time * 180)) * 30", ns);
 ns.assign("time", 0.5f);          // variables are auto-registered on first use (initial 0)
 float result = f.getResult();     // sin(90°) * 30
 ```
@@ -134,7 +134,7 @@ To run one test class:
 .\gradlew.bat :modules:formula:test --tests lib.kasuga.formula.FormulaComputeTest
 ```
 
-56 unit tests cover operator precedence (including `%` sharing `* /` precedence), `**` power, unary minus, function nesting, variable assignment/reassignment, dotted names, no-space symbol operators, word-operator spacing, and the chained-comparison error.
+The unit tests cover operator precedence (including `%` sharing `* /` precedence), `**` power, unary minus, function nesting, variable assignment/reassignment, dotted names, no-space symbol operators, word-operator spacing, and the chained-comparison error.
 
 ## Relevant Source Locations
 

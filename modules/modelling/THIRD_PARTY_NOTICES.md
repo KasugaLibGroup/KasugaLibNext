@@ -1,5 +1,13 @@
 # Third-party notices
 
+## Caliko
+
+Caliko 1.3.8 core library, unmodified official release:
+https://github.com/FedUni/caliko/releases/tag/v1.3.8
+
+The MIT license is included at `META-INF/licenses/caliko-LICENSE.txt`.
+Source, checksum and acquisition details are recorded in `modules/render-core/libs/README.md`.
+
 ## Box3D
 
 The modelling module vendors and links the Box3D rigid-body engine at commit

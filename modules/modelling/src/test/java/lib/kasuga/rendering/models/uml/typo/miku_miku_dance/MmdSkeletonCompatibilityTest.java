@@ -187,6 +187,9 @@ class MmdSkeletonCompatibilityTest {
 
     private static ModelInstance instance(Transform transform, Bone... bones) {
         Skeleton skeleton = new Skeleton(bones, bones[0], new Anchor[0], null, new Transform());
+        var dynamics = new lib.kasuga.rendering.models.uml.loaders.SkeletonDynamicsBuilder(skeleton);
+        MmdSkeletonDynamicsReader.readIk(dynamics);
+        dynamics.attach();
         Model model = new Model(new lib.kasuga.rendering.models.uml.structure.basic.Vertex[0],
                 new lib.kasuga.rendering.models.uml.structure.basic.Mesh[0], bones, skeleton,
                 new MaterialSet(List.of(), List.of()), MeshMode.TRIANGLES, null, null);

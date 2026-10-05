@@ -41,6 +41,7 @@ logs
 .docs
 
 # local OS/editor and runtime artifacts
+.lwjgl/
 .DS_Store
 **/.DS_Store
 *.log

@@ -209,6 +209,10 @@ neoForge {
             if (cameraMotion.isPresent()) systemProperty 'kasuga.testCameraMotion', cameraMotion.get()
             def cameraAnimation = providers.gradleProperty('kasugaTestCameraAnimation')
             if (cameraAnimation.isPresent()) systemProperty 'kasuga.testCameraAnimation', cameraAnimation.get()
+            def cloudSmoke = providers.gradleProperty('kasugaTestCloud')
+            if (cloudSmoke.isPresent()) systemProperty 'kasuga.testCloud', cloudSmoke.get()
+            def skyCloudSmoke = providers.gradleProperty('kasugaTestSkyCloud')
+            if (skyCloudSmoke.isPresent()) systemProperty 'kasuga.testSkyCloud', skyCloudSmoke.get()
             def dualCameraDebug = providers.gradleProperty('kasugaDebugDualCamera')
             if (dualCameraDebug.isPresent()) systemProperty 'kasuga.debugDualCamera', dualCameraDebug.get()
             def multiWindowDebug = providers.gradleProperty('kasugaDebugMultiWindow')
@@ -334,10 +338,12 @@ dependencies {
     // Minecraft does not provide jgltf at runtime.
     shadowLibrary("de.javagl:jgltf-model:2.0.4")
     shadowLibrary("de.javagl:jgltf-impl-v2:2.0.4")
+    shadowLibrary files(project(':modules:render-core').file('libs/caliko-1.3.8.jar'))
     // ModDev run configurations do not consume the shaded output. Their legacy
     // classpath is assembled from additionalRuntimeClasspath instead.
     additionalRuntimeClasspath("de.javagl:jgltf-model:2.0.4")
     additionalRuntimeClasspath("de.javagl:jgltf-impl-v2:2.0.4")
+    additionalRuntimeClasspath files(project(':modules:render-core').file('libs/caliko-1.3.8.jar'))
 
     // Core's development-only runtime dependencies are not propagated through
     // useModProject. The modelling client still executes core's QR model baking
@@ -447,6 +453,7 @@ dependencies {
             workingDir rootProject.projectDir
             commandLine 'git', 'status', '--porcelain'
         }.standardOutput.asText.map { !it.trim().isEmpty() }.get()
+        systemProperty 'kasuga.render.scene', providers.gradleProperty('kasugaRenderScene').getOrElse('model')
         if (box3dOs == 'macos') jvmArgs '-XstartOnFirstThread'
         args '--mode', mode,
                 '--report', layout.buildDirectory.file("reports/renderHarness/${mode}/report.json").get().asFile.absolutePath,
@@ -550,6 +557,9 @@ tasks.named('processResources') {
     from('src/main/native/box3d/LICENSE') {
         into 'META-INF/licenses'
         rename { 'box3d-LICENSE.txt' }
+    }
+    from(project(':modules:render-core').file('libs/caliko-LICENSE.txt')) {
+        into 'META-INF/licenses'
     }
 }
 

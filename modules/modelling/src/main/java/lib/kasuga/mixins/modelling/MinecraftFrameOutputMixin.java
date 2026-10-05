@@ -25,6 +25,7 @@ abstract class MinecraftFrameOutputMixin {
 
     @Inject(method = "close", at = @At("HEAD"))
     private void kasuga$releaseOutputs(CallbackInfo ci) {
+        lib.kasuga.rendering.effect.builtin.cloud.CloudEffects.shutdown();
         lib.kasuga.rendering.output.mc.DualCameraDebug.close();
         lib.kasuga.rendering.output.mc.MinecraftFrameWindows.shutdown();
         MinecraftCameras.shutdown();

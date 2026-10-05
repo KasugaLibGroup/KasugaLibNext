@@ -122,7 +122,7 @@ public final class EffectRenderPipeline<T extends RenderEffect> implements Pipel
         for (Slot<T> slot : active) {
             T effect = slot.effect;
             if (!slot.live.get() || !effect.isAlive()) continue;
-            if (context.frustum() != null && !context.frustum().isVisible(effect.bounds(partialTick))) continue;
+            if (!effect.isVisible(context, partialTick)) continue;
             visibleScratch.add(slot);
         }
         if (sortBackToFront && visibleScratch.size() > 1) {

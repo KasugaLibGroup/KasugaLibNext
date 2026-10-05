@@ -22,7 +22,7 @@ import lib.kasuga.formula.compute.infrastructure.Formula;
 // 新命名空间继承根命名空间的所有内置函数与常量。
 Namespace ns = new Namespace(Code.ROOT_NAMESPACE);
 
-Formula f = Code.decodeFormula("sin(time * 180) * 30", ns);
+Formula f = Code.decodeFormula("sin(rad(time * 180)) * 30", ns);
 ns.assign("time", 0.5f);          // 变量首次使用自动注册（初值 0）
 float result = f.getResult();     // sin(90°) * 30
 ```
@@ -134,7 +134,7 @@ boolean ok = cond.getResult();    // true
 .\gradlew.bat :modules:formula:test --tests lib.kasuga.formula.FormulaComputeTest
 ```
 
-56 个单元测试覆盖：运算符优先级（含 `%` 与 `* /` 同级）、`**` 幂、一元负号、函数嵌套、变量赋值/重赋值、点号命名、无空格符号运算符、单词运算符空格要求、链式比较报错。
+单元测试覆盖：运算符优先级（含 `%` 与 `* /` 同级）、`**` 幂、一元负号、函数嵌套、变量赋值/重赋值、点号命名、无空格符号运算符、单词运算符空格要求、链式比较报错。
 
 ## 相关源码位置
 
