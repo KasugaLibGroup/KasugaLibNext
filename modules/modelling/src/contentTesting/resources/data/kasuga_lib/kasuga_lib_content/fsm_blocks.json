@@ -3,7 +3,6 @@
     {
       "id": "kasuga_lib:fsm_test_block",
       "type": "fsm_block",
-      "registry_group": "kasuga_lib:data_driven_group",
       "state_machine": "kasuga_lib:fsm_test_panel",
       "properties": { "destroy_time": 2.0 },
       "block_entity": {

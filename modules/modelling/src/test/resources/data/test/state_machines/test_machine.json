@@ -1,16 +1,20 @@
 {
-  "id": "test:test_machine",
-  "layers": [
+  "state_machines": [
     {
-      "id": "locomotion",
-      "mode": "base",
-      "initial_state": "idle",
-      "states": [
-        { "id": "idle", "duration_ticks": 2 },
-        { "id": "walk", "pose": { "morphs": { "walk_cycle": 1.0 } } }
-      ],
-      "transitions": [
-        { "id": "idle_to_walk", "from": "idle", "to": "walk", "when_complete": true }
+      "id": "test:test_machine",
+      "layers": [
+        {
+          "id": "locomotion",
+          "mode": "base",
+          "initial_state": "idle",
+          "states": [
+            { "id": "idle", "duration_ticks": 2 },
+            { "id": "walk", "pose": { "morphs": { "walk_cycle": 1.0 } } }
+          ],
+          "transitions": [
+            { "id": "idle_to_walk", "from": "idle", "to": "walk", "when_complete": true }
+          ]
+        }
       ]
     }
   ]

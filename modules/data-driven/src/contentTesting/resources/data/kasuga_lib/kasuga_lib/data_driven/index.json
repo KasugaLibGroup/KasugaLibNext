@@ -1,5 +1,5 @@
 {
-  "sources": [
+  "on_register": [
     "kasuga_lib_content/block_entities.json",
     "kasuga_lib_content/blocks.json",
     "kasuga_lib_content/edge_cases_blocks.json",

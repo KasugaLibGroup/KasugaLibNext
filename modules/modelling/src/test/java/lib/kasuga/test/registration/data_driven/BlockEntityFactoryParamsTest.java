@@ -4,28 +4,32 @@ import com.google.gson.JsonObject;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.factory.FactoryRegistry;
 import lib.kasuga.registration.minecraft.block_entity.BlockEntityReg;
+import lib.kasuga.rendering.models.mc.dynamic.fsm.FsmBlockEntityFactories;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import test.kasuga.data_driven.DataDrivenTestFactories;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * B2.5: {@code fsm_be} / {@code fsm_block} 内置工厂（由 modelling 的
- * {@code FsmBlockEntityFactories} 注册，contentTesting 的 {@code DataDrivenTestFactories}
- * 显式调用保证注册顺序）。验证工厂从 params 读 {@code state_machine} / {@code model} /
- * {@code model_name}，缺失 {@code state_machine} 时 warn 但不崩。
+ * {@code FsmBlockEntityFactories} 注册）。验证工厂从 params 读 {@code state_machine} /
+ * {@code model} / {@code model_name}，缺失 {@code state_machine} 时 warn 但不崩。
  *
  * <p>注：BE 类型实例的创建需要注册期（{@code getEntry()}），纯 JVM 单测不触发；机器 id 捕获的
  * 端到端验证由 contentTesting 冒烟验收（放块 → 「machine built」日志）覆盖。
+ *
+ * <p>This lives in modelling's own test source set because it asserts modelling's built-in
+ * {@code fsm_block}/{@code fsm_be} factories, which data-driven no longer depends on.
  */
 class BlockEntityFactoryParamsTest {
 
     @BeforeAll
     static void loadFactories() {
-        // 触发 static 块（简单、幂等；测试环境不跑 Micronaut bean 生命周期）
-        assertNotNull(DataDrivenTestFactories.class);
+        // Register the FSM built-ins directly (idempotent). DataDrivenTestFactories' static registration
+        // block only fires when Micronaut instantiates that @Context bean (FML runtime); in a pure-JVM gate
+        // that never happens, so register here.
+        FsmBlockEntityFactories.registerBuiltin();
         assertNotNull(FactoryRegistry.getBlockEntityFactory("fsm_be"), "fsm_be factory must be registered");
         assertNotNull(FactoryRegistry.get("fsm_block"), "fsm_block factory must be registered");
     }

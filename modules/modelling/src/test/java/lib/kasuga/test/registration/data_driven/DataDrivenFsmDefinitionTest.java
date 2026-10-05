@@ -13,12 +13,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Data-driven-module integration: a realistic multi-layer definition (BASE + OVERRIDE) carrying an inline
+ * End-to-end FSM definition: a realistic multi-layer definition (BASE + OVERRIDE) carrying an inline
  * ephemeral trigger var and a {@code trigger_on} transition decodes via the production codec, builds via
  * {@link DefinitionStateMachineFactory}, and the two layers run in parallel — the trigger fires the OVERRIDE
  * layer independently of the BASE layer's {@code when_complete} progression. Mirrors how a shipper authors a
- * multi-layer data-driven FSM (the modelling module covers the codec/factory/tick chain with its own
- * definitions; this asserts it from inside the data-driven module with a shipped-shape multi-layer payload).
+ * multi-layer data-driven FSM, asserted here against a shipped-shape multi-layer payload.
+ *
+ * <p>This lives in modelling's own test source set (the UML FSM lives in render-core, a modelling
+ * dependency) because data-driven no longer depends on modelling.
  */
 class DataDrivenFsmDefinitionTest {
 

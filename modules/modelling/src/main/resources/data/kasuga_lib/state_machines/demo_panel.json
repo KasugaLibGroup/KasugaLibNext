@@ -1,66 +1,70 @@
 {
-  "id": "kasuga_lib:demo_panel",
-  "state_vars": [
-    { "name": "attack", "type": "bool", "default": false, "ephemeral": true }
-  ],
-  "layers": [
+  "state_machines": [
     {
-      "id": "locomotion",
-      "mode": "base",
-      "initial_state": "idle",
-      "states": [
-        {
-          "id": "idle",
-          "duration_ticks": 60,
-          "on_enter": ["kasuga_lib:unregistered_demo_enter"],
-          "pose": { "morphs": { "blink": 0.0 } }
-        },
-        {
-          "id": "walk",
-          "duration_ticks": 40,
-          "pose": { "morphs": { "walk_cycle": 1.0 } }
-        }
+      "id": "kasuga_lib:demo_panel",
+      "state_vars": [
+        { "name": "attack", "type": "bool", "default": false, "ephemeral": true }
       ],
-      "transitions": [
+      "layers": [
         {
-          "id": "idle_to_walk",
-          "from": "idle",
-          "to": "walk",
-          "when_complete": true,
-          "cross_fade_seconds": 0.25
+          "id": "locomotion",
+          "mode": "base",
+          "initial_state": "idle",
+          "states": [
+            {
+              "id": "idle",
+              "duration_ticks": 60,
+              "on_enter": ["kasuga_lib:unregistered_demo_enter"],
+              "pose": { "morphs": { "blink": 0.0 } }
+            },
+            {
+              "id": "walk",
+              "duration_ticks": 40,
+              "pose": { "morphs": { "walk_cycle": 1.0 } }
+            }
+          ],
+          "transitions": [
+            {
+              "id": "idle_to_walk",
+              "from": "idle",
+              "to": "walk",
+              "when_complete": true,
+              "cross_fade_seconds": 0.25
+            },
+            {
+              "id": "walk_to_idle",
+              "from": "walk",
+              "to": "idle",
+              "when_complete": true,
+              "cross_fade_seconds": 0.25
+            }
+          ]
         },
         {
-          "id": "walk_to_idle",
-          "from": "walk",
-          "to": "idle",
-          "when_complete": true,
-          "cross_fade_seconds": 0.25
-        }
-      ]
-    },
-    {
-      "id": "upper_body",
-      "mode": "override",
-      "initial_state": "none",
-      "states": [
-        { "id": "none", "pose": {} },
-        {
-          "id": "attack",
-          "duration_ticks": 10,
-          "pose": {
-            "bones": [
-              {
-                "name": "arm_r",
-                "transform": { "translate": [0, 0, -0.2], "rotate": [45, 0, 0], "scale": [1, 1, 1] },
-                "mode": "multiply"
+          "id": "upper_body",
+          "mode": "override",
+          "initial_state": "none",
+          "states": [
+            { "id": "none", "pose": {} },
+            {
+              "id": "attack",
+              "duration_ticks": 10,
+              "pose": {
+                "bones": [
+                  {
+                    "name": "arm_r",
+                    "transform": { "translate": [0, 0, -0.2], "rotate": [45, 0, 0], "scale": [1, 1, 1] },
+                    "mode": "multiply"
+                  }
+                ]
               }
-            ]
-          }
+            }
+          ],
+          "transitions": [
+            { "id": "none_to_attack", "from": "none", "to": "attack", "trigger_on": "attack" },
+            { "id": "attack_to_none", "from": "attack", "to": "none", "when_complete": true }
+          ]
         }
-      ],
-      "transitions": [
-        { "id": "none_to_attack", "from": "none", "to": "attack", "trigger_on": "attack" },
-        { "id": "attack_to_none", "from": "attack", "to": "none", "when_complete": true }
       ]
     }
   ]

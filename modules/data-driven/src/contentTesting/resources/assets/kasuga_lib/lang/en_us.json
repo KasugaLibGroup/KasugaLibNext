@@ -9,7 +9,6 @@
   "block.kasuga_lib.simple_by_params": "Simple by Params",
   "block.kasuga_lib.inherited_block": "Inherited Block",
   "block.kasuga_lib.overridden_block": "Overridden Block",
-  "block.kasuga_lib.fsm_test_block": "FSM Test Block",
 
   "item.kasuga_lib.test_material": "Test Material"
 }

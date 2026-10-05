@@ -1,34 +1,38 @@
 {
-  "id": "test:sync_demo",
-  "layers": [
+  "state_machines": [
     {
-      "id": "combo",
-      "mode": "base",
-      "weight": 1.0,
-      "initial_state": "idle",
-      "states": [
-        { "id": "idle", "duration_ticks": 40 },
-        { "id": "windup", "duration_ticks": 10 },
-        { "id": "hit", "duration_ticks": 6 }
-      ],
-      "transitions": [
-        { "id": "idle_to_windup", "from": "idle", "to": "windup", "when_complete": true, "cross_fade_seconds": 0.1 },
-        { "id": "windup_to_hit", "from": "windup", "to": "hit", "when_complete": true, "cross_fade_seconds": 0.1 },
-        { "id": "hit_to_idle", "from": "hit", "to": "idle", "when_complete": true, "cross_fade_seconds": 0.2 }
-      ]
-    },
-    {
-      "id": "upper",
-      "mode": "override",
-      "weight": 0.8,
-      "initial_state": "none",
-      "states": [
-        { "id": "none" },
-        { "id": "pose", "duration_ticks": 20 }
-      ],
-      "transitions": [
-        { "id": "none_to_pose", "from": "none", "to": "pose", "trigger_on": "pose", "cross_fade_seconds": 0.15 },
-        { "id": "pose_to_none", "from": "pose", "to": "none", "when_complete": true, "cross_fade_seconds": 0.15 }
+      "id": "test:sync_demo",
+      "layers": [
+        {
+          "id": "combo",
+          "mode": "base",
+          "weight": 1.0,
+          "initial_state": "idle",
+          "states": [
+            { "id": "idle", "duration_ticks": 40 },
+            { "id": "windup", "duration_ticks": 10 },
+            { "id": "hit", "duration_ticks": 6 }
+          ],
+          "transitions": [
+            { "id": "idle_to_windup", "from": "idle", "to": "windup", "when_complete": true, "cross_fade_seconds": 0.1 },
+            { "id": "windup_to_hit", "from": "windup", "to": "hit", "when_complete": true, "cross_fade_seconds": 0.1 },
+            { "id": "hit_to_idle", "from": "hit", "to": "idle", "when_complete": true, "cross_fade_seconds": 0.2 }
+          ]
+        },
+        {
+          "id": "upper",
+          "mode": "override",
+          "weight": 0.8,
+          "initial_state": "none",
+          "states": [
+            { "id": "none" },
+            { "id": "pose", "duration_ticks": 20 }
+          ],
+          "transitions": [
+            { "id": "none_to_pose", "from": "none", "to": "pose", "trigger_on": "pose", "cross_fade_seconds": 0.15 },
+            { "id": "pose_to_none", "from": "pose", "to": "none", "when_complete": true, "cross_fade_seconds": 0.15 }
+          ]
+        }
       ]
     }
   ]

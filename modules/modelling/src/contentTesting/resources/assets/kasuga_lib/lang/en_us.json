@@ -1,5 +1,6 @@
 {
   "itemGroup.kasuga_lib.modelling_test": "KasugaLib Modelling Tests",
+  "block.kasuga_lib.fsm_test_block": "FSM Test Block",
   "msg.kasuga_lib.fan_gear_0": "Fan: off",
   "msg.kasuga_lib.fan_gear_1": "Fan: gear 1",
   "msg.kasuga_lib.fan_gear_2": "Fan: gear 2",

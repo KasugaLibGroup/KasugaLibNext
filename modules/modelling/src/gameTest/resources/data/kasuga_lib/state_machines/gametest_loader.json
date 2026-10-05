@@ -1,14 +1,18 @@
 {
-  "id": "kasuga_lib:gametest_loader",
-  "layers": [{
-    "id": "base", "mode": "base", "weight": 1.0, "initial_state": "idle",
-    "states": [
-      { "id": "idle", "duration_ticks": 2 },
-      { "id": "active", "duration_ticks": 2 }
-    ],
-    "transitions": [
-      { "id": "idle_to_active", "from": "idle", "to": "active", "when_complete": true },
-      { "id": "active_to_idle", "from": "active", "to": "idle", "when_complete": true }
-    ]
-  }]
+  "state_machines": [
+    {
+      "id": "kasuga_lib:gametest_loader",
+      "layers": [{
+        "id": "base", "mode": "base", "weight": 1.0, "initial_state": "idle",
+        "states": [
+          { "id": "idle", "duration_ticks": 2 },
+          { "id": "active", "duration_ticks": 2 }
+        ],
+        "transitions": [
+          { "id": "idle_to_active", "from": "idle", "to": "active", "when_complete": true },
+          { "id": "active_to_idle", "from": "active", "to": "idle", "when_complete": true }
+        ]
+      }]
+    }
+  ]
 }
