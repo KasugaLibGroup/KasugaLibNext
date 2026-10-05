@@ -21,3 +21,4 @@
 | 风格化纹理、材质变体与分代缓存 | [PBR](PBR.md) |
 | 天气密度层、光线步进与遮光 | [体积云](volumetric-clouds.md) |
 | 内容树、属性转换、工厂与注册分派 | [数据驱动注册](data-driven-registration.md) |
+| 数据驱动内容创作：上手、格式、扩展与 reload（五篇） | [数据驱动专题](data-driven/intro.md) |

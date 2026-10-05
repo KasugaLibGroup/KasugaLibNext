@@ -650,6 +650,8 @@ private static boolean neoForgeRuntimeLoaded() {
 7. **属性编译器只能追加、无法覆盖内置键**：匹配是「首个命中生效」，内置项在前（§4.2）；`removeCompiler` 需要精确实例，内置项未暴露。
 8. **两类属性解析器的键语义不一致**：`JsonPropertyParser` 把键归一化为 `ResourceLocation`（小写、可带命名空间），`JsonItemParser` 逐字匹配且区分大小写（§4.2、§4.3）。
 9. **`Diagnostics` 的 domain 维已有写入方**：reload 错误落在 `Domain.RELOAD_DATA`、键 = 命名空间（§5.4）。扩展的失败按归属选维。
+10. **内置物品属性解析器只覆盖少数键**：`JsonItemParser` 内置 `stacks_to` / `rarity` / `fire_resistant` / `durability` / `no_repair`（`tab` 由 loader 单独消费）；food 属性、物品组件（component）等未内置，未知键只 warn 并忽略（`JsonItemParser:63`）。需要时用 `registerParser` 扩展（§4.3）。
+11. **内嵌 BE 的 `data_type`（DataFixer 类型）不能从 JSON 配置**：`BlockEntityReg` 有 `DataType` 修饰器（`RegFacade.transformObject("DataType", …)`，传给 `BlockEntityType.Builder.build(dataType)`），但 JSON 侧的 `block_entity` 只有 `type` / `params`（[schema.md](schema.md) §2.5），没有对应通道。
 
 ---
 

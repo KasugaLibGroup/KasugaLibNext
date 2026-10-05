@@ -498,6 +498,13 @@ reload 域有两类内容，顶层字段名就是它们各自唯一的合法键�
 > **最佳实践**：区分「会入错误桶的错」和「只打 WARN 的错」。前者（索引、路径、字段、重复 id、apply 失败）可以靠 `getLoadingErrors` 断言红灯；
 > 后者（未知工厂、未知属性、缺失组、组成环）只能靠**读日志**发现。把这两类混为一谈会漏掉后半截问题。
 
+### 7.1 数据驱动不生成资源与本地化
+
+数据驱动只注册 **block / item / block entity** 本身（`blocks` 条目没有 `model` / `textures` 字段，见 [schema.md](schema.md) §2.3）。方块要显示正常，模型、纹理与语言仍按原版约定在资源包里提供，系统不替你生成：
+
+- **模型 / 纹理**：按 Minecraft 约定查找 `assets/<namespace>/blockstates/<path>.json` 与 `assets/<namespace>/models/block/<path>.json`，需手动补全；缺了就是紫黑块。
+- **翻译键**：约定推导为 `block.<namespace>.<path>`（物品为 `item.<namespace>.<path>`），需在 `lang/*.json` 里手动添加；缺了显示原始键名。
+
 ---
 
 ## 8. 目标：确认写对了 —— 验证与排查
@@ -637,4 +644,4 @@ carriages/22/
 | Java 类与方法的完整签名、加载时序、纯函数测试面 | [api.md](api.md) |
 | 从零跑通第一条路径的入门 | [intro.md](intro.md) |
 | 注册自己的 `type` 工厂、属性编译器、TypeHandler | [guide-extension.md](guide-extension.md) |
-| Fsm 状态机的专门说明 | [`../fsm.md`](../fsm.md) |
+| Fsm 状态机的专门说明 | [`../../api/fsm.md`](../../api/fsm.md) |

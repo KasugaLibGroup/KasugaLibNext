@@ -223,7 +223,7 @@ src/main/resources/data/mymod/kasuga_lib_content/blocks.json        ← 内容�
 }
 ```
 
-顶层是 `state_machines` 键，值是定义数组（多余的顶层键不再拒绝文件，见 [fsm.md](../fsm.md) §2.4）。定义元素内部（`state_vars`、`layers`……）属于状态机规范，见 [fsm.md](../fsm.md) 与 [schema.md](schema.md) 的「4.2 `state_machines` wrapper」。
+顶层是 `state_machines` 键，值是定义数组（多余的顶层键不再拒绝文件，见 [fsm.md](../../api/fsm.md) §2.4）。定义元素内部（`state_vars`、`layers`……）属于状态机规范，见 [fsm.md](../../api/fsm.md) 与 [schema.md](schema.md) 的「4.2 `state_machines` wrapper」。
 
 ### 5.4 reload 期：动画剪辑（只走索引）
 
@@ -319,4 +319,4 @@ Loaded animation clip 'kasuga_lib:fan_fsm_data_driven' from 'data/kasuga_lib/ani
 - [api.md](api.md)：`JsonTreeBuilder`、`Diagnostics`、`ReloadOrchestrator`、`ReloadHandler` 等类的签名与行为契约。
 - [guide-content.md](guide-content.md)：具体任务的分步做法（加方块、配创造栏、属性继承……）。
 - [guide-extension.md](guide-extension.md)：Java 侧扩展。注册自己的工厂与 TypeHandler，把团队私有内容接进数据驱动。
-- [fsm.md](../fsm.md)：状态机定义与动画片段元素的格式。
+- [fsm.md](../../api/fsm.md)：状态机定义与动画片段元素的格式。

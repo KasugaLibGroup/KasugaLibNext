@@ -21,7 +21,7 @@
 
 覆盖：索引文件格式、注册期内容文件格式（`registry_groups` / `blocks` / `items` / 内嵌 `block_entity`）、重复 id 规则、reload 期内容文件 wrapper 格式、错误的分类与出口。
 
-不覆盖：各 `properties` 键在注册表里的具体效果（见 `guide-content.md`）、状态机定义与动画片段元素内部的完整 codec 字段（见 `fsm.md` 与 `uml/` 下的 codec）、Java 侧 `TypeHandler` 扩展（见 `guide-extension.md`）。
+不覆盖：各 `properties` 键在注册表里的具体效果（见 `guide-content.md`）、状态机定义与动画片段元素内部的完整 codec 字段（见 `../../api/fsm.md` 与 `uml/` 下的 codec）、Java 侧 `TypeHandler` 扩展（见 `guide-extension.md`）。
 
 ## 1. 索引文件（index manifest）
 
@@ -361,7 +361,7 @@ last-wins 的「后」是**加载序列中的位置**，不是路径的字典序
 ```
 
 - 一个文件可放多个定义，**数组顺序即文件内 last-wins 顺序**（`StateMachineDefinitionLoader.java:14-33`）。
-- 元素 schema 由 `StateMachineDefinition.CODEC` 决定；本页只规范 wrapper，元素字段见 `fsm.md` 与对应 codec。
+- 元素 schema 由 `StateMachineDefinition.CODEC` 决定；本页只规范 wrapper，元素字段见 `../../api/fsm.md` 与对应 codec。
 
 ### 4.3 `animation_clips` wrapper
 
@@ -493,7 +493,7 @@ reload 类型不是硬编码的：继承/实现 `ReloadHandler<T>`，用一个 `
 - **`guide-content.md`**：任务向教程，回答「怎么搭第一个内容文件」；其中的属性键语义、排查清单以本页格式为准。
 - **`guide-extension.md`**：Java 侧扩展（自定义 `TypeHandler` / 工厂 / 属性编译器）。
 - **`api.md`**：Java API 参考；其索引章节若仍写 `sources`，以本页为准。
-- **`fsm.md`**：状态机定义与动画片段**元素内部**的 codec 字段。
+- **`../../api/fsm.md`**：状态机定义与动画片段**元素内部**的 codec 字段。
 
 ## 附录 A：本文未覆盖 / 待确认
 
