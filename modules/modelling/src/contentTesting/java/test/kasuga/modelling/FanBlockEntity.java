@@ -11,6 +11,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * v2.0 fan test block entity (standard FSM): gear = state of the {@code "gear"} layer, exactly one
@@ -44,8 +45,28 @@ public class FanBlockEntity extends AnimationBlockEntity {
     /** Persisted gear index pending machine build ({@code -1} = none / already consumed). */
     private int pendingGear = -1;
 
+    /**
+     * Code-registered variant: binds the machine / model the fan demo has always used
+     * ({@link #FAN_MACHINE_ID} / {@link #FAN_MODEL_LOC}). Kept as the default constructor so the two
+     * original programmatic registrations in {@code ModellingContentTest} are unaffected.
+     */
     public FanBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
-        super(type, pos, state, FAN_MACHINE_ID, FAN_MODEL_LOC, null);
+        this(type, pos, state, FAN_MACHINE_ID, FAN_MODEL_LOC);
+    }
+
+    /**
+     * Data-driven variant: the machine definition id and the model location are supplied by the caller
+     * (the {@code fan_be} factory reads them from the block entity's {@code params}). Passed straight to
+     * {@link AnimationBlockEntity}; the {@link FanVarProvider} render projection is shared by both
+     * variants, since the {@code kasuga_lib:fan/current_speed} / {@code kasuga_lib:fan/angle} specs it
+     * writes are registered once and referenced by every fan machine definition.
+     *
+     * @param machineId the state machine definition id to build; {@code null} disables the machine
+     * @param model     the model resource to bind; {@code null} disables the render binding
+     */
+    public FanBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state,
+                          @Nullable Id machineId, @Nullable ResourceLocation model) {
+        super(type, pos, state, machineId, model, null);
         setVarProvider(new FanVarProvider());
     }
 
