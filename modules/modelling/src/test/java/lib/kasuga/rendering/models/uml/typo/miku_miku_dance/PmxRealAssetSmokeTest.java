@@ -165,12 +165,12 @@ class PmxRealAssetSmokeTest {
                 float linearSpeed = body.linearVelocity().length();
                 if (linearSpeed > maximumAirDragLinearSpeed) {
                     maximumAirDragLinearSpeed = linearSpeed;
-                    maximumAirDragLinearBody = body.source().localName();
+                    maximumAirDragLinearBody = body.source().name();
                 }
                 float angularSpeed = body.angularVelocity().length();
                 if (angularSpeed > maximumAirDragAngularSpeed) {
                     maximumAirDragAngularSpeed = angularSpeed;
-                    maximumAirDragAngularBody = body.source().localName();
+                    maximumAirDragAngularBody = body.source().name();
                 }
             }
         }
@@ -213,12 +213,12 @@ class PmxRealAssetSmokeTest {
                 float linearSpeed = body.linearVelocity().length();
                 if (linearSpeed > maximumRestingLinearSpeed) {
                     maximumRestingLinearSpeed = linearSpeed;
-                    maximumRestingLinearBody = body.source().localName();
+                    maximumRestingLinearBody = body.source().name();
                 }
                 float angularSpeed = body.angularVelocity().length();
                 if (angularSpeed > maximumRestingAngularSpeed) {
                     maximumRestingAngularSpeed = angularSpeed;
-                    maximumRestingAngularBody = body.source().localName();
+                    maximumRestingAngularBody = body.source().name();
                 }
             }
         }
@@ -235,8 +235,8 @@ class PmxRealAssetSmokeTest {
         assertTrue(maximumAnchorError < 0.005f,
                 "ground collision joint anchor error=" + maximumAnchorError
                         + (worstAnchorJoint == null ? "" : " joint="
-                        + ((MmdRagdoll.Body) worstAnchorJoint.bodyA()).source().localName()
-                        + "->" + ((MmdRagdoll.Body) worstAnchorJoint.bodyB()).source().localName()));
+                        + ((MmdRagdoll.Body) worstAnchorJoint.bodyA()).source().name()
+                        + "->" + ((MmdRagdoll.Body) worstAnchorJoint.bodyB()).source().name()));
         MmdRagdoll.Joint worstAngularJoint = ragdoll.joints().stream()
                 .filter(joint -> joint.rotationLimiter() != null)
                 .max(Comparator.comparingDouble(MmdRagdoll.Joint::angularLimitViolation))
@@ -244,8 +244,8 @@ class PmxRealAssetSmokeTest {
         float maximumAngularViolation = worstAngularJoint.angularLimitViolation();
         assertTrue(maximumAngularViolation <= Math.toRadians(3.0),
                 "ground collision angular joint limit drift=" + Math.toDegrees(maximumAngularViolation)
-                        + " parent=" + ((MmdRagdoll.Body) worstAngularJoint.bodyA()).source().localName()
-                        + " child=" + ((MmdRagdoll.Body) worstAngularJoint.bodyB()).source().localName());
+                        + " parent=" + ((MmdRagdoll.Body) worstAngularJoint.bodyA()).source().name()
+                        + " child=" + ((MmdRagdoll.Body) worstAngularJoint.bodyB()).source().name());
         assertTrue(maximumRestingLinearSpeed < 0.05f,
                 "resting tiled-ground linear jitter=" + maximumRestingLinearSpeed
                         + " body=" + maximumRestingLinearBody

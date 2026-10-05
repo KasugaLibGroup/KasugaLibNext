@@ -77,11 +77,17 @@ public final class StandaloneRenderHarness {
             run(results, "fenced-upload-ring", UploadRingRegression::run);
             run(results, "completed-frame-output", FrameOutputRegression::run);
             run(results, "shared-preview-windows", lib.kasuga.rendering.output.gl.PreviewWindowRegression::run);
+            run(results, "cumulonimbus-volume", () -> CloudVolumeRegression.run(options.report.getParent()));
+            run(results, "sky-cloud-field", () -> SkyCloudRegression.run(options.report.getParent()));
             if (results.stream().anyMatch(result -> !Boolean.TRUE.equals(result.get("passed")))) {
                 throw new AssertionError("Standalone GPU regression failed; inspect report.json");
             }
             if (!options.mode.equals("test")) {
-                report.put("scene", suite.measure(options, window));
+                report.put("scene", System.getProperty("kasuga.render.scene", "model").equals("sky")
+                        ? (options.mode.equals("bench") ? SkyCloudRegression.benchmark(options) : SkyCloudRegression.preview(options, window))
+                        : System.getProperty("kasuga.render.scene", "model").equals("cloud")
+                        ? (options.mode.equals("bench") ? CloudVolumeRegression.benchmark(options)
+                        : CloudVolumeRegression.preview(options, window)) : suite.measure(options, window));
             }
             if (options.mode.equals("bench")) {
                 report.put("uploadRingBenchmark", UploadRingBenchmark.run(options.warmup, options.frames));

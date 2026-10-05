@@ -30,6 +30,13 @@ public class SkeletonBuilder {
 
     private final HashSet<VertexRecord> vertexRecords;
 
+    private java.util.function.Consumer<SkeletonDynamicsBuilder> dynamics;
+
+    public SkeletonBuilder dynamics(java.util.function.Consumer<SkeletonDynamicsBuilder> configure) {
+        dynamics = java.util.Objects.requireNonNull(configure, "configure");
+        return this;
+    }
+
     public SkeletonBuilder() {
         boneRecords = new HashMap<>();
         anchorRecords = new HashMap<>();
@@ -52,6 +59,7 @@ public class SkeletonBuilder {
         boneRecords.clear();
         anchorRecords.clear();
         vertexRecords.clear();
+        dynamics = null;
     }
 
     public Skeleton build(SkeletonData skeletonData, @Nullable Transform rootTransform,
@@ -118,6 +126,11 @@ public class SkeletonBuilder {
                 skeletonData,
                 rootTransform == null ? new Transform() : rootTransform
         );
+        if (dynamics != null) {
+            SkeletonDynamicsBuilder builder = new SkeletonDynamicsBuilder(skeleton);
+            dynamics.accept(builder);
+            builder.attach();
+        }
         return skeleton;
     }
 }

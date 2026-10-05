@@ -19,4 +19,9 @@ public interface RenderEffect {
     }
 
     AABB bounds(float partialTick);
+
+    /** Override for sky volumes that extend beyond the terrain far plane. */
+    default boolean isVisible(WorldRenderPipelineContext context, float partialTick) {
+        return context.frustum() == null || context.frustum().isVisible(bounds(partialTick));
+    }
 }

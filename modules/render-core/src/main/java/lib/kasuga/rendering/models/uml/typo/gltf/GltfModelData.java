@@ -23,6 +23,11 @@ public record GltfModelData(GltfAsset asset, Map<Integer, Bone> boneByNode,
 
     @Override public boolean isMeshTriangles() { return true; }
 
+    @Override public void configureSkeleton(lib.kasuga.rendering.models.uml.structure.skeleton.Skeleton skeleton) {
+        new lib.kasuga.rendering.models.uml.loaders.SkeletonDynamicsBuilder(skeleton)
+                .read(this, new GltfSkeletonDynamicsReader()).attach();
+    }
+
     public record GltfMeshData(String name, int nodeIndex, int skinIndex) implements MeshData {}
     public record GltfMaterialData(GltfAsset.Material material) implements MaterialData {
         @Override

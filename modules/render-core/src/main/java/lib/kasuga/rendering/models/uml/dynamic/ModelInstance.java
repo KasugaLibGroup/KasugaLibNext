@@ -158,7 +158,7 @@ public class ModelInstance implements AutoCloseable {
     }
 
     /**
-     * Creates and enables the PMX/PMD ragdoll attached to this instance.
+     * Creates and enables the ragdoll from this skeleton's common physics definitions.
      * Returns {@code null} when this distribution has no Box3D native library.
      */
     @Nullable

@@ -23,6 +23,11 @@ public class Skeleton {
 
     private final SkeletonData data;
 
+    /** Shared authored rig. Configure before creating model instances. */
+    @NonNull
+    @Setter
+    private SkeletonDynamics dynamics = SkeletonDynamics.EMPTY;
+
     private final Anchor[] anchors;
 
     private final HashMap<String, Bone> boneMap;
