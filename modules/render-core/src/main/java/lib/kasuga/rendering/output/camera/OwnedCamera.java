@@ -20,18 +20,18 @@ public final class OwnedCamera implements CameraHandle {
     private final Output output;
     private final Runnable checkThread;
     private final Runnable onClosed;
-    private Supplier<WorldCameraView> pose;
+    private final CameraAnimationPlayer animation;
     private CameraState state = CameraState.READY;
     private Throwable failure;
 
     public OwnedCamera(String viewId, Supplier<WorldCameraView> pose, Producer producer,
                        Output output, Runnable checkThread, Runnable onClosed) {
         this.viewId = Objects.requireNonNull(viewId);
-        this.pose = Objects.requireNonNull(pose);
         this.producer = Objects.requireNonNull(producer);
         this.output = Objects.requireNonNull(output);
         this.checkThread = Objects.requireNonNull(checkThread);
         this.onClosed = Objects.requireNonNull(onClosed);
+        this.animation = new CameraAnimationPlayer(pose, () -> { this.checkThread.run(); ensureUsable(); });
     }
 
     public String viewId() { return viewId; }
@@ -45,14 +45,27 @@ public final class OwnedCamera implements CameraHandle {
 
     /** Called once by the renderer; providers cannot return a null pose. */
     public WorldCameraView samplePose() {
+        return samplePose(1);
+    }
+
+    public WorldCameraView samplePose(float partialTick) {
         checkThread.run();
         ensureUsable();
-        try { return Objects.requireNonNull(pose.get(), "Camera provider returned null"); }
+        try { return animation.sample(partialTick); }
         catch (RuntimeException failure) { fail(failure); throw failure; }
     }
 
+    public WorldCameraView pose() { return samplePose(); }
+    public CameraAnimationPlayer animation() { checkThread.run(); ensureUsable(); return animation; }
+
+    /** Pausing the camera also pauses clock advancement; disabled cameras do not render. */
+    public void tick(float dt) {
+        checkThread.run();
+        if (state() == CameraState.READY) animation.tick(dt);
+    }
+
     public void updatePose(Supplier<WorldCameraView> pose) {
-        checkThread.run(); ensureUsable(); this.pose = Objects.requireNonNull(pose);
+        animation.updatePose(pose);
     }
     public void pause() {
         checkThread.run(); ensureUsable(); producer.setEnabled(false); state = CameraState.PAUSED;
@@ -83,6 +96,7 @@ public final class OwnedCamera implements CameraHandle {
     }
 
     private void release() throws Exception {
+        animation.detach();
         Exception first = null;
         try { producer.close(); } catch (Exception failure) { first = failure; }
         try { output.close(); } catch (Exception failure) {

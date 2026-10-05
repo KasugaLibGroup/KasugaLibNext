@@ -6,6 +6,7 @@ import lib.kasuga.KasugaLib;
 import lib.kasuga.rendering.output.FrameOutputMode;
 import lib.kasuga.rendering.output.WorldCameraView;
 import lib.kasuga.rendering.output.camera.CameraHandle;
+import lib.kasuga.rendering.output.camera.CameraAnimationPlayer;
 import lib.kasuga.rendering.output.camera.CameraRenderSettings;
 import lib.kasuga.rendering.output.camera.CameraState;
 import lib.kasuga.rendering.output.gl.FramePreviewWindow;
@@ -98,6 +99,8 @@ public final class MinecraftFrameWindows {
         public String viewId() { return camera.viewId(); }
         public CameraState state() { return camera.state(); }
         public Optional<Throwable> failure() { return camera.failure(); }
+        public WorldCameraView pose() { return windowPose(camera.pose()); }
+        public CameraAnimationPlayer animation() { return camera.animation(); }
         public void updatePose(Supplier<WorldCameraView> pose) {
             java.util.Objects.requireNonNull(pose, "pose");
             camera.updatePose(() -> windowPose(pose.get()));

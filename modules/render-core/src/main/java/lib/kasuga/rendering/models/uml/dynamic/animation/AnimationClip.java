@@ -1,15 +1,19 @@
 package lib.kasuga.rendering.models.uml.dynamic.animation;
 
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.codec.TransformDefinition;
 import lib.kasuga.rendering.models.uml.dynamic.math.Easing;
+import lib.kasuga.rendering.output.camera.CameraAnimationClip;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 
 /**
- * Data-driven keyframe animation clip: per-bone / morph / material-frame tracks over time.
+ * Data-driven keyframe animation clip: bone, morph, material and named camera tracks on one timeline.
  *
  * <p>JSON shape mirrors the FSM's {@code state_machines/*.json} conventions ({@link TransformDefinition}
  * for transforms, angles in degrees, easing referenced by canonical name — see {@link Easing#byName}):
@@ -32,26 +36,59 @@ public record AnimationClip(
         List<BoneTrack> bones,
         List<MorphTrack> morphs,
         List<FrameTrack> frames,
-        List<FunctionTrack> functions
+        List<FunctionTrack> functions,
+        List<CameraTrack> cameras
 ) {
 
-    /** Easing name {@code ↔} built-in instance; unknown names decode to {@link Easing#linear()}. */
-    public static final Codec<Easing> EASING_CODEC = Codec.STRING.xmap(
-            name -> {
-                Easing easing = Easing.byName(name);
-                return easing != null ? easing : Easing.linear();
-            },
-            Easing::nameOf
-    );
+    /** Existing model-only constructor remains source-compatible. */
+    public AnimationClip(Id id, float durationSeconds, List<BoneTrack> bones, List<MorphTrack> morphs,
+                         List<FrameTrack> frames, List<FunctionTrack> functions) {
+        this(id, durationSeconds, bones, morphs, frames, functions, List.of());
+    }
 
-    public static final Codec<AnimationClip> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-            Id.CODEC.fieldOf("id").forGetter(AnimationClip::id),
-            Codec.FLOAT.optionalFieldOf("duration_seconds", 1f).forGetter(AnimationClip::durationSeconds),
-            BoneTrack.CODEC.listOf().optionalFieldOf("bones", List.of()).forGetter(AnimationClip::bones),
-            MorphTrack.CODEC.listOf().optionalFieldOf("morphs", List.of()).forGetter(AnimationClip::morphs),
-            FrameTrack.CODEC.listOf().optionalFieldOf("frames", List.of()).forGetter(AnimationClip::frames),
-            FunctionTrack.CODEC.listOf().optionalFieldOf("functions", List.of()).forGetter(AnimationClip::functions)
-    ).apply(instance, AnimationClip::new));
+    public AnimationClip {
+        cameras = List.copyOf(cameras);
+        var names = new HashSet<String>();
+        for (var camera : cameras) {
+            if (!names.add(camera.camera())) throw new IllegalArgumentException("Duplicate camera target: " + camera.camera());
+            new CameraAnimationClip(id, durationSeconds, camera.tracks());
+        }
+    }
+
+    /** Easing name {@code ↔} built-in instance; unknown names decode to {@link Easing#linear()}. */
+    public static final Codec<Easing> EASING_CODEC = Easing.CODEC;
+
+    private record Data(Id id, float durationSeconds, List<BoneTrack> bones, List<MorphTrack> morphs,
+                        List<FrameTrack> frames, List<FunctionTrack> functions, List<CameraTrack> cameras) {}
+
+    public static final Codec<AnimationClip> CODEC = RecordCodecBuilder.<Data>create(instance -> instance.group(
+            Id.CODEC.fieldOf("id").forGetter(Data::id),
+            Codec.FLOAT.optionalFieldOf("duration_seconds", 1f).forGetter(Data::durationSeconds),
+            BoneTrack.CODEC.listOf().optionalFieldOf("bones", List.of()).forGetter(Data::bones),
+            MorphTrack.CODEC.listOf().optionalFieldOf("morphs", List.of()).forGetter(Data::morphs),
+            FrameTrack.CODEC.listOf().optionalFieldOf("frames", List.of()).forGetter(Data::frames),
+            FunctionTrack.CODEC.listOf().optionalFieldOf("functions", List.of()).forGetter(Data::functions),
+            CameraTrack.CODEC.listOf().optionalFieldOf("cameras", List.of()).forGetter(Data::cameras)
+    ).apply(instance, Data::new)).comapFlatMap(data -> {
+        try { return DataResult.success(new AnimationClip(data.id(), data.durationSeconds(), data.bones(),
+                data.morphs(), data.frames(), data.functions(), data.cameras())); }
+        catch (IllegalArgumentException failure) { return DataResult.error(failure::getMessage); }
+    }, clip -> new Data(clip.id(), clip.durationSeconds(), clip.bones(), clip.morphs(), clip.frames(), clip.functions(), clip.cameras()));
+
+    /** Camera names are logical binding targets; they need not equal the output view ID. */
+    public record CameraTrack(String camera, List<CameraAnimationClip.Track> tracks) {
+        public CameraTrack {
+            Objects.requireNonNull(camera, "camera");
+            if (camera.isBlank()) throw new IllegalArgumentException("Camera target must not be blank");
+            tracks = List.copyOf(tracks);
+        }
+
+        public static final Codec<CameraTrack> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Codec.STRING.validate(name -> name.isBlank() ? DataResult.error(() -> "Camera target must not be blank")
+                        : DataResult.success(name)).fieldOf("camera").forGetter(CameraTrack::camera),
+                CameraAnimationClip.Track.CODEC.listOf().fieldOf("tracks").forGetter(CameraTrack::tracks)
+        ).apply(instance, CameraTrack::new));
+    }
 
     /** One bone's keyframe track: {@code time → transform}, interpolated with the segment's easing. */
     public record BoneTrack(String bone, List<Keyframe> keyframes) {

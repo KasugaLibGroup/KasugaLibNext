@@ -28,6 +28,7 @@ abstract class MinecraftFrameOutputMixin {
         lib.kasuga.rendering.output.mc.DualCameraDebug.close();
         lib.kasuga.rendering.output.mc.MinecraftFrameWindows.shutdown();
         MinecraftCameras.shutdown();
+        lib.kasuga.rendering.models.mc.dynamic.animation.MinecraftAnimationTimelines.shutdown();
         MinecraftWorldViews.shutdown();
         MinecraftFrameOutputs.shutdown();
     }

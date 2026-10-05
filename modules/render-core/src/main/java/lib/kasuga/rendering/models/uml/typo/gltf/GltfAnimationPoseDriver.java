@@ -3,6 +3,7 @@ package lib.kasuga.rendering.models.uml.typo.gltf;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
 import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationPlayer;
+import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationTimeline;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -38,6 +39,17 @@ public final class GltfAnimationPoseDriver implements PoseDriver {
     }
 
     public void stop() { player.stop(); }
+
+    public boolean follow(String name, AnimationTimeline timeline) {
+        GltfAsset.AnimationClip clip = clips.get(name);
+        if (clip == null) return false;
+        player.follow(sampler, clip, timeline);
+        return true;
+    }
+
+    public void pause() { player.pause(); }
+    public void resume() { player.resume(); }
+    public void seek(float seconds) { player.seek(seconds); }
 
     public void setSpeed(float speed) { player.setSpeed(speed); }
 

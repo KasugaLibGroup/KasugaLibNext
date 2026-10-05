@@ -2,6 +2,7 @@ package lib.kasuga.rendering.output.mc;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.logging.LogUtils;
+import lib.kasuga.KasugaLib;
 import lib.kasuga.rendering.output.FrameOutputMode;
 import lib.kasuga.rendering.output.FrameTexture;
 import lib.kasuga.rendering.output.OutputFrame;
@@ -9,6 +10,11 @@ import lib.kasuga.rendering.output.WorldCameraView;
 import lib.kasuga.rendering.output.camera.CameraHandle;
 import lib.kasuga.rendering.output.camera.CameraRenderSettings;
 import lib.kasuga.rendering.output.camera.OwnedCamera;
+import net.minecraft.client.Minecraft;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 
 import java.util.LinkedHashMap;
 import java.util.Objects;
@@ -16,6 +22,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /** One-call camera creation; the returned handle owns both the producer and its output. */
+@EventBusSubscriber(modid = KasugaLib.MODID, value = Dist.CLIENT)
 public final class MinecraftCameras {
     private static final LinkedHashMap<String, OwnedCamera> CAMERAS = new LinkedHashMap<>();
     private MinecraftCameras() {}
@@ -42,7 +49,8 @@ public final class MinecraftCameras {
         Objects.requireNonNull(pose); Objects.requireNonNull(consumer);
         if (CAMERAS.containsKey(viewId)) throw new IllegalArgumentException("Duplicate camera: " + viewId);
         OwnedCamera[] owner = new OwnedCamera[1];
-        var producer = MinecraftWorldViews.register(viewId, () -> owner[0].samplePose(), settings);
+        var producer = MinecraftWorldViews.register(viewId,
+                () -> owner[0].samplePose(Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(true)), settings);
         try {
             var output = MinecraftFrameOutputs.open(viewId, FrameOutputMode.OFFSCREEN_ONLY, frame -> {
                 try { consumer.accept(frame); }
@@ -64,6 +72,12 @@ public final class MinecraftCameras {
             producer.close();
             throw failure;
         }
+    }
+
+    @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
+        var mc = Minecraft.getInstance();
+        if (mc.level == null || mc.isPaused()) return;
+        for (var camera : CAMERAS.values().toArray(OwnedCamera[]::new)) camera.tick(1f / 20f);
     }
 
     /** Close every camera before renderer/window teardown. */

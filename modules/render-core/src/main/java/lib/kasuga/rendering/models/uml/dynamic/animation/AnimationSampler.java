@@ -23,7 +23,7 @@ import org.jetbrains.annotations.Nullable;
  *
  * @param <T> the format's animation data type
  */
-public interface AnimationSampler<T> {
+public interface AnimationSampler<T> extends AnimationSource<T, Pose> {
 
     /**
      * Total duration in seconds (used by the player for loop modulo and end-clamp).
