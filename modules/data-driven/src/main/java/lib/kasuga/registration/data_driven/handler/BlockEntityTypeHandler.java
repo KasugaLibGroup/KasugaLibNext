@@ -27,6 +27,9 @@ public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
     public String getParentTypeName() { return "blocks"; }
 
     @Override
+    public String getEmbeddedKeyName() { return "block_entity"; }
+
+    @Override
     public List<JsonObject> extractEmbedded(JsonObject blockJson) {
         if (!blockJson.has("block_entity")) return null;
         JsonObject be = blockJson.getAsJsonObject("block_entity").deepCopy();
