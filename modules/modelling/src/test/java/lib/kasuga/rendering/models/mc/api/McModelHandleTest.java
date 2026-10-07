@@ -27,6 +27,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class McModelHandleTest {
+    @Test
+    void handleCanBeDestroyedBeforeGlobalPipelinesInitialize() {
+        McModelHandle handle = McModelHandle.of(
+                ResourceLocation.fromNamespaceAndPath("test", "missing.obj"), null,
+                ResourceLocation.fromNamespaceAndPath("test", "early"), null);
+        assertFalse(handle.mount());
+        handle.destroy(); assertFalse(handle.mount());
+    }
     private static final ResourceLocation MODEL =
             ResourceLocation.fromNamespaceAndPath("test", "model");
     private static final ResourceLocation INSTANCE =

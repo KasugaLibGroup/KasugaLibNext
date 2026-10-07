@@ -209,6 +209,8 @@ neoForge {
             if (cameraMotion.isPresent()) systemProperty 'kasuga.testCameraMotion', cameraMotion.get()
             def cameraAnimation = providers.gradleProperty('kasugaTestCameraAnimation')
             if (cameraAnimation.isPresent()) systemProperty 'kasuga.testCameraAnimation', cameraAnimation.get()
+            def cameraTypes = providers.gradleProperty('kasugaTestCameraTypes')
+            if (cameraTypes.isPresent()) systemProperty 'kasuga.testCameraTypes', cameraTypes.get()
             def cloudSmoke = providers.gradleProperty('kasugaTestCloud')
             if (cloudSmoke.isPresent()) systemProperty 'kasuga.testCloud', cloudSmoke.get()
             def skyCloudSmoke = providers.gradleProperty('kasugaTestSkyCloud')

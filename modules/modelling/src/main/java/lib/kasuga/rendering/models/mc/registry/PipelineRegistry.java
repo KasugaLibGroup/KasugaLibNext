@@ -30,6 +30,9 @@ import lib.kasuga.rendering.models.mc.typo.fmt.FmtBinaryLoader;
 import lib.kasuga.rendering.models.mc.typo.pmx_entry.ZipHelper;
 import lib.kasuga.rendering.models.mc.typo.pmx_entry.ZipResource;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
+import lib.kasuga.rendering.models.mc.api.McModelAssemblies;
+import lib.kasuga.rendering.models.mc.dynamic.fsm.KasugaModelPipelines;
+import lib.kasuga.rendering.models.uml.loaders.assembly.ModelAssemblyCache;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
@@ -48,6 +51,7 @@ public final class PipelineRegistry {
     public static final String BBMODEL = "bbmodel";
     public static final String FMT_ARCHIVE = "fmt_archive";
     public static final String FMT_BINARY = "fmt_binary";
+    public static final String ASSEMBLY = "assembly";
 
     private static final Map<String, ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?>> PIPELINES =
             new ConcurrentHashMap<>();
@@ -73,6 +77,7 @@ public final class PipelineRegistry {
     private static MCBackend backend;
     private static KsgPmxLoader pmxLoader;
     private static KsgGltfLoader gltfLoader;
+    private static McModelAssemblies assemblies;
 
     private static ModelPipeLine<JsonObject, BackendInstance, ResourceLocation, ResourceLocation, String> bePipeline;
     private static ModelPipeLine<JsonObject, BackendInstance, ResourceLocation, ResourceLocation, String> jePipeline;
@@ -185,6 +190,10 @@ public final class PipelineRegistry {
                 .withBackend("mc_backend", backend)
                 .build();
         register(FMT_BINARY, fmtBinaryPipeline);
+        var assembled = new ModelPipeLine.Builder<Object, BackendInstance, ResourceLocation, ResourceLocation, Object>()
+                .withBridge("mc_bridge", bridge).withBackend("mc_backend", backend).buildForPublishedModels();
+        register(ASSEMBLY, assembled);
+        assemblies = new McModelAssemblies(assembled, KasugaModelPipelines::publishedSource, new ModelAssemblyCache());
     }
 
     public static ModelPipeLine<JsonObject, BackendInstance, ResourceLocation, ResourceLocation, String> be() {
@@ -230,6 +239,9 @@ public final class PipelineRegistry {
     public static KsgGltfLoader gltfLoader() {
         return gltfLoader;
     }
+
+    @Nullable public static McModelAssemblies assemblies() { return assemblies; }
+    public static boolean isInitialized() { return router != null; }
 
     public static void register(String id, ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline) {
         Objects.requireNonNull(id, "id");

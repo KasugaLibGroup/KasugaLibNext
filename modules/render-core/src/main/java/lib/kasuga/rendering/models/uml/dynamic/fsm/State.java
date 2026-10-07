@@ -98,6 +98,11 @@ public final class State<Owner> {
         return this;
     }
 
+    public State<Owner> ikEnabled(String chain, boolean enabled) {
+        this.pose.ikEnabled(chain, enabled);
+        return this;
+    }
+
     /**
      * Reference an animation clip for this state. The FSM holds the playback clock and samples this
      * state's pose from {@code sampler} at render rate. A state

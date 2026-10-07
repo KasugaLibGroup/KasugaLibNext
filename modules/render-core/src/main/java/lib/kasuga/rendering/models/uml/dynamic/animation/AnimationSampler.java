@@ -5,7 +5,7 @@ import lib.kasuga.rendering.models.uml.dynamic.fsm.Pose;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Format-specific pose evaluator: a pure-function interpolation from animation data to a {@link Pose}.
+ * Pure pose evaluator: interpolation from arbitrary animation data to a {@link Pose}.
  *
  * <p>The pipeline separates the two concerns:
  * <ul>
@@ -18,10 +18,10 @@ import org.jetbrains.annotations.Nullable;
  *       sampler never implements loop semantics itself.</li>
  * </ul>
  *
- * <p>Implementations live in their format package: {@link ClipSampler} ({@link AnimationClip}),
- * {@code GltfSampler} (glTF), BE / VMD samplers (later phases).
+ * <p>Common data uses {@link ClipSampler} / {@link AnimationClip}; format readers can supply their own
+ * sampler without introducing a format-specific runtime subsystem.
  *
- * @param <T> the format's animation data type
+ * @param <T> the animation data type
  */
 public interface AnimationSampler<T> extends AnimationSource<T, Pose> {
 

@@ -2,6 +2,7 @@ package lib.kasuga.rendering.models.uml.dynamic.animation;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
+import lib.kasuga.rendering.models.uml.dynamic.RebindablePoseDriver;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.ModelInstancePoseSink;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Pose;
 
@@ -33,7 +34,7 @@ import java.util.function.Consumer;
  *
  * @param <T> the animation data type played through the attached {@link AnimationSampler}
  */
-public final class AnimationPlayer<T> implements PoseDriver {
+public final class AnimationPlayer<T> implements RebindablePoseDriver {
 
     private ModelInstance model;
     private volatile ModelInstancePoseSink sink;
@@ -113,6 +114,12 @@ public final class AnimationPlayer<T> implements PoseDriver {
     public void rebind(ModelInstance fresh) {
         this.model = fresh;
         this.sink = new ModelInstancePoseSink(fresh);
+    }
+
+    /** Refresh data and target together; shared followers and owned-clock followers retain the same clock. */
+    public void rebind(ModelInstance fresh, AnimationSampler<T> sampler, T data) {
+        playback.retarget(sampler, data);
+        rebind(fresh);
     }
 
 }

@@ -1,6 +1,6 @@
 package lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler;
 
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.Frames;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.ModelTickLoop;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.PendingTransform;
@@ -62,7 +62,7 @@ public final class ActiveRagdollModule implements ModelTickLoopModule {
     public void tick(Model model, PendingTransform[] transforms, ModelTickLoop loop, float deltaTime) {
         Settings value = settings;
         if (!enabled) return;
-        MmdRagdoll physics = loop.getInstance().getRagdoll();
+        SkeletonRagdoll physics = loop.getInstance().getRagdoll();
         if (physics == null || !physics.enabled()) return;
         // Refresh the kinematic targets so forces chase THIS tick's post-IK pose,
         // not a stale snapshot from the previous step.
@@ -71,7 +71,7 @@ public final class ActiveRagdollModule implements ModelTickLoopModule {
         float omega = (float)(2.0 * Math.PI) * value.frequencyHz;
         float spring = omega * omega;
         float damping = 2f * value.dampingRatio * omega;
-        for (MmdRagdoll.Body body : physics.bodies()) {
+        for (SkeletonRagdoll.Body body : physics.bodies()) {
             if (body.inverseLinearMass() <= 0f || body.bone() == null
                     || (!bodyBones.isEmpty() && !bodyBones.contains(body.bone().getName()))) continue;
             float mass = 1f / body.inverseLinearMass();

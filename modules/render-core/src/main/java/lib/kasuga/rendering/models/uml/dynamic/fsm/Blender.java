@@ -128,6 +128,17 @@ public final class Blender {
         }
     }
 
+    /** Discrete channels: the latest base/additive value, unless an override is present. */
+    public static final class SwitchAccum {
+        private boolean base;
+        private boolean override;
+        private boolean hasOverride;
+        public boolean enabled() { return hasOverride ? override : base; }
+    }
+
+    private final Map<String, SwitchAccum> ikEnabled = new HashMap<>();
+    public Map<String, SwitchAccum> ikEnabled() { return ikEnabled; }
+
     private final Map<Object, MorphAccum> morphs = new HashMap<>();
     private final Map<String, BoneAccum> bones = new HashMap<>();
     private final Map<Object, FrameAccum> frames = new HashMap<>();
@@ -145,13 +156,14 @@ public final class Blender {
     }
 
     public boolean isEmpty() {
-        return morphs.isEmpty() && bones.isEmpty() && frames.isEmpty();
+        return morphs.isEmpty() && bones.isEmpty() && frames.isEmpty() && ikEnabled.isEmpty();
     }
 
     public void reset() {
         morphs.clear();
         bones.clear();
         frames.clear();
+        ikEnabled.clear();
     }
 
     public void applyLayer(BlendMode mode, Pose pose, float weight, BoneMask mask) {
@@ -161,6 +173,13 @@ public final class Blender {
         applyMorphs(mode, pose, weight);
         applyBones(mode, pose, mask);
         applyFrames(mode, pose);
+        pose.ikEnabled().forEach((chain, enabled) -> {
+            SwitchAccum accum = ikEnabled.computeIfAbsent(chain, ignored -> new SwitchAccum());
+            if (mode == BlendMode.OVERRIDE) {
+                accum.override = enabled;
+                accum.hasOverride = true;
+            } else accum.base = enabled;
+        });
     }
 
     private void applyMorphs(BlendMode mode, Pose pose, float weight) {

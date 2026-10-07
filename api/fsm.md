@@ -80,7 +80,7 @@ data/<namespace>/state_machines/<path>.json
 
 ## pose(可选)
 
-状态对模型施加的 pose:morph 权重、骨骼变换、材质帧。
+状态对模型施加的 pose:morph 权重、骨骼变换、材质帧、IK 链开关。
 
 ```json
 "pose": {
@@ -89,12 +89,14 @@ data/<namespace>/state_machines/<path>.json
     { "name": "head", "transform": { "rotate": [0, 30, 0] }, "mode": "replace" },
     { "name": "arm",  "transform": { "translate": [0, 0.5, 0] }, "mode": "add" }
   ],
-  "frames": [ { "material": "kasuga_lib:fan_blades", "frame": 2 } ]
+  "frames": [ { "material": "kasuga_lib:fan_blades", "frame": 2 } ],
+  "ik_enabled": { "left-arm": false }
 }
 ```
 
 - `transform`:`translate` / `rotate`(度) / `scale`,均为 `[x, y, z]`,缺省 = 单位。
 - `bones.mode`:`replace`(覆盖)/ `add`(位移累加)/ `multiply`。
+- `ik_enabled`:可选的链名到布尔值映射，默认空；开关混合与重置规则见 [Pose IK 通道](model-posing.md#pose-的-ik-通道)。
 
 ## 混合模式
 

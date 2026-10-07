@@ -23,7 +23,7 @@ public class KasugaLibMixinPlugin extends ServiceMixinPlugin {
                     "modelling.WorldViewChunkLightMixin", "modelling.WorldViewConnectionAccessor",
                     "modelling.CameraNearPlaneAccessor", "modelling.CameraWalkAnimationAccessor",
                     "modelling.WorldViewFogAccessor",
-                    "modelling.WorldViewGameRendererMixin",
+                    "modelling.WorldViewGameRendererMixin", "modelling.PlayerCameraAccessor",
                     "modelling.WorldViewLevelRendererMixin",
                     "modelling.WorldViewSodiumMixin",
                     "modelling.WorldViewShaderMixin", "modelling.WorldViewGaussianSamplerMixin", "modelling.WorldViewSkyColorMixin",

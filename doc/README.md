@@ -5,6 +5,7 @@
 
 | 主题 | 原理文档 |
 | --- | --- |
+| 格式 Reader 与公共子系统、姿态组合和穿搭缓存边界 | [Model 子系统](model-subsystems.md) |
 | 共享骨骼定义、Caliko 逆向映射和菱形闭环 | [Skeleton Dynamics](skeleton-dynamics.md) |
 | 固定步长、原生求解、动画目标与物理写回 | [Physics](physics.md) |
 | 作者物理、主体 profile、次级运动与大坐标 | [MMD/glTF](mmd-ragdoll.md) |

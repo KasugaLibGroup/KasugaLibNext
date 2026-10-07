@@ -9,7 +9,7 @@ import org.slf4j.Logger;
 
 /**
  * Resolves a frame target's material ref to a concrete {@link Material}. {@link Material} has no name
- * field, so the default resolves integer refs; owners with named materials supply a custom resolver.
+ * field, so the default resolves integer refs and direct Material references; owners with named materials supply a custom resolver.
  */
 @FunctionalInterface
 public interface MaterialResolver {
@@ -25,6 +25,7 @@ public interface MaterialResolver {
             if (ref == null) {
                 return null;
             }
+            if (ref instanceof Material material && set != null && set.containsMaterial(material)) return material;
             if (ref instanceof Number n) {
                 int i = n.intValue();
                 if (i >= 0 && i < materials.length) {

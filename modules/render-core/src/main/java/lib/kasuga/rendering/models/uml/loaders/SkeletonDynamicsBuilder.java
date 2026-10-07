@@ -14,6 +14,7 @@ public final class SkeletonDynamicsBuilder {
     private Physics physics;
     private final Map<String, IkChain> chains = new LinkedHashMap<>();
     private final Map<String, DiamondConstraint> diamonds = new LinkedHashMap<>();
+    private final Map<Bone, BonePoseConstraint> poseConstraints = new LinkedHashMap<>();
 
     public SkeletonDynamicsBuilder(Skeleton skeleton) {
         this.skeleton = Objects.requireNonNull(skeleton, "skeleton");
@@ -21,6 +22,7 @@ public final class SkeletonDynamicsBuilder {
         physics = current.physics();
         current.ikChains().forEach(chain -> chains.put(chain.name(), chain));
         current.diamonds().forEach(diamond -> diamonds.put(diamond.name(), diamond));
+        poseConstraints.putAll(current.poseConstraints());
     }
 
     public Skeleton skeleton() { return skeleton; }
@@ -49,8 +51,29 @@ public final class SkeletonDynamicsBuilder {
         return this;
     }
 
+    public SkeletonDynamicsBuilder pose(BonePoseConstraint constraint) {
+        poseConstraints.put(constraint.bone(), constraint);
+        return this;
+    }
+
     public SkeletonDynamics build() {
         Set<Bone> bones = Set.of(skeleton.getBones());
+        for (BonePoseConstraint constraint : poseConstraints.values()) {
+            requireBone(bones, constraint.bone());
+            if (constraint.inheritance() != null) {
+                requireBone(bones, constraint.inheritance().source());
+                if (constraint.bone() == constraint.inheritance().source()) {
+                    throw new IllegalArgumentException("bone cannot inherit itself");
+                }
+            }
+            Set<Bone> visited = new HashSet<>();
+            Bone current = constraint.bone();
+            while (current != null) {
+                if (!visited.add(current)) throw new IllegalArgumentException("cyclic transform inheritance");
+                BonePoseConstraint next = poseConstraints.get(current);
+                current = next == null || next.inheritance() == null ? null : next.inheritance().source();
+            }
+        }
         for (RigidBody body : physics.bodies()) if (body.bone() != null) requireBone(bones, body.bone());
         for (Bone bone : physics.bindPoseFollowers()) requireBone(bones, bone);
         for (Joint joint : physics.joints()) {
@@ -99,7 +122,8 @@ public final class SkeletonDynamicsBuilder {
                 throw new IllegalArgumentException("diamond branches must be independent hierarchy branches");
             }
         }
-        return new SkeletonDynamics(physics, new ArrayList<>(chains.values()), new ArrayList<>(diamonds.values()));
+        return new SkeletonDynamics(physics, new ArrayList<>(chains.values()), new ArrayList<>(diamonds.values()),
+                new ArrayList<>(poseConstraints.values()));
     }
 
     public SkeletonDynamics attach() {
