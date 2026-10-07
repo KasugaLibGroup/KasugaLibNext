@@ -6,6 +6,8 @@ import lib.kasuga.rendering.models.uml.structure.skeleton.data.BoneData;
 import lib.kasuga.rendering.models.uml.structure.skeleton.data.SkeletonData;
 import lib.kasuga.rendering.models.uml.structure.basic.data.BoneBindingData;
 import lib.kasuga.structure.Pair;
+import lib.kasuga.rendering.models.uml.structure.basic.BoneBinding;
+import lib.kasuga.rendering.models.uml.math.binding.BoneBindingFunc;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
@@ -13,6 +15,8 @@ import lombok.Setter;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Queue;
+import java.util.Arrays;
+import java.util.Objects;
 
 @Getter
 public class Skeleton {
@@ -28,7 +32,7 @@ public class Skeleton {
     @Setter
     private SkeletonDynamics dynamics = SkeletonDynamics.EMPTY;
 
-    private final Anchor[] anchors;
+    private Anchor[] anchors;
 
     private final HashMap<String, Bone> boneMap;
     private final HashMap<String, Anchor> anchorMap;
@@ -64,6 +68,20 @@ public class Skeleton {
 
     public Anchor getAnchor(String name) {
         return anchorMap.get(name);
+    }
+
+    /** Author a rigid attachment in bone-local space, before creating instances or cached assemblies. */
+    public Anchor defineAnchor(String name, Bone bone, Transform localOffset) {
+        Objects.requireNonNull(name); Objects.requireNonNull(bone); Objects.requireNonNull(localOffset);
+        if (name.isBlank() || anchorMap.containsKey(name)) throw new IllegalArgumentException("Anchor name must be nonblank and unique: " + name);
+        if (!boneTransforms.containsKey(bone)) throw new IllegalArgumentException("Anchor bone does not belong to this skeleton");
+        @SuppressWarnings("unchecked")
+        BoneBinding binding = new BoneBinding(new Pair[]{Pair.of(bone, 1f)}, BoneBindingFunc.BDEF, null);
+        Anchor anchor = new Anchor(name, binding, getBindingAbsolute(bone).copy().mul(localOffset), null);
+        anchors = Arrays.copyOf(anchors, anchors.length + 1);
+        anchors[anchors.length - 1] = anchor;
+        anchorMap.put(name, anchor);
+        return anchor;
     }
 
     public void getInverse() {

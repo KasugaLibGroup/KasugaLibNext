@@ -203,3 +203,25 @@ ModelAssemblyCache cache = new ModelAssemblyCache(32, 1_000_000, assembler);
 
 自定义组装器须返回与输入 request 相等的 request，否则缓存拒绝存储。组装期间资源应为只读；
 remapper 只在组装/扩展复制阶段使用，播放时使用结果的不可变映射。
+
+## 本地真实素材探针与缓存基准
+
+```sh
+./gradlew :modules:modelling:modelAssemblyProbe -PkasugaAssemblyFixtures=/absolute/path/to/extracted-fixtures
+./gradlew :modules:modelling:renderGlTest -PkasugaAssemblyFixtures=/absolute/path/to/extracted-fixtures
+```
+
+该可选探针用于当前九包测试素材：解包目录为 `pack_1` 到 `pack_9`，`pack_6/7` 是素体、
+`pack_3` 是兼容裙装；只调用生产 PMX 转换与公共组装，不解码或展示素材贴图。
+检查全部 PMX 加载和素体/部件绑定兼容性，再验证兼容裙装、1/10/100 个真实小部件的组装、
+中性蒙皮位置、缓存共享和来源失效。压力用例只共享绑定兼容的骨，其余骨保留组件命名空间；
+这不能解释为 100 件不同衣服已拟合素体。
+
+默认报告在 `build/reports/modelAssemblyProbe/report.json`；`kasugaAssemblyReport` 可指定输出，
+`kasugaAssemblyOrder=cached-first` 或默认 `uncached-first` 控制测量顺序，便于新 JVM 交替顺序重复。
+记录首次组装、暖机后的重组装、已有 request 的缓存查找、构建 request 加缓存查找，以及当前线程分配。
+时间排除文件加载与贴图解码；批次平均值的 p50/p95 与逐调用延迟分布不同。分配不包含 GPU/原生内存。
+这些数值只验证 CPU 组装与缓存，不代表游戏 FPS 或每帧蒙皮/绘制提速。
+
+可选 GL 路径对兼容素体+裙装的全部合并顶点比较 CPU 和生产 GPU 蒙皮，包含真实绑定类型与骨骼旋转；
+使用 transform feedback 且禁止光栅化，不输出素体图像。成功标识为 `REAL_OVERLAY_SKINNING_PASS`。

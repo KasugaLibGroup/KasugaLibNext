@@ -36,16 +36,18 @@ public class AnchorModule implements ModelTickLoopModule {
     public void attach(String anchorName, Attachment attachment) {
         Objects.requireNonNull(anchorName, "anchorName");
         Objects.requireNonNull(attachment, "attachment");
-        attachments.computeIfAbsent(anchorName, ignored -> new ArrayList<>()).add(attachment);
+        List<Attachment> list = attachments.computeIfAbsent(anchorName, ignored -> new ArrayList<>());
+        if (list.stream().noneMatch(current -> current == attachment)) list.add(attachment);
         buffers.putIfAbsent(attachment, new Transform());
     }
 
     public boolean detach(String anchorName, Attachment attachment) {
         List<Attachment> list = attachments.get(anchorName);
         if (list == null) return false;
-        boolean removed = list.remove(attachment);
+        boolean removed = list.removeIf(current -> current == attachment);
         if (list.isEmpty()) attachments.remove(anchorName);
-        if (removed) buffers.remove(attachment);
+        if (removed && attachments.values().stream().noneMatch(values -> values.stream().anyMatch(current -> current == attachment)))
+            buffers.remove(attachment);
         return removed;
     }
 
@@ -55,16 +57,17 @@ public class AnchorModule implements ModelTickLoopModule {
     }
 
     public int attachmentCount() {
-        return buffers.size();
+        return attachments.values().stream().mapToInt(List::size).sum();
     }
 
     @Override
     public void tick(Model model, PendingTransform[] transforms, ModelTickLoop loop, float deltaTime) {
         if (attachments.isEmpty()) return;
         var skeletonInstance = loop.getInstance().getSkeletonInstance();
-        for (Map.Entry<String, List<Attachment>> entry : attachments.entrySet()) {
+        for (Map.Entry<String, List<Attachment>> entry : new ArrayList<>(attachments.entrySet())) {
             Transform world = skeletonInstance.anchorTransform(entry.getKey());
-            for (Attachment attachment : entry.getValue()) {
+            for (Attachment attachment : new ArrayList<>(entry.getValue())) {
+                if (!attachments.getOrDefault(entry.getKey(), List.of()).stream().anyMatch(current -> current == attachment)) continue;
                 Transform buffer = buffers.get(attachment);
                 if (world == null) {
                     attachment.accept(null);

@@ -4,6 +4,8 @@ import lib.kasuga.rendering.models.uml.backend.BonePalettePacker;
 import lib.kasuga.rendering.models.uml.backend.gpu.*;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.loaders.assembly.ModelAssemblyBuilder;
+import lib.kasuga.rendering.models.uml.loaders.assembly.ModelAssemblyProbe;
+import lib.kasuga.rendering.models.uml.structure.basic.data.vertex.SDEFBoneBindingData;
 import lib.kasuga.rendering.models.uml.math.BoneContext;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.uml.math.binding.BoneBindingFunc;
@@ -30,11 +32,20 @@ final class AssemblySkinningRegression {
         Model body = source(false), garment = source(true);
         Model combined = new ModelAssemblyBuilder("body", body, 0).part("skirt", garment, 0).part("coat", garment, 0)
                 .assemble().model();
+        verify(combined, false);
+        String local = System.getProperty("kasuga.assembly.fixtures");
+        if (local != null) verify(ModelAssemblyProbe.loadCompatibleOutfit(java.nio.file.Path.of(local)), true);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static void verify(Model combined, boolean real) throws Exception {
         try (ModelInstance instance = new ModelInstance(combined, null, null, null, null, null);
              var fixture = new GlFixture(); var vertexRing = new GpuUploadRing(); var boneRing = new TextureUploadRing()) {
-            instance.getSkeletonInstance().rotate("arm", new Quaternionf().rotateZ(0.7f));
-            instance.getSkeletonInstance().rotate("skirt/hem", new Quaternionf().rotateZ(0.3f));
-            instance.getSkeletonInstance().rotate("coat/hem", new Quaternionf().rotateZ(-0.3f));
+            instance.getSkeletonInstance().rotate(real ? "左腕" : "arm", new Quaternionf().rotateZ(0.7f));
+            if (!real) {
+                instance.getSkeletonInstance().rotate("skirt/hem", new Quaternionf().rotateZ(0.3f));
+                instance.getSkeletonInstance().rotate("coat/hem", new Quaternionf().rotateZ(-0.3f));
+            }
             instance.updateImmediate();
             int count = combined.getVertices().length;
             ByteBuffer packed = MemoryUtil.memCalloc(count * 104).order(ByteOrder.nativeOrder());
@@ -51,6 +62,12 @@ final class AssemblySkinningRegression {
                             .putFloat(offset + 8, vertex.getPosition().z);
                     packed.put(offset + 14, (byte) 127);
                     packed.putFloat(offset + 16, 1).putFloat(offset + 28, 1);
+                    var func = vertex.getBinding().getFunc();
+                    packed.putInt(offset + 32, func == BoneBindingFunc.SDEF ? 1 : func == BoneBindingFunc.QDEF ? 2 : 0);
+                    if (vertex.getBinding().getData() instanceof SDEFBoneBindingData data && data.getSDEFData() != null) {
+                        var sdef = data.getSDEFData();
+                        vector(packed, offset + 68, sdef.r0()); vector(packed, offset + 80, sdef.r1()); vector(packed, offset + 92, sdef.c());
+                    }
                     int weightIndex = 0;
                     for (var weight : vertex.getBinding().getWeights()) {
                         packed.putFloat(offset + 36 + weightIndex * 4, weight.getFirst().getIndex());
@@ -86,12 +103,13 @@ final class AssemblySkinningRegression {
                                 combined.getSkeleton().getBindingAbsolute(bone), instance.getSkeletonInstance().getAbsoluteTransforms().get(bone),
                                 combined.getSkeleton().getBindingInverse(bone)));
                     }
-                    Vector3f cpu = BoneBindingFunc.BDEF.apply(vertex, (List) contexts).getPosition();
+                    Vector3f cpu = vertex.getBinding().getFunc().apply(vertex, (List) contexts).getPosition();
                     expect(result.get(i * 3), cpu.x, 1e-5, "assembled garment GPU x " + i);
                     expect(result.get(i * 3 + 1), cpu.y, 1e-5, "assembled garment GPU y " + i);
                     expect(result.get(i * 3 + 2), cpu.z, 1e-5, "assembled garment GPU z " + i);
                 }
                 noError("assembled garment transform feedback");
+                if (real) System.out.println("REAL_OVERLAY_SKINNING_PASS vertices=" + count + " bones=" + combined.getBones().length);
             } finally {
                 GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);
                 GL30.glBindBufferBase(GL30.GL_TRANSFORM_FEEDBACK_BUFFER, 0, 0);
@@ -101,6 +119,10 @@ final class AssemblySkinningRegression {
                 MemoryUtil.memFree(packed); MemoryUtil.memFree(palette); MemoryUtil.memFree(result);
             }
         }
+    }
+
+    private static void vector(ByteBuffer buffer, int offset, Vector3f value) {
+        buffer.putFloat(offset, value.x).putFloat(offset + 4, value.y).putFloat(offset + 8, value.z);
     }
 
     @SuppressWarnings("unchecked")

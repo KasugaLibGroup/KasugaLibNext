@@ -11,6 +11,7 @@
 | [通用模型姿态与动画](model-posing.md) | Model 片段库、格式接入、ModelPosing、静态 Pose、IK 通道和接口迁移 |
 | [Model 组装与穿搭缓存](model-assembly.md) | 组件 Builder、共享骨架、隐藏区域、引用重映射、LRU 缓存和扩展接口 |
 | [Minecraft 穿搭资源与切换](minecraft-model-assembly.md) | 资源包 JSON、程序注册、句柄换装、资源重载和实例状态迁移 |
+| [Anchor 与 MC 装备](anchors.md) | 通用锚点、相机相对坐标、手持/头戴物品、自定义装备 renderer 和生命周期 |
 | [Skeleton Dynamics](skeleton-dynamics.md) | 通用刚体/关节、Reader/Builder、IK 限位与反向映射、菱形闭环、实例控制和诊断 |
 | [Physics 与 tick loop](physics.md) | 原生 world、复合形状、关节、力/冲量、环境、拖拽、主动布娃娃、锚点和方块物理 |
 | [MMD/glTF 配置与部署](mmd-ragdoll.md) | model manifest、profile 字段、角色限位、运行时部署和命令 |

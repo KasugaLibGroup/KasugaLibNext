@@ -668,6 +668,31 @@ public class SkeletonInstance {
      */
     @Nullable
     public Transform anchorTransform(String anchorName) {
+        Matrix4f blended = anchorMatrix(anchorName);
+        if (blended == null) return null;
+        if (floatingOriginEnabled) {
+            blended.setTranslation((float) (worldOrigin.x + blended.m30()),
+                    (float) (worldOrigin.y + blended.m31()), (float) (worldOrigin.z + blended.m32()));
+        }
+        return new Transform().set(blended);
+    }
+
+    /** Evaluated anchor relative to a double world origin, suitable for camera-relative rendering. */
+    @Nullable
+    public Transform anchorTransformRelative(String anchorName, Vector3d origin) {
+        Objects.requireNonNull(origin, "origin");
+        if (!Double.isFinite(origin.x) || !Double.isFinite(origin.y) || !Double.isFinite(origin.z))
+            throw new IllegalArgumentException("Origin must be finite");
+        Matrix4f blended = anchorMatrix(anchorName);
+        if (blended == null) return null;
+        blended.setTranslation((float) ((floatingOriginEnabled ? worldOrigin.x - origin.x : -origin.x) + blended.m30()),
+                (float) ((floatingOriginEnabled ? worldOrigin.y - origin.y : -origin.y) + blended.m31()),
+                (float) ((floatingOriginEnabled ? worldOrigin.z - origin.z : -origin.z) + blended.m32()));
+        return new Transform().set(blended);
+    }
+
+    @Nullable
+    private Matrix4f anchorMatrix(String anchorName) {
         Anchor anchor = skeleton.getAnchor(anchorName);
         if (anchor == null) return null;
         Pair<Bone, Float>[] weights = anchor.getBinding().getWeights();
@@ -683,9 +708,9 @@ public class SkeletonInstance {
             Transform absolute = absoluteTransforms.get(bone);
             Pair<Transform, Transform> binding = skeleton.getBoneTransforms().get(bone);
             if (absolute == null || binding == null) continue;
-            // bind^-1 * current == deformation from bind pose to the evaluated pose.
-            Matrix4f delta = anchorDeltaScratch.set(binding.getSecond().transform())
-                    .mul(absolute.transform());
+            // Column-vector convention: current * inverse-bind, matching production vertex skinning.
+            Matrix4f delta = anchorDeltaScratch.set(absolute.transform())
+                    .mul(binding.getSecond().transform());
             float w = weight.getSecond();
             m00 += w * delta.m00(); m01 += w * delta.m01(); m02 += w * delta.m02(); m03 += w * delta.m03();
             m10 += w * delta.m10(); m11 += w * delta.m11(); m12 += w * delta.m12(); m13 += w * delta.m13();
@@ -697,16 +722,7 @@ public class SkeletonInstance {
         Matrix4f blended = anchorBlendScratch.set(m00, m01, m02, m03,
                 m10, m11, m12, m13, m20, m21, m22, m23, m30, m31, m32, m33);
         blended.mul(anchor.getTransform().transform());
-        if (floatingOriginEnabled) {
-            // The legacy attachment API returns a float world transform. Keep
-            // it spatially compatible; precision-sensitive consumers should
-            // pair origin-local bone data with getWorldOrigin() instead.
-            blended.setTranslation(
-                    blended.m30() + (float) worldOrigin.x,
-                    blended.m31() + (float) worldOrigin.y,
-                    blended.m32() + (float) worldOrigin.z);
-        }
-        return new Transform().set(blended);
+        return blended;
     }
 
     /** Applies a complete set of physics-produced local bone transforms. */

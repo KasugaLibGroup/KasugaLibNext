@@ -16,6 +16,7 @@ import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
 import lib.kasuga.rendering.models.uml.dynamic.RebindablePoseDriver;
 import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.AnchorModule;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
@@ -25,6 +26,9 @@ import org.joml.Vector3f;
 import org.joml.Vector3d;
 
 import java.util.Objects;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -72,6 +76,8 @@ public final class McModelHandle {
     private Transform pendingPose;
     private float ambientLightEnhancement = ModelInstance.DEFAULT_AMBIENT_LIGHT_ENHANCEMENT;
     private boolean destroyed;
+    private record AnchorCallback(ModelInstance owner, AnchorModule.Attachment adapter) {}
+    private final Map<String, IdentityHashMap<BiConsumer<String, Transform>, AnchorCallback>> anchorCallbacks = new HashMap<>();
     @Nullable
     private FsmAnimatedModel syncedFsm;
 
@@ -157,6 +163,7 @@ public final class McModelHandle {
         if (isMounted() && (boundPipeline == null || boundPipeline.isRendering(boundKey, instanceLoc, BACKEND))) return true;
         if (instance != null && !isMounted()) {
             if (pendingRebind == null) pendingRebind = RebindState.capture(instance);
+            clearAnchorCallbacks();
             instance = null;
         }
         if (instance != null && pendingRebind == null) pendingRebind = RebindState.capture(instance);
@@ -173,6 +180,7 @@ public final class McModelHandle {
             }
             throw failure;
         }
+        if (instance != bound) clearAnchorCallbacks();
         instance = bound;
         bound.setAmbientLightEnhancement(ambientLightEnhancement);
         if (pendingPose != null && pendingRebind == null) {
@@ -221,6 +229,7 @@ public final class McModelHandle {
         modelLoc = id; modelName = null;
         binder = pose -> service.createAndBind(id, instanceLoc, pose);
         pipelineResolver = ignored -> service.pipeline();
+        if (instance != next) clearAnchorCallbacks();
         instance = next; pendingPose = null; pendingRebind = null;
         next.setAmbientLightEnhancement(ambientLightEnhancement); applyScheduling(next); observePublication();
         if (previous != null && previous != next) {
@@ -260,6 +269,7 @@ public final class McModelHandle {
         publicationSubscription = boundPipeline.onModelChanged(change -> {
             if (observedKey.equals(change.key()) && instance != null && change.previous() == instance.getModel()) {
                 MinecraftRagdollRuntime.unregister(instance);
+                clearAnchorCallbacks();
                 pendingRebind = RebindState.capture(instance); instance = null; pendingPose = null;
                 stopObserving();
             }
@@ -294,6 +304,7 @@ public final class McModelHandle {
     public boolean unmount() {
         if (destroyed || instance == null) return false;
         pendingRebind = RebindState.capture(instance);
+        clearAnchorCallbacks();
         ModelRenderScheduler.detach(instance);
         var pipeline = boundPipeline != null ? boundPipeline : pipelineResolver.apply(modelLoc);
         if (pipeline != null) {
@@ -311,6 +322,7 @@ public final class McModelHandle {
      */
     public void destroy() {
         if (destroyed) return;
+        clearAnchorCallbacks();
         if (instance != null) MinecraftRagdollRuntime.unregister(instance);
         else if (pendingRebind != null) MinecraftRagdollRuntime.unregister(pendingRebind.previous);
         var pipeline = boundPipeline != null ? boundPipeline : pipelineResolver.apply(modelLoc);
@@ -607,6 +619,7 @@ public final class McModelHandle {
 
     private synchronized void adoptFromFsm(ModelInstance bound) {
         if (destroyed || instance == bound) return;
+        clearAnchorCallbacks();
         instance = bound;
         bound.setAmbientLightEnhancement(ambientLightEnhancement);
         pendingPose = null; // FSM 在创建实例时已应用 rootTransform supplier 的值
@@ -639,15 +652,28 @@ public final class McModelHandle {
 
     /** Attaches a display sub-object to a skeleton anchor (e.g. a held item). */
     public boolean attachToAnchor(String anchorName, BiConsumer<String, Transform> receiver) {
+        Objects.requireNonNull(anchorName); Objects.requireNonNull(receiver);
         if (instance == null) return false;
-        return instance.attachToAnchor(anchorName,
-                transform -> receiver.accept(anchorName, transform));
+        var receivers = anchorCallbacks.computeIfAbsent(anchorName, ignored -> new IdentityHashMap<>());
+        if (receivers.containsKey(receiver)) return true;
+        AnchorModule.Attachment adapter = transform -> receiver.accept(anchorName, transform);
+        if (!instance.attachToAnchor(anchorName, adapter)) return false;
+        receivers.put(receiver, new AnchorCallback(instance, adapter));
+        return true;
     }
 
     public boolean detachFromAnchor(String anchorName, BiConsumer<String, Transform> receiver) {
-        if (instance == null) return false;
-        return instance.detachFromAnchor(anchorName,
-                transform -> receiver.accept(anchorName, transform));
+        var receivers = anchorCallbacks.get(anchorName);
+        if (receivers == null) return false;
+        var callback = receivers.remove(receiver);
+        if (receivers.isEmpty()) anchorCallbacks.remove(anchorName);
+        return callback != null && callback.owner.detachFromAnchor(anchorName, callback.adapter);
+    }
+
+    private void clearAnchorCallbacks() {
+        for (var entry : anchorCallbacks.entrySet()) for (var callback : entry.getValue().values())
+            callback.owner.detachFromAnchor(entry.getKey(), callback.adapter);
+        anchorCallbacks.clear();
     }
 
     /**

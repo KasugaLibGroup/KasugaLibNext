@@ -222,6 +222,8 @@ neoForge {
             if (cameraAnimation.isPresent()) systemProperty 'kasuga.testCameraAnimation', cameraAnimation.get()
             def cameraTypes = providers.gradleProperty('kasugaTestCameraTypes')
             if (cameraTypes.isPresent()) systemProperty 'kasuga.testCameraTypes', cameraTypes.get()
+            def anchorEquipment = providers.gradleProperty('kasugaTestAnchorEquipment')
+            if (anchorEquipment.isPresent()) systemProperty 'kasuga.testAnchorEquipment', anchorEquipment.get()
             def cloudSmoke = providers.gradleProperty('kasugaTestCloud')
             if (cloudSmoke.isPresent()) systemProperty 'kasuga.testCloud', cloudSmoke.get()
             def skyCloudSmoke = providers.gradleProperty('kasugaTestSkyCloud')
@@ -483,6 +485,8 @@ dependencies {
             commandLine 'git', 'status', '--porcelain'
         }.standardOutput.asText.map { !it.trim().isEmpty() }.get()
         systemProperty 'kasuga.render.scene', providers.gradleProperty('kasugaRenderScene').getOrElse('model')
+        def assemblyFixtures = providers.gradleProperty('kasugaAssemblyFixtures')
+        if (assemblyFixtures.isPresent()) systemProperty 'kasuga.assembly.fixtures', rootProject.file(assemblyFixtures.get()).absolutePath
         if (box3dOs == 'macos') jvmArgs '-XstartOnFirstThread'
         args '--mode', mode,
                 '--report', layout.buildDirectory.file("reports/renderHarness/${mode}/report.json").get().asFile.absolutePath,
@@ -508,6 +512,19 @@ tasks.register('modelBench', JavaExec) {
             '-i', providers.gradleProperty('kasugaBenchmarkIterations').getOrElse('5'),
             '-w', '1s', '-r', '1s', '-f', '1', '-prof', 'gc', '-foe', 'true'
     doFirst { resultFile.parentFile.mkdirs() }
+}
+
+tasks.register('modelAssemblyProbe', JavaExec) {
+    group = 'verification'
+    description = 'Loads optional local PMX clothing fixtures and measures common model assembly; writes a geometry-only report.'
+    mainClass = 'lib.kasuga.rendering.models.uml.loaders.assembly.ModelAssemblyProbe'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    classpath = sourceSets.renderHarness.runtimeClasspath
+    maxHeapSize = '4g'
+    args rootProject.file(providers.gradleProperty('kasugaAssemblyFixtures').getOrElse('missing-local-fixtures')).absolutePath,
+            providers.gradleProperty('kasugaAssemblyReport').map { rootProject.file(it).absolutePath }
+                    .getOrElse(layout.buildDirectory.file('reports/modelAssemblyProbe/report.json').get().asFile.absolutePath),
+            providers.gradleProperty('kasugaAssemblyOrder').getOrElse('uncached-first')
 }
 def box3dSourceDirectory = layout.projectDirectory.dir('src/main/native')
 def box3dBuildDirectory = layout.buildDirectory.dir('native/box3d')
