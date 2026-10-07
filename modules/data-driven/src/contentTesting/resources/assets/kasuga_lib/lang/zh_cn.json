@@ -9,7 +9,6 @@
   "block.kasuga_lib.simple_by_params": "参数简单方块",
   "block.kasuga_lib.inherited_block": "继承方块",
   "block.kasuga_lib.overridden_block": "覆盖方块",
-  "block.kasuga_lib.fsm_test_block": "FSM 测试方块",
 
   "item.kasuga_lib.test_material": "测试材料"
 }

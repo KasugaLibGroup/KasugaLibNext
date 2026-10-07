@@ -1,11 +1,15 @@
 {
-  "id": "kasuga_lib:beacon",
-  "layers": [{
-    "id": "main", "mode": "base", "weight": 1.0, "initial_state": "dim",
-    "states": [ { "id": "dim" }, { "id": "lit" } ],
-    "transitions": [
-      { "id": "dim_to_lit", "from": "dim", "to": "lit", "when": ["kasuga_lib:beacon_powered"] },
-      { "id": "lit_to_dim", "from": "lit", "to": "dim", "when": ["kasuga_lib:beacon_unpowered"] }
-    ]
-  }]
+  "state_machines": [
+    {
+      "id": "kasuga_lib:beacon",
+      "layers": [{
+        "id": "main", "mode": "base", "weight": 1.0, "initial_state": "dim",
+        "states": [ { "id": "dim" }, { "id": "lit" } ],
+        "transitions": [
+          { "id": "dim_to_lit", "from": "dim", "to": "lit", "when": ["kasuga_lib:beacon_powered"] },
+          { "id": "lit_to_dim", "from": "lit", "to": "dim", "when": ["kasuga_lib:beacon_unpowered"] }
+        ]
+      }]
+    }
+  ]
 }

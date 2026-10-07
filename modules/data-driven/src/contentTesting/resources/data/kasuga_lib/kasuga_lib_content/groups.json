@@ -1,0 +1,27 @@
+{
+  "registry_groups": [
+    {
+      "id": "kasuga_lib:base_panels",
+      "properties": {
+        "no_occlusion": true,
+        "strength": [
+          1.5,
+          3.0
+        ]
+      }
+    },
+    {
+      "id": "kasuga_lib:detail_panels",
+      "parent": "kasuga_lib:base_panels",
+      "item_properties": {
+        "tab": "kasuga_lib:data_driven_test"
+      }
+    },
+    {
+      "id": "kasuga_lib:data_driven_group",
+      "item_properties": {
+        "tab": "kasuga_lib:data_driven_test"
+      }
+    }
+  ]
+}

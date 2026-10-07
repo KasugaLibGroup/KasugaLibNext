@@ -1,0 +1,38 @@
+{
+  "blocks": [
+    {
+      "id": "kasuga_lib:simple_panel",
+      "type": "simple_block",
+      "registry_group": "kasuga_lib:detail_panels",
+      "properties": {
+        "destroy_time": 2.0
+      }
+    },
+    {
+      "id": "kasuga_lib:detail_slab",
+      "type": "simple_block",
+      "registry_group": "kasuga_lib:detail_panels"
+    },
+    {
+      "id": "kasuga_lib:standalone_block",
+      "type": "simple_block",
+      "registry_group": "kasuga_lib:data_driven_group"
+    },
+    {
+      "id": "kasuga_lib:occluding_by_params",
+      "type": "params_block",
+      "registry_group": "kasuga_lib:data_driven_group",
+      "params": {
+        "occluding": true
+      }
+    },
+    {
+      "id": "kasuga_lib:simple_by_params",
+      "type": "params_block",
+      "registry_group": "kasuga_lib:data_driven_group",
+      "params": {
+        "occluding": false
+      }
+    }
+  ]
+}

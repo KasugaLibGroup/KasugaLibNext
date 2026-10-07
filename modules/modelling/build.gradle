@@ -27,6 +27,15 @@ useModProject(project(":modules:core"))
 useModProject(project(':modules:render-core'))
 useModProject(project(':modules:render-opengl'))
 
+// The reload orchestrator (which lands in a follow-up) will reuse the data-driven index reader
+// (JsonTreeBuilder.indexDirectorySegments / parseIndexManifest / resolveIndexManifests), so modelling
+// takes the data-driven dependency now (see the dependencies block). The mods{} mirror below reads
+// `project(':modules:data-driven').sourceSets.main` across projects, which needs data-driven evaluated
+// first; without evaluationDependsOn that lookup silently resolves to the root project's source sets.
+// useModProject() declares this for its own targets, but data-driven is added as a plain project
+// dependency, so it must be declared here explicitly.
+evaluationDependsOn(':modules:data-driven')
+
 
 configurations {
     shadowLibrary
@@ -41,7 +50,9 @@ tasks.register('modelUnitTest', Test) {
     description = 'Runs pure Java modelling tests without the NeoForge dedicated-server test launcher.'
     group = 'verification'
     testClassesDirs = sourceSets.test.output.classesDirs
-    classpath = sourceSets.test.runtimeClasspath.filter {
+    // contentTesting.output carries the shipped fixtures this task reads (e.g. fsm_blocks.json); the
+    // junit-fml- filter keeps it a plain-JVM run without the NeoForge dedicated-server test launcher.
+    classpath = (sourceSets.test.runtimeClasspath + sourceSets.contentTesting.output).filter {
         !it.name.startsWith('junit-fml-')
     }
     useJUnitPlatform()
@@ -265,6 +276,15 @@ neoForge {
             sourceSet(sourceSets.main)
             sourceSet(sourceSets.contentTesting)
             sourceSet(sourceSets.gameTest)
+            // Mirror: data-driven is on this module's classpath (see the dependencies block) and must
+            // therefore also be part of the mod layer. NeoForge loads mod classes through a union layer;
+            // anything present on the plain classpath but absent from mods{} is loaded a second time by
+            // the classpath loader. That gives one class two Class identities, and Micronaut's DI then
+            // fails to satisfy an injected core type because the bean it finds was defined against the
+            // other identity (NoSuchBeanDefinitionException / no qualifying bean). Registering data-driven's
+            // main source set here keeps its @Context beans (e.g. JsonTreeIntegration) in the same layer as
+            // the core types they inject.
+            sourceSet(project(':modules:data-driven').sourceSets.main)
         }
     }
 
@@ -314,6 +334,13 @@ dependencies {
     }
 
     implementation project(":modules:inject")
+
+    // Forward dependency for the reload orchestrator (lands in a follow-up): it will link data-driven's
+    // index reader (JsonTreeBuilder) at class level. data-driven's main source set only depends on
+    // core + inject, so modelling -> data-driven is a one-way edge and creates no cycle. Because this is
+    // a real runtime dependency, every module that mirrors modelling into its own mod layer must mirror
+    // data-driven as well -- scripting does, next to its useModProject(modelling) call.
+    implementation project(":modules:data-driven")
 
     implementation project(":modules:formula")
     additionalRuntimeClasspath project(":modules:formula")

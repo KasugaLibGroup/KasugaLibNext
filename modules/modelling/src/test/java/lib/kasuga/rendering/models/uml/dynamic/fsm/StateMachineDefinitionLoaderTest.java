@@ -1,176 +1,137 @@
 package lib.kasuga.rendering.models.uml.dynamic.fsm;
 
+import com.google.gson.JsonParser;
 import lib.kasuga.rendering.models.mc.dynamic.fsm.StateMachineDefinitionLoader;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.packs.resources.Resource;
-import net.minecraft.server.packs.resources.ResourceManager;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link StateMachineDefinitionLoader#load} against a stub {@link ResourceManager}: definitions
- * land in the injected bucket's RESOURCE section, broken JSON does not interrupt the batch, a
- * second load replaces RESOURCE definitions while SCRIPT definitions survive, and the per-id
- * content hash tracks definition identity.
+ * Locks the file-level wrapper contract of {@link StateMachineDefinitionLoader#decodeFile}:
+ * a file may carry several definitions, a shape violation rejects the file, and a malformed
+ * array element only drops that element.
+ *
+ * <p>The reload <em>cycle</em> (clear once, both entries, cross-entry last-wins, registration side
+ * effects) lives in {@code ReloadOrchestratorTest} — {@link StateMachineDefinitionLoader} is no longer a
+ * reload participant, it only decodes a file. {@code decodeFile} is a pure function, so this is a
+ * plain JVM test with no {@code ResourceManager}.
  */
 class StateMachineDefinitionLoaderTest {
 
-    /** Minimal in-memory resource manager serving the given virtual files. */
-    private static final class StubResourceManager implements ResourceManager {
-        private final Map<ResourceLocation, String> files = new HashMap<>();
-
-        StubResourceManager add(ResourceLocation loc, String content) {
-            files.put(loc, content);
-            return this;
-        }
-
-        @Override
-        public Map<ResourceLocation, Resource> listResources(String path, java.util.function.Predicate<ResourceLocation> filter) {
-            Map<ResourceLocation, Resource> result = new HashMap<>();
-            files.forEach((loc, content) -> {
-                if (loc.getPath().startsWith(path) && filter.test(loc)) {
-                    result.put(loc, new Resource(null,
-                            () -> new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))));
-                }
-            });
-            return result;
-        }
-
-        @Override
-        public Map<ResourceLocation, java.util.List<Resource>> listResourceStacks(String path,
-                                                                                  java.util.function.Predicate<ResourceLocation> filter) {
-            Map<ResourceLocation, java.util.List<Resource>> result = new HashMap<>();
-            listResources(path, filter).forEach((loc, resource) -> result.put(loc, java.util.List.of(resource)));
-            return result;
-        }
-
-        @Override
-        public java.util.Set<String> getNamespaces() {
-            return files.keySet().stream().map(ResourceLocation::getNamespace).collect(java.util.stream.Collectors.toSet());
-        }
-
-        @Override
-        public java.util.List<Resource> getResourceStack(ResourceLocation location) {
-            return getResource(location).map(java.util.List::of).orElseGet(java.util.List::of);
-        }
-
-        @Override
-        public java.util.stream.Stream<net.minecraft.server.packs.PackResources> listPacks() {
-            return java.util.stream.Stream.of();
-        }
-
-        @Override
-        public java.util.Optional<Resource> getResource(ResourceLocation location) {
-            String content = files.get(location);
-            if (content == null) {
-                return java.util.Optional.empty();
-            }
-            return java.util.Optional.of(new Resource(null,
-                    () -> new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))));
-        }
-    }
-
-    private static final String GOOD_JSON = """
+    /** A single wrapper file carrying two distinct definitions. */
+    private static final String MULTI_JSON = """
             {
-              "id": "test:good",
-              "layers": [
-                { "id": "l", "mode": "base", "weight": 1.0, "bone_mask": "*",
-                  "initial_state": "idle",
-                  "states": [ { "id": "idle", "duration_ticks": 10 } ] }
+              "state_machines": [
+                { "id": "test:good", "layers": [ { "id": "l", "initial_state": "idle",
+                  "states": [ { "id": "idle", "duration_ticks": 10 } ] } ] },
+                { "id": "test:second", "layers": [ { "id": "m", "initial_state": "idle",
+                  "states": [ { "id": "idle", "duration_ticks": 20 } ] } ] }
               ]
             }
             """;
 
-    private static final String BROKEN_JSON = "{ this is not json }";
+    /** Pre-wrapper shape: the top-level object is a definition, not a {@code state_machines} array. */
+    private static final String LEGACY_JSON = """
+            { "id": "test:good", "layers": [ { "id": "l", "initial_state": "idle" } ] }
+            """;
+
+    /** A number and a definition missing {@code layers} sit between two good elements. */
+    private static final String MIXED_ELEMENTS_JSON = """
+            {
+              "state_machines": [
+                { "id": "test:first", "layers": [ { "id": "l", "initial_state": "idle" } ] },
+                5,
+                { "id": "test:missing_layers" },
+                { "id": "test:last", "layers": [ { "id": "l", "initial_state": "idle" } ] }
+              ]
+            }
+            """;
+
+    private static final String EXTRA_KEY_JSON = """
+            {
+              "state_machines": [
+                { "id": "test:good", "layers": [ { "id": "l", "initial_state": "idle" } ] }
+              ],
+              "extra": 1
+            }
+            """;
+
+    private static final String NON_ARRAY_JSON = "{ \"state_machines\": {} }";
+
+    private static final String MISSING_KEY_JSON = "{ \"other\": [] }";
 
     @Test
-    void loadsValidDefinitionsIntoInjectedRegistry() {
-        FsmDefinitions definitions = new FsmDefinitions();
-        StateMachineDefinitionLoader loader = new StateMachineDefinitionLoader(definitions);
-        StubResourceManager manager = new StubResourceManager()
-                .add(ResourceLocation.fromNamespaceAndPath("test", "state_machines/good.json"), GOOD_JSON);
+    void wrapperFileDecodesEveryDefinition() {
+        StateMachineDefinitionLoader.DecodedFile decoded = decode(MULTI_JSON);
 
-        loader.load(manager);
-
-        assertNotNull(definitions.get(Id.fromNamespaceAndPath("test", "good")));
+        assertTrue(decoded.errors().isEmpty(), "a clean file must not report anything: " + decoded.errors());
+        assertEquals(2, decoded.definitions().size(), "every wrapper element must decode");
+        assertEquals("test:good", decoded.definitions().get(0).id().toString(),
+                "definitions keep file order");
+        assertEquals("test:second", decoded.definitions().get(1).id().toString());
     }
 
     @Test
-    void brokenJsonDoesNotAbortTheBatch() {
-        FsmDefinitions definitions = new FsmDefinitions();
-        StateMachineDefinitionLoader loader = new StateMachineDefinitionLoader(definitions);
-        StubResourceManager manager = new StubResourceManager()
-                .add(ResourceLocation.fromNamespaceAndPath("test", "state_machines/broken.json"), BROKEN_JSON)
-                .add(ResourceLocation.fromNamespaceAndPath("test", "state_machines/good.json"), GOOD_JSON);
+    void legacyShapeIsRejectedAndReportsExpectedShape() {
+        StateMachineDefinitionLoader.DecodedFile decoded = decode(LEGACY_JSON);
 
-        loader.load(manager);
-
-        assertNull(definitions.get(Id.fromNamespaceAndPath("test", "broken")));
-        assertNotNull(definitions.get(Id.fromNamespaceAndPath("test", "good")));
+        assertTrue(decoded.definitions().isEmpty(), "a pre-wrapper file decodes to no definitions");
+        assertTrue(decoded.errors().stream().anyMatch(error -> error.contains("state_machines")),
+                "the rejection must name the expected wrapper shape, got " + decoded.errors());
     }
 
     @Test
-    void reloadReplacesResourceDefinitionsAndKeepsScriptDefinitions() {
-        FsmDefinitions definitions = new FsmDefinitions();
-        StateMachineDefinitionLoader loader = new StateMachineDefinitionLoader(definitions);
+    void badElementIsSkippedWhileSiblingsDecode() {
+        StateMachineDefinitionLoader.DecodedFile decoded = decode(MIXED_ELEMENTS_JSON);
 
-        StubResourceManager first = new StubResourceManager()
-                .add(ResourceLocation.fromNamespaceAndPath("test", "state_machines/good.json"), GOOD_JSON);
-        loader.load(first);
-        assertNotNull(definitions.get(Id.fromNamespaceAndPath("test", "good")));
+        assertEquals(2, decoded.definitions().size(), "only the two good elements decode");
+        assertEquals("test:first", decoded.definitions().get(0).id().toString());
+        assertEquals("test:last", decoded.definitions().get(1).id().toString());
+        assertTrue(decoded.errors().size() >= 2,
+                "each bad element must produce a diagnostic, got " + decoded.errors());
+    }
 
-        // a script definition on the same registry must survive reloads
-        Id scriptId = Id.fromNamespaceAndPath("test", "script_def");
-        definitions.register(scriptId, definitions.get(Id.fromNamespaceAndPath("test", "good")));
+    /** A file carrying another type's key alongside this one is legal: the extra key is not our concern. */
+    @Test
+    void extraTopLevelKeyDoesNotAffectThisType() {
+        StateMachineDefinitionLoader.DecodedFile decoded = decode(EXTRA_KEY_JSON);
 
-        // second load with an empty pack: RESOURCE definitions go away, SCRIPT stays
-        loader.load(new StubResourceManager());
-        assertNull(definitions.get(Id.fromNamespaceAndPath("test", "good")));
-        assertNotNull(definitions.get(scriptId));
+        assertEquals(1, decoded.definitions().size(),
+                "the state_machines array must still decode when the file carries another key");
+        assertTrue(decoded.errors().isEmpty(),
+                "an unrelated top-level key is not this type's error: " + decoded.errors());
     }
 
     @Test
-    void hashTracksDefinitionIdentityAcrossReloadAndOverwrite() {
-        FsmDefinitions definitions = new FsmDefinitions();
-        StateMachineDefinitionLoader loader = new StateMachineDefinitionLoader(definitions);
-        Id good = Id.fromNamespaceAndPath("test", "good");
-        assertEquals(0, definitions.hash(good), "absent id hashes to 0");
+    void nonArrayValueRejectsWholeFile() {
+        StateMachineDefinitionLoader.DecodedFile decoded = decode(NON_ARRAY_JSON);
 
-        loader.load(new StubResourceManager()
-                .add(ResourceLocation.fromNamespaceAndPath("test", "state_machines/good.json"), GOOD_JSON));
-        int loaded = definitions.hash(good);
-        assertNotEquals(0, loaded, "a loaded definition has a non-zero content hash");
-
-        // reloading the same content keeps the hash; overwriting with different content changes it
-        loader.load(new StubResourceManager()
-                .add(ResourceLocation.fromNamespaceAndPath("test", "state_machines/good.json"), GOOD_JSON));
-        assertEquals(loaded, definitions.hash(good), "same content -> same hash");
-
-        definitions.register(good, new lib.kasuga.rendering.models.uml.dynamic.fsm.codec.StateMachineDefinition(
-                good, java.util.List.of(), java.util.List.of()));
-        assertNotEquals(loaded, definitions.hash(good), "different content -> different hash");
+        assertTrue(decoded.definitions().isEmpty());
+        assertTrue(decoded.errors().stream().anyMatch(error -> error.contains("array")),
+                "the diagnostic must mention the array requirement, got " + decoded.errors());
     }
 
     @Test
-    void sameJsonCanBeLoadedTwiceWithoutError() {
-        FsmDefinitions definitions = new FsmDefinitions();
-        StateMachineDefinitionLoader loader = new StateMachineDefinitionLoader(definitions);
-        StubResourceManager manager = new StubResourceManager()
-                .add(ResourceLocation.fromNamespaceAndPath("test", "state_machines/good.json"), GOOD_JSON);
-        loader.load(manager);
-        loader.load(manager);
-        assertNotNull(definitions.get(Id.fromNamespaceAndPath("test", "good")));
+    void missingKeyRejectsWholeFile() {
+        StateMachineDefinitionLoader.DecodedFile decoded = decode(MISSING_KEY_JSON);
+
+        assertTrue(decoded.definitions().isEmpty());
+        assertTrue(decoded.errors().stream().anyMatch(error -> error.contains("state_machines")),
+                "the diagnostic must name the missing key, got " + decoded.errors());
+    }
+
+    /** A null body is what an empty resource yields; it must be reported, not thrown on. */
+    @Test
+    void nullBodyIsRejectedWithADiagnostic() {
+        StateMachineDefinitionLoader.DecodedFile decoded = StateMachineDefinitionLoader.decodeFile(null);
+
+        assertTrue(decoded.definitions().isEmpty());
+        assertFalse(decoded.errors().isEmpty(), "a null body must produce a diagnostic");
+    }
+
+    private static StateMachineDefinitionLoader.DecodedFile decode(String json) {
+        return StateMachineDefinitionLoader.decodeFile(JsonParser.parseString(json));
     }
 }

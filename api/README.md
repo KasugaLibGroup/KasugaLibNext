@@ -38,7 +38,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
-| [数据驱动注册](data-driven-registration.md) | 方块/物品/BE schema、工厂和属性扩展 |
+| [数据驱动注册](data-driven-registration.md) | 内容 schema、工厂与属性扩展、诊断与 reload；实际内容在 [data-driven/](data-driven/intro.md)（五篇） |
 | [Formula（中文）](formula/README.zh-CN.md) / [English](formula/README.md) | 表达式、Namespace、函数/变量、运算符和错误 |
 | [构建与验证入口](verification.md) | Gradle 任务、独立 GL、客户端验收与证据边界 |
 

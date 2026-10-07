@@ -1,0 +1,14 @@
+{
+  "blocks": [
+    {
+      "id": "kasuga_lib:fsm_test_block",
+      "type": "fsm_block",
+      "state_machine": "kasuga_lib:fsm_test_panel",
+      "properties": { "destroy_time": 2.0 },
+      "block_entity": {
+        "type": "fsm_be",
+        "params": { "model": "kasuga_lib_test:models/fsm/test_cube.obj" }
+      }
+    }
+  ]
+}

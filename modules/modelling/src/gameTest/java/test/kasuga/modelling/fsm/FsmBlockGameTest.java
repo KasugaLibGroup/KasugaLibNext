@@ -17,8 +17,8 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
  * FSM 数据驱动链路的服务端冒烟测试（gameTestServer 环境）：
  *
  * <ol>
- *   <li>放 {@code kasuga_lib:fsm_test_block}（由 {@link FsmTestRegistration} 程序化注册；
- *       等效 data-driven JSON 注册链）——机器惰性建机时必须拿到已注册的定义
+ *   <li>放 {@code kasuga_lib:fsm_test_block}（由 modelling contentTesting 的
+ *       {@code kasuga_lib_content/fsm_blocks.json} 经 data-driven JSON 注册链注册）——机器惰性建机时必须拿到已注册的定义
  *       （FsmRegistries.GLOBAL 的定义桶，验证注册面），否则 machine() 为 null 且 warn；</li>
  *   <li>机器被 BE ticker 驱动（version 递增，idle(40t) → active 自动切换）；</li>
  *   <li>when_complete 双向循环（active(20t) → idle）继续运转；</li>

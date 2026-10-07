@@ -1,0 +1,29 @@
+{
+  "blocks": [
+    {
+      "id": "kasuga_lib:inherited_block",
+      "type": "simple_block",
+      "registry_group": "kasuga_lib:inherit_group"
+    },
+    {
+      "id": "kasuga_lib:overridden_block",
+      "type": "simple_block",
+      "registry_group": "kasuga_lib:inherit_group",
+      "properties": {
+        "strength": [
+          5.0,
+          5.0
+        ]
+      }
+    },
+    {
+      "id": "kasuga_lib:item_inherit_override",
+      "type": "simple_block",
+      "registry_group": "kasuga_lib:inherit_group",
+      "item_properties": {
+        "stacks_to": 1,
+        "durability": 100
+      }
+    }
+  ]
+}

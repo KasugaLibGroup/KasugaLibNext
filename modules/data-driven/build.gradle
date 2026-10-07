@@ -18,15 +18,15 @@ test {
     useJUnitPlatform()
 }
 
-// Pure-JVM gate mirroring modelling's `modelUnitTest`: filter the NeoForge FML JUnit launch wrapper out of the
-// default `test` task (which `build`/`check` runs) so the pure-JVM tests do not boot the mod context. Booting
-// FML here currently fails on eager @Context beans — AnimationCapabilityRegistrar needs the mod event bus, and
-// modelling's StateMachineDefinitionLoader cannot resolve core's ResourceSystem across the FML classloading
-// layers — a regression from the data-driven FSM pipeline commit, tracked for the FSM cleanup pass. Until that
-// pass lands, tests that need the real FML runtime are excluded (they could not run anyway while boot crashed):
-//  - JsonPropertyParserTest touches SoundEvents/SoundType (registry bootstrap).
-//  - BlockEntityFactoryParamsTest / FactoryRegistryTest rely on DataDrivenTestFactories' static registration,
-//    which only fires when Micronaut instantiates that @Context bean under FML.
+// The `test` task runs under NeoForge's FML JUnit launch wrapper. ModDevGradle's `neoForge.unitTest.enable()`
+// (below) is the switch for that gate: `enable()` calls `configureTesting`, which reconfigures this existing
+// `test` workflow — there is no separate `unitTest` Gradle task, so the earlier "the FML tests live in
+// unitTest" reading was mistaken. A `junit-fml-*` classpath filter used to strip the wrapper back out and
+// three JUnit filter exclusions used to hide the tests that need it, which turned the gate off entirely. The
+// cause was a modelling dependency on data-driven's test classpath that was absent from `mods{}`: modelling's
+// eager @Context beans could not inject core's ResourceSystem across the FML classloading layers. Taking that
+// dependency out of data-driven's main, contentTesting and test source sets root-fixes the cause, so the
+// filter and the exclusions are gone and the gate is fully restored.
 
 sourceSets {
     contentTesting {
@@ -55,14 +55,7 @@ tasks.named('processContentTestingResources', ProcessResources) {
 }
 
 tasks.named('test', Test) {
-    classpath = (sourceSets.test.runtimeClasspath + sourceSets.contentTesting.output).filter {
-        !it.name.startsWith('junit-fml-')
-    }
-    filter {
-        excludeTest('lib.kasuga.test.registration.data_driven.JsonPropertyParserTest', null)
-        excludeTest('lib.kasuga.test.registration.data_driven.BlockEntityFactoryParamsTest', null)
-        excludeTest('lib.kasuga.test.registration.data_driven.FactoryRegistryTest', null)
-    }
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.contentTesting.output
 }
 
 neoForge {
@@ -136,11 +129,6 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.7.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation "net.neoforged:testframework:${project.neo_version}"
-
-    // FSM 冒烟测试（fsm_block/fsm_be 工厂与 AnimationBlockEntity）需要 modelling；
-    // 仅测试源集依赖，无循环（data-driven main 不依赖 modelling）。
-    contentTestingImplementation project(":modules:modelling")
-    testImplementation project(":modules:modelling")
 }
 
 tasks.withType(JavaCompile).configureEach {

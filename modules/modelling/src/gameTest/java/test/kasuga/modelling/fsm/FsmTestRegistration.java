@@ -26,15 +26,29 @@ import net.minecraft.world.level.block.Block;
 import java.util.Collection;
 
 /**
- * 冒烟测试注册（modelling 的 contentTesting）：在 mod 构造期直接注册测试方块
- * （{@code kasuga_lib:fsm_test_block} + fsm_test_block_be 方块实体）并把状态机定义注册进
- * {@link FsmRegistries#GLOBAL} 的定义桶——等效 data-driven 的 JSON 注册链，但自包含
- * （modelling 的 dedicated-server run 不依赖 data-driven 模块，JSON 树不存在，
- * 因此不能走 FactoryRegistry 工厂链，必须直接挂注册树）。
+ * 冒烟测试注册（modelling 的 gameTest / contentTesting）：把 JSON 提供不了的状态机 fixture 注册进
+ * {@link FsmRegistries#GLOBAL}，并程序化注册若干「逻辑测试专用」测试方块。
  *
- * <p>另注册一组「强类型状态变量」fixture：把 {@link StateVar}（speed/armed/attack）、一个读取 speed 的
- * 条件、以及一个声明 {@code state_vars} + 触发器过渡的定义注册进全局表，供 {@link FsmTypedStateGameTest}
- * 做服务端集成验证。
+ * <p>{@code kasuga_lib:fsm_test_block} 及其方块实体 {@code fsm_test_block_be} <b>不在本类注册</b>：
+ * 它们由 modelling contentTesting 的 {@code kasuga_lib_content/fsm_blocks.json} 经 data-driven 的
+ * {@code JsonTreeBuilder} 链注册。modelling 现已依赖 data-driven 并把其 main 源集镜像进 {@code mods{}}，
+ * 故 dedicated-server / gameTest 运行里 JSON 树确实存在——原先「JSON 树不存在，必须直接挂注册树」的
+ * 前提已不成立。方块与其方块实体必须由同一条链产出：{@code BlockEntityReg.validBlocks} 各自绑定
+ * {@code blockReg.getEntry()}，若两者从不同的树胜出，{@code isValid(block)} 将恒为 false。
+ *
+ * <p>{@link #MACHINE_ID}（{@code kasuga_lib:fsm_test_panel}）的定义同样不在这里注册：它由 modelling
+ * contentTesting 的 {@code state_machines/fsm_test_panel.json} 经 reload 链的 {@code FsmReloadHandler}
+ * 加载（{@code state_machines/} 是该域的 glob 目录）。JSON 是这条定义的唯一来源——此前 Java 侧还硬编码
+ * 过一份等价定义并以 script 来源注册，会在 reload 清桶后以「script wins」遮蔽 JSON 条目；删除后二者不再双源。
+ *
+ * <p>本类只保留 JSON 提供不了的 fixture：
+ * <ul>
+ *   <li>强类型状态变量 fixture（{@link StateVar} speed/armed/attack、读取 speed 的条件、触发器过渡定义），
+ *       供 {@link FsmTypedStateGameTest} 做服务端集成验证；</li>
+ *   <li>多层级 complex fixture（{@link #COMPLEX_MACHINE_ID}）；</li>
+ *   <li>typed / complex / loader / beacon 四个纯逻辑测试方块；</li>
+ *   <li>beacon 的 owner 守卫（{@code kasuga_lib:beacon_powered} / {@code kasuga_lib:beacon_unpowered}）。</li>
+ * </ul>
  *
  * <p>挂树时机：{@code KasugaLibApplication.REGISTRY} 是 static final（类加载即就绪），
  * 本 bean 在 mod 构造期实例化时 addChild，先于 {@code REGISTRY.register(modEventBus)}
@@ -94,30 +108,6 @@ public final class FsmTestRegistration {
     public static final Id BEACON_MACHINE_ID =
             Id.parse("kasuga_lib:beacon");
 
-    private static final String DEFINITION_JSON = """
-            {
-              "id": "kasuga_lib:fsm_test_panel",
-              "layers": [
-                {
-                  "id": "base", "mode": "base", "weight": 1.0, "bone_mask": "*",
-                  "initial_state": "idle",
-                  "states": [
-                    { "id": "idle", "duration_ticks": 40,
-                      "pose": { "bones": [ { "name": "cube",
-                        "transform": { "translate": [0, 0, 0] }, "mode": "replace" } ] } },
-                    { "id": "active", "duration_ticks": 20,
-                      "pose": { "bones": [ { "name": "cube",
-                        "transform": { "translate": [0, 1, 0] }, "mode": "replace" } ] } }
-                  ],
-                  "transitions": [
-                    { "id": "idle_to_active", "from": "idle", "to": "active", "when_complete": true },
-                    { "id": "active_to_idle", "from": "active", "to": "idle", "when_complete": true }
-                  ]
-                }
-              ]
-            }
-            """;
-
     /**
      * Typed fixture definition: declares {@code state_vars} by reference (so the factory reuses the Java
      * constants above) and exercises both a var-driven condition transition and an ephemeral trigger transition.
@@ -153,10 +143,8 @@ public final class FsmTestRegistration {
             """;
 
     static {
-        registerDefinition();
         registerTypedFixture();
         registerComplexFixture();
-        registerTestBlock();
         registerTypedTestBlock();
         registerComplexTestBlock();
         registerLoaderTestBlock();
@@ -166,16 +154,6 @@ public final class FsmTestRegistration {
 
     /** Micronaut instantiates this @Context bean during mod construction — must be accessible. */
     public FsmTestRegistration() {
-    }
-
-    private static void registerDefinition() {
-        StateMachineDefinition definition = StateMachineDefinition.CODEC
-                .decode(JsonOps.INSTANCE, JsonParser.parseString(DEFINITION_JSON))
-                .resultOrPartial(error -> {
-                    throw new IllegalStateException("fsm test definition decode failed: " + error);
-                })
-                .orElseThrow().getFirst();
-        FsmRegistries.GLOBAL.definitions().register(MACHINE_ID, definition);
     }
 
     /** Typed-state fixture: vars + a var-reading condition + an on_enter action + the typed definition. */
@@ -197,13 +175,6 @@ public final class FsmTestRegistration {
                 })
                 .orElseThrow().getFirst();
         FsmRegistries.GLOBAL.definitions().register(TYPED_MACHINE_ID, typed);
-    }
-
-    /** Directly registers the block, its block entity and the machine binding on the registry tree. */
-    @SuppressWarnings("unchecked")
-    private static void registerTestBlock() {
-        registerFsmBlock("fsm_test_block", "fsm_test_block_be", MACHINE_ID,
-                ResourceLocation.parse("kasuga_lib:models/fsm/test_cube.obj"), "cube");
     }
 
     /** Server-only test block whose BE binds to the typed-state machine (no model needed for logic tests). */
