@@ -216,6 +216,8 @@ remapper 只在组装/扩展复制阶段使用，播放时使用结果的不可�
 检查全部 PMX 加载和素体/部件绑定兼容性，再验证兼容裙装、1/10/100 个真实小部件的组装、
 中性蒙皮位置、缓存共享和来源失效。压力用例只共享绑定兼容的骨，其余骨保留组件命名空间；
 这不能解释为 100 件不同衣服已拟合素体。
+存在 RibbonDress 短袖/长袖时也测量其与素体的独立绑定骨架组装；存在 `pack_8/**/13.pmx` 时加入头发。
+实际换纹理、换衣服、头发与 MC 武器渲染见 [真实素材示例](wardrobe-example.md)。
 
 默认报告在 `build/reports/modelAssemblyProbe/report.json`；`kasugaAssemblyReport` 可指定输出，
 `kasugaAssemblyOrder=cached-first` 或默认 `uncached-first` 控制测量顺序，便于新 JVM 交替顺序重复。

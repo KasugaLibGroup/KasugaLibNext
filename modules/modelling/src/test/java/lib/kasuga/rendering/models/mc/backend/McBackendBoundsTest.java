@@ -21,8 +21,32 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class McBackendBoundsTest {
+
+    @Test void failedPoseSamplingRestoresTheCallersMatrixStack() throws Exception {
+        try (var backend = new MCBackend(); var instance = fixture()) {
+            var failure = new IllegalStateException("sample failed");
+            instance.setPoseDriver(new lib.kasuga.rendering.models.uml.dynamic.PoseDriver() {
+                @Override public void sample(float partialTick) { throw failure; }
+            });
+            var stack = new com.mojang.blaze3d.vertex.PoseStack(); stack.translate(2, 3, 4);
+            var previous = new org.joml.Matrix4f(stack.last().pose());
+            var renderable = new lib.kasuga.rendering.models.uml.backend.BackendContext<MCBridge, BackendInstance, MCBackendContext, MCBackend.BackendTransform>(
+                    new MCBridge(), instance, ignored -> { throw new AssertionError("No GPU allocation expected"); }) {
+                @Override public MCBackend.BackendTransform beforeRender(MCBackendContext context) { return null; }
+            };
+            var context = new MCBackendContext(null, stack, null, null, null, null,
+                    new org.joml.Matrix4f(), new org.joml.Matrix4f(), 0, null, null) {
+                @Override public float getPartialTickFraction() { return 0; }
+            };
+            assertSame(failure, assertThrows(IllegalStateException.class, () -> backend.render(renderable, context)));
+            assertTrue(stack.clear(), "render failure must release its pushed pose");
+            assertEquals(previous, stack.last().pose());
+        }
+    }
 
     @Test
     void ambientEnhancementIsNeutralizedForIris() {

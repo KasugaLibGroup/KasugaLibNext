@@ -65,6 +65,9 @@ public final class ModelAssemblyProbe {
             compatibility.add(item);
         }
         var result = new LinkedHashMap<String, Object>();
+        result.put("jvmPid", ProcessHandle.current().pid());
+        result.put("javaRuntime", System.getProperty("java.runtime.version"));
+        result.put("heapMaxBytes", Runtime.getRuntime().maxMemory());
         result.put("os", System.getProperty("os.name")); result.put("arch", System.getProperty("os.arch"));
         result.put("order", cachedFirst ? "cached-first" : "uncached-first");
         result.put("geometryOnly", true); result.put("inventory", inventory); result.put("compatibility", compatibility);
@@ -79,6 +82,24 @@ public final class ModelAssemblyProbe {
                 benchmarks.add(benchmark("compatible_body_and_dress", requests, body, dress, false, 1));
             } catch (IllegalArgumentException failure) {
                 benchmarks.add(Map.of("case", "compatible_body_and_dress", "error", failure.toString()));
+            }
+            var hair = parts.stream().filter(a -> a.path.toString().contains("pack_8") && a.path.getFileName().toString().equals("13.pmx")).findFirst();
+            for (String sleeve : List.of("Short", "Long")) {
+                parts.stream().filter(a -> a.path.getFileName().toString().equals("Dress_" + sleeve + "Sleeves.pmx"))
+                        .findFirst().ifPresent(ribbon -> {
+                            Supplier<ModelAssembly.Request> requests = () -> {
+                                var builder = new ModelAssemblyBuilder("body", body.model, 1, config -> config.includeDynamics(false))
+                                        .part("garment", ribbon.model, 1, config -> config.matchBodyBones(false).includeDynamics(false));
+                                hair.ifPresent(a -> builder.part("hair", a.model, 1, config -> config.matchBodyBones(false).includeDynamics(false)));
+                                return builder.build();
+                            };
+                            var metrics = benchmark("ribbon_" + sleeve.toLowerCase(Locale.ROOT) + "_independent_rig", requests, body, ribbon, false, 1);
+                            metrics.put("rigMode", "Independent bind bones; no body fitting or retargeting");
+                            metrics.put("includesHair", hair.isPresent());
+                            metrics.put("sourceBoneTotal", body.model.getBones().length + ribbon.model.getBones().length
+                                    + hair.map(a -> a.model.getBones().length).orElse(0));
+                            benchmarks.add(metrics);
+                        });
             }
             Asset small = parts.stream().min(Comparator.comparingInt(a -> a.model.getVertices().length)).orElseThrow();
             for (int count : new int[]{1, 10, 100}) {
