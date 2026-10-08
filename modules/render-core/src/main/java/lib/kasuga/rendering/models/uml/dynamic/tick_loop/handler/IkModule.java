@@ -1,7 +1,7 @@
 package lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.ModelTickLoop;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.PendingTransform;
 import lib.kasuga.rendering.models.uml.structure.Model;
@@ -18,7 +18,7 @@ public class IkModule implements ModelTickLoopModule {
     @Override
     public void tick(Model model, PendingTransform[] transforms, ModelTickLoop loop, float deltaTime) {
         ModelInstance instance = loop.getInstance();
-        MmdRagdoll ragdoll = instance.getRagdoll();
+        SkeletonRagdoll ragdoll = instance.getRagdoll();
         if (ragdoll != null && ragdoll.enabled()) return;
         instance.getSkeletonInstance().updateTransform();
     }

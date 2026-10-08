@@ -23,6 +23,15 @@ public record GltfModelData(GltfAsset asset, Map<Integer, Bone> boneByNode,
 
     @Override public boolean isMeshTriangles() { return true; }
 
+    @Override public void configureModel(lib.kasuga.rendering.models.uml.structure.Model model) {
+        GltfSampler sampler = new GltfSampler(this);
+        for (int index = 0; index < asset.animations().size(); index++) {
+            GltfAsset.AnimationClip clip = asset.animations().get(index);
+            String name = clip.name() == null || clip.name().isBlank() ? "animation_" + index : clip.name();
+            model.getAnimations().register(name, sampler, clip);
+        }
+    }
+
     @Override public void configureSkeleton(lib.kasuga.rendering.models.uml.structure.skeleton.Skeleton skeleton) {
         new lib.kasuga.rendering.models.uml.loaders.SkeletonDynamicsBuilder(skeleton)
                 .read(this, new GltfSkeletonDynamicsReader()).attach();

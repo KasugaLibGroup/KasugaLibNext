@@ -22,6 +22,7 @@ import lib.kasuga.rendering.models.uml.structure.skeleton.data.SkeletonInstanceD
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.function.Consumer;
 
 public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifierType, InstanceIdentifierType, TextureIdentifierType> {
 
@@ -37,8 +38,29 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
 
     private final Map<String, Backend<Bridge<BackendInputType>, BackendInputType, ?, ?>> backends;
 
-    private final Map<Model,
+    private final Map<StorageIdentifierType,
             HashMap<InstanceIdentifierType, ModelInstance>> modelInstances;
+    private final Map<StorageIdentifierType, Long> modelRevisions = new HashMap<>();
+    private final List<Consumer<ModelChange<StorageIdentifierType>>> modelListeners = new ArrayList<>();
+    private long revision;
+
+    public record ModelChange<K>(K key, @Nullable Model previous, @Nullable Model current, long revision) {}
+
+    /** Game-thread notification, before retired instances are closed. Close the subscription to unregister. */
+    public AutoCloseable onModelChanged(Consumer<ModelChange<StorageIdentifierType>> listener) {
+        modelListeners.add(Objects.requireNonNull(listener));
+        return () -> modelListeners.remove(listener);
+    }
+
+    @Nullable public Model getModel(StorageIdentifierType key) { return models.get(key); }
+    public long modelRevision(StorageIdentifierType key) { return modelRevisions.getOrDefault(key, 0L); }
+    /** Finds a registered instance once; callers can retain the key for subsequent constant-time checks. */
+    @Nullable public StorageIdentifierType modelKeyOf(ModelInstance instance) {
+        for (var entry : modelInstances.entrySet()) {
+            for (ModelInstance candidate : entry.getValue().values()) if (candidate == instance) return entry.getKey();
+        }
+        return null;
+    }
 
     private ModelPipeLine(SourceManager<SourceOutputType> sourceManager,
                           ModelLoader<SourceOutputType, StorageIdentifierType, TextureIdentifierType> loader,
@@ -63,6 +85,7 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
 
     /** Loads and builds models without making them visible to render callers. */
     public Map<StorageIdentifierType, Model> prepareModel(Object source, @Nullable String sourceLoaderName) {
+        if (sourceManager == null || loader == null) throw new IllegalStateException("This pipeline accepts published models only");
         Source<?, SourceOutputType> manager = null;
         if (sourceLoaderName != null) {
             manager = sourceManager.getSource(sourceLoaderName);
@@ -98,21 +121,61 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
      */
     public void publishModels(Map<StorageIdentifierType, Model> prepared) {
         RuntimeException failure = null;
-        for (Map.Entry<StorageIdentifierType, Model> entry : prepared.entrySet()) {
-            Model previous = models.put(entry.getKey(), entry.getValue());
-            if (previous == null || previous == entry.getValue()) continue;
-            HashMap<InstanceIdentifierType, ModelInstance> staleInstances = modelInstances.remove(previous);
-            if (staleInstances == null) continue;
-            for (ModelInstance instance : staleInstances.values()) {
-                try { retireInstance(instance); }
-                catch (RuntimeException cleanup) {
-                    if (failure == null) failure = cleanup;
-                    else failure.addSuppressed(cleanup);
-                }
-            }
-            staleInstances.clear();
+        for (var entry : Map.copyOf(prepared).entrySet()) {
+            try { changeModel(entry.getKey(), entry.getValue()); }
+            catch (RuntimeException cleanup) { failure = combine(failure, cleanup); }
         }
         if (failure != null) throw failure;
+    }
+
+    /** Replaces a complete resource snapshot, including models removed from the resource pack. */
+    public void replaceModels(Map<StorageIdentifierType, Model> snapshot) {
+        Map<StorageIdentifierType, Model> next = Map.copyOf(snapshot);
+        Set<StorageIdentifierType> removed = new HashSet<>(models.keySet());
+        removed.removeAll(next.keySet());
+        RuntimeException failure = null;
+        for (var key : removed) {
+            try { changeModel(key, null); }
+            catch (RuntimeException cleanup) { failure = combine(failure, cleanup); }
+        }
+        try { publishModels(next); }
+        catch (RuntimeException cleanup) { failure = combine(failure, cleanup); }
+        if (failure != null) throw failure;
+    }
+
+    public boolean removeModel(StorageIdentifierType key) {
+        if (!models.containsKey(key)) return false;
+        changeModel(key, null);
+        return true;
+    }
+
+    private void changeModel(StorageIdentifierType key, @Nullable Model next) {
+        Objects.requireNonNull(key, "key");
+        Model previous = models.get(key);
+        if (previous == next) return;
+        long version = ++revision;
+        if (next == null) { models.remove(key); modelRevisions.remove(key); }
+        else { models.put(key, next); modelRevisions.put(key, version); }
+        HashMap<InstanceIdentifierType, ModelInstance> stale = modelInstances.remove(key);
+        RuntimeException failure = null;
+        var change = new ModelChange<>(key, previous, next, version);
+        for (var listener : List.copyOf(modelListeners)) {
+            try { listener.accept(change); }
+            catch (RuntimeException cleanup) { failure = combine(failure, cleanup); }
+        }
+        if (stale != null) {
+            for (var instance : stale.values()) {
+                try { retireInstance(instance); }
+                catch (RuntimeException cleanup) { failure = combine(failure, cleanup); }
+            }
+        }
+        if (failure != null) throw failure;
+    }
+
+    private static RuntimeException combine(@Nullable RuntimeException failure, RuntimeException next) {
+        if (failure == null) return next;
+        if (failure != next) failure.addSuppressed(next);
+        return failure;
     }
 
     @Nullable
@@ -122,8 +185,10 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
                                                 @Nullable SkeletonInstanceData skeletonInstanceData) {
         Model model = models.get(modelName);
         if (model == null) {return null;}
+        ModelInstance current = getInstance(modelName, instanceIdentifier);
+        if (current != null) return current;
         ModelInstance instance = new ModelInstance(model, transform, instanceData, skeletonInstanceData, new MaterialSetInstance(model.getMaterialSet()), null);
-        modelInstances.computeIfAbsent(model, k -> new HashMap<>()).put(instanceIdentifier, instance);
+        modelInstances.computeIfAbsent(modelName, k -> new HashMap<>()).put(instanceIdentifier, instance);
         return instance;
     }
 
@@ -150,7 +215,7 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
 
     @Nullable
     public ModelInstance getInstance(StorageIdentifierType modelName, InstanceIdentifierType instanceIdentifier) {
-        HashMap<InstanceIdentifierType, ModelInstance> instances = modelInstances.get(models.get(modelName));
+        HashMap<InstanceIdentifierType, ModelInstance> instances = modelInstances.get(modelName);
         if (instances == null) {return null;}
         return instances.get(instanceIdentifier);
     }
@@ -160,7 +225,7 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
     }
 
     public boolean hasInstance(StorageIdentifierType modelName, InstanceIdentifierType instanceIdentifier) {
-        HashMap<InstanceIdentifierType, ModelInstance> instances = modelInstances.get(models.get(modelName));
+        HashMap<InstanceIdentifierType, ModelInstance> instances = modelInstances.get(modelName);
         if (instances == null) {
             return false;
         }
@@ -175,11 +240,11 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
                                   InstanceIdentifierType instanceIdentifier) {
         Model model = models.get(modelName);
         if (model == null) return false;
-        HashMap<InstanceIdentifierType, ModelInstance> instances = modelInstances.get(model);
+        HashMap<InstanceIdentifierType, ModelInstance> instances = modelInstances.get(modelName);
         if (instances == null) return false;
         ModelInstance instance = instances.remove(instanceIdentifier);
         if (instance == null) return false;
-        if (instances.isEmpty()) modelInstances.remove(model);
+        if (instances.isEmpty()) modelInstances.remove(modelName);
         retireInstance(instance);
         return true;
     }
@@ -351,6 +416,13 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
                 InstanceIdentifierType, TextureIdentifierType> build() {
             Objects.requireNonNull(sourceManager);
             Objects.requireNonNull(loader);
+            return buildForPublishedModels();
+        }
+
+        /** Builds a render/instance pipeline without a format loader (e.g. derived assembled models). */
+        public ModelPipeLine<SourceOutputType,
+                BackendInputType, StorageIdentifierType,
+                InstanceIdentifierType, TextureIdentifierType> buildForPublishedModels() {
             if (bridges.isEmpty()) {
                 throw new IllegalStateException("At least one bridge must be provided");
             }

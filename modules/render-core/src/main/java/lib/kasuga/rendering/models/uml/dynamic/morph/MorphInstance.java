@@ -163,6 +163,16 @@ public class MorphInstance<IdType> {
     }
 
     public void deactivateMorph(IdType id) { activateMorph(id, 0F, 1F); }
+
+    /** Carries named activation values across compatible model definitions, without copying runtime results. */
+    public void copyInputsTo(MorphInstance<IdType> target) {
+        morph.getMorphsById().forEach((id, definitions) -> {
+            for (var definition : definitions) {
+                float value = factorValue(definition);
+                if (value > 0) { target.activateMorph(id, value, factorFactor(definition)); break; }
+            }
+        });
+    }
     public void deactivateMorph(IdType id, float factor) { activateMorph(id, 0F, factor); }
 
     private static final float MORPH_EPSILON = 1e-4f;

@@ -13,27 +13,27 @@ import java.util.*;
 
 /**
  * Manages spatial clustering and dynamic batching of physics entities into
- * origin-localized {@link MmdPhysicsScene} instances.
+ * origin-localized {@link ModelPhysicsScene} instances.
  */
-public final class MmdPhysicsClusterManager implements AutoCloseable {
+public final class ModelPhysicsClusterManager implements AutoCloseable {
     public static final double DEFAULT_CLUSTER_RADIUS = 24.0;
     public static final double DEFAULT_SPLIT_HYSTERESIS = 1.35;
     public static final double DEFAULT_VELOCITY_LOOKAHEAD_SECONDS = 0.25;
     public static final double DEFAULT_SPLIT_GRACE_SECONDS = 0.5;
-    public static final int DEFAULT_SUBSTEP_COUNT = MmdPhysicsScene.DEFAULT_SUBSTEP_COUNT;
+    public static final int DEFAULT_SUBSTEP_COUNT = ModelPhysicsScene.DEFAULT_SUBSTEP_COUNT;
 
     public interface EnvironmentFactory {
-        CollisionEnvironment create(MmdPhysicsScene scene, Vector3dc worldOrigin);
+        CollisionEnvironment create(ModelPhysicsScene scene, Vector3dc worldOrigin);
     }
 
     private static final class RegisteredInstance {
         final ModelInstance instance;
-        final MmdRagdoll.Profile profile;
+        final SkeletonRagdoll.Profile profile;
         final Vector3d lastPosition = new Vector3d();
         final Vector3f estimatedVelocity = new Vector3f();
         boolean positionInitialized;
 
-        RegisteredInstance(ModelInstance instance, MmdRagdoll.Profile profile) {
+        RegisteredInstance(ModelInstance instance, SkeletonRagdoll.Profile profile) {
             this.instance = instance;
             this.profile = profile;
         }
@@ -59,11 +59,11 @@ public final class MmdPhysicsClusterManager implements AutoCloseable {
         }
 
         private static Vector3f maxBodyVelocity(ModelInstance instance) {
-            MmdRagdoll ragdoll = instance.getRagdoll();
+            SkeletonRagdoll ragdoll = instance.getRagdoll();
             if (ragdoll == null || ragdoll.bodies().isEmpty()) return null;
             Vector3f maxV = new Vector3f();
             float maxLenSq = 0f;
-            for (MmdRagdoll.Body body : ragdoll.bodies()) {
+            for (SkeletonRagdoll.Body body : ragdoll.bodies()) {
                 Vector3f v = body.linearVelocityRef();
                 float lenSq = v.lengthSquared();
                 if (lenSq > maxLenSq) {
@@ -76,13 +76,13 @@ public final class MmdPhysicsClusterManager implements AutoCloseable {
     }
 
     private static final class Cluster {
-        final MmdPhysicsScene scene;
+        final ModelPhysicsScene scene;
         final Set<ModelInstance> members = Collections.newSetFromMap(new IdentityHashMap<>());
         final Set<PhysicsJoint> joints = Collections.newSetFromMap(new IdentityHashMap<>());
         final Set<BallJoint> ballJoints = Collections.newSetFromMap(new IdentityHashMap<>());
         CollisionEnvironment environment;
 
-        Cluster(MmdPhysicsScene scene) {
+        Cluster(ModelPhysicsScene scene) {
             this.scene = scene;
         }
 
@@ -106,15 +106,15 @@ public final class MmdPhysicsClusterManager implements AutoCloseable {
     private final Set<BallJoint> registeredBallJoints = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<PairKey, Double> pairSeparationTimers = new HashMap<>();
 
-    public MmdPhysicsClusterManager() {
+    public ModelPhysicsClusterManager() {
         this(DEFAULT_CLUSTER_RADIUS, DEFAULT_CLUSTER_RADIUS * DEFAULT_SPLIT_HYSTERESIS, DEFAULT_SUBSTEP_COUNT);
     }
 
-    public MmdPhysicsClusterManager(double clusterRadius) {
+    public ModelPhysicsClusterManager(double clusterRadius) {
         this(clusterRadius, clusterRadius * DEFAULT_SPLIT_HYSTERESIS, DEFAULT_SUBSTEP_COUNT);
     }
 
-    public MmdPhysicsClusterManager(double clusterRadius, double splitRadius, int substepCount) {
+    public ModelPhysicsClusterManager(double clusterRadius, double splitRadius, int substepCount) {
         setRadii(clusterRadius, splitRadius);
         setSubstepCount(substepCount);
     }
@@ -196,11 +196,11 @@ public final class MmdPhysicsClusterManager implements AutoCloseable {
         this.environmentFactory = environmentFactory;
     }
 
-    public MmdRagdoll attach(ModelInstance instance) {
+    public SkeletonRagdoll attach(ModelInstance instance) {
         return attach(instance, null);
     }
 
-    public synchronized MmdRagdoll attach(ModelInstance instance, MmdRagdoll.Profile profile) {
+    public synchronized SkeletonRagdoll attach(ModelInstance instance, SkeletonRagdoll.Profile profile) {
         ensureOpen();
         Objects.requireNonNull(instance, "instance");
         registeredInstances.put(instance, new RegisteredInstance(instance, profile));
@@ -218,7 +218,7 @@ public final class MmdPhysicsClusterManager implements AutoCloseable {
             cluster.members.remove(instance);
         }
         Set<SimBody> removedBodies = Collections.newSetFromMap(new IdentityHashMap<>());
-        MmdRagdoll ragdoll = instance.getRagdoll();
+        SkeletonRagdoll ragdoll = instance.getRagdoll();
         if (ragdoll != null) removedBodies.addAll(ragdoll.allBodies());
         registeredJoints.removeIf(j -> removedBodies.contains(j.bodyA()) || removedBodies.contains(j.bodyB()));
         registeredBallJoints.removeIf(j -> removedBodies.contains(j.bodyA()) || removedBodies.contains(j.bodyB()));
@@ -275,11 +275,11 @@ public final class MmdPhysicsClusterManager implements AutoCloseable {
         return List.copyOf(registeredInstances.keySet());
     }
 
-    public synchronized List<MmdPhysicsScene> activeScenes() {
+    public synchronized List<ModelPhysicsScene> activeScenes() {
         return activeClusters.stream().map(c -> c.scene).toList();
     }
 
-    public synchronized MmdPhysicsScene sceneOf(ModelInstance instance) {
+    public synchronized ModelPhysicsScene sceneOf(ModelInstance instance) {
         Cluster cluster = clusterByInstance.get(instance);
         return cluster == null ? null : cluster.scene;
     }
@@ -413,7 +413,7 @@ public final class MmdPhysicsClusterManager implements AutoCloseable {
 
             if (chosenCluster == null) {
                 Vector3d centroid = computeCentroid(group, positions, instanceList);
-                MmdPhysicsScene newScene = new MmdPhysicsScene(centroid, substepCount);
+                ModelPhysicsScene newScene = new ModelPhysicsScene(centroid, substepCount);
                 chosenCluster = new Cluster(newScene);
                 if (environmentFactory != null) {
                     chosenCluster.environment = environmentFactory.create(newScene, centroid);
@@ -496,7 +496,7 @@ public final class MmdPhysicsClusterManager implements AutoCloseable {
     }
 
     private void ensureOpen() {
-        if (closed) throw new IllegalStateException("MmdPhysicsClusterManager is closed");
+        if (closed) throw new IllegalStateException("ModelPhysicsClusterManager is closed");
     }
 
     private static Vector3d instancePosition(ModelInstance instance) {
@@ -521,7 +521,7 @@ public final class MmdPhysicsClusterManager implements AutoCloseable {
     }
 
     private static boolean ownsBody(ModelInstance instance, SimBody body) {
-        MmdRagdoll ragdoll = instance.getRagdoll();
+        SkeletonRagdoll ragdoll = instance.getRagdoll();
         return ragdoll != null && ragdoll.bodies().contains(body);
     }
 

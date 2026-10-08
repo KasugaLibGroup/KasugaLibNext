@@ -8,6 +8,11 @@
 
 | 文档 | 内容 |
 | --- | --- |
+| [通用模型姿态与动画](model-posing.md) | Model 片段库、格式接入、ModelPosing、静态 Pose、IK 通道和接口迁移 |
+| [Model 组装与穿搭缓存](model-assembly.md) | 组件 Builder、共享骨架、隐藏区域、引用重映射、LRU 缓存和扩展接口 |
+| [Minecraft 穿搭资源与切换](minecraft-model-assembly.md) | 资源包 JSON、程序注册、句柄换装、资源重载和实例状态迁移 |
+| [Anchor 与 MC 装备](anchors.md) | 通用锚点、相机相对坐标、手持/头戴物品、自定义装备 renderer 和生命周期 |
+| [真实素材换装示例](wardrobe-example.md) | RibbonDress 换纹理/换模型、MC 手持物品、客户端截图和性能对照 |
 | [Skeleton Dynamics](skeleton-dynamics.md) | 通用刚体/关节、Reader/Builder、IK 限位与反向映射、菱形闭环、实例控制和诊断 |
 | [Physics 与 tick loop](physics.md) | 原生 world、复合形状、关节、力/冲量、环境、拖拽、主动布娃娃、锚点和方块物理 |
 | [MMD/glTF 配置与部署](mmd-ragdoll.md) | model manifest、profile 字段、角色限位、运行时部署和命令 |
@@ -25,6 +30,7 @@
 | [后端扩展](rendering-backends.md) | 独立后端模块、宿主帧上下文、上传与输出适配 |
 | [调度与模型句柄](render-scheduling.md) | McModelHandle、可见性、Entity/BlockEntity renderer 接入 |
 | [最终画面输出](frame-output.md) | 订阅、共享帧、MIRROR/OFFSCREEN_ONLY、异常与关闭 |
+| [Player / Free / Fixed Camera](cameras.md) | 相机分类、创建、通用跟随目标、实体绑定、投影和运行时渲染配置 |
 | [多机位、窗口与 headless](offline_rendering_and_multi_cam.md) | 相机生命周期、资源包、独立窗口、启动、FBO 消费和录制 |
 | [PBR](PBR.md) | 玩家 JSON、Java 转换规则、上下文、优先级和诊断命令 |
 | [Alpha/OIT](render-alpha-passes.md) | 材质 pass、调试场景、命令、快捷键和验收指标 |
@@ -34,7 +40,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
-| [数据驱动注册](data-driven-registration.md) | 内容 schema、工厂与属性扩展、诊断与 reload；实际内容在 [../doc/data-driven/](../doc/data-driven/intro.md)（五篇） |
+| [数据驱动注册](data-driven-registration.md) | 内容 schema、工厂与属性扩展、诊断与 reload；实际内容在 [data-driven/](data-driven/intro.md)（五篇） |
 | [Formula（中文）](formula/README.zh-CN.md) / [English](formula/README.md) | 表达式、Namespace、函数/变量、运算符和错误 |
 | [构建与验证入口](verification.md) | Gradle 任务、独立 GL、客户端验收与证据边界 |
 

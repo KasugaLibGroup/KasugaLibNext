@@ -18,10 +18,10 @@ import java.util.Set;
  *
  * <p><b>Channel reset:</b> the underlying {@link MorphInstance}/{@link SkeletonInstance} state is persistent
  * (writes accumulate; nothing auto-clears per frame). To keep the displayed pose equal to the FSM's current
- * pose, the sink records the morph/bone channels it wrote last frame and <em>neutralizes</em> any it does not
+ * pose, the sink records the morph/bone/IK channels it wrote last frame and <em>neutralizes</em> any it does not
  * write this frame — morphs via {@link MorphInstance#deactivateMorph} and bones via
- * {@link SkeletonInstance#reset(String)} (which drops the override and restores the bind pose). Without this,
- * a channel posed by a previous state would linger indefinitely. Frames are intentionally not reset
+ * {@link SkeletonInstance#reset(String)}, and IK via {@link SkeletonInstance#clearIkEnabled(String)}.
+ * Without this, channels posed by a previous state would linger indefinitely. Frames are intentionally not reset
  * ({@code setCurrentMatFrame} is idempotent; there is no neutral frame index).
  *
  * <p>For the reset to reach the sink on a frame whose pose is empty (so the {@link Blender} is empty too),
@@ -33,6 +33,7 @@ public final class ModelInstancePoseSink implements PoseSink {
     private final MaterialResolver materials;
     private final Set<Object> lastMorphs = new HashSet<>();
     private final Set<String> lastBones = new HashSet<>();
+    private final Set<String> lastIkChains = new HashSet<>();
     private final Blender poseBlender = new Blender();
 
     public ModelInstancePoseSink(ModelInstance model, MaterialResolver materials) {
@@ -108,6 +109,14 @@ public final class ModelInstancePoseSink implements PoseSink {
                 applyBoneWrite(entry.getKey(), write, skeleton);
             }
         }
+
+        for (String name : lastIkChains) {
+            if (!blender.ikEnabled().containsKey(name)) skeleton.clearIkEnabled(name);
+        }
+        lastIkChains.clear();
+        blender.ikEnabled().forEach((name, value) -> {
+            if (skeleton.setIkEnabled(name, value.enabled())) lastIkChains.add(name);
+        });
 
         if (materialSet != null) {
             for (Map.Entry<Object, Blender.FrameAccum> entry : blender.frames().entrySet()) {

@@ -3,8 +3,8 @@ package lib.kasuga.rendering.models.mc.dynamic.physics;
 import lib.kasuga.rendering.models.mc.registry.PipelineRegistry;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdPhysicsScene;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.physics.ModelPhysicsScene;
 import lib.kasuga.rendering.models.uml.dynamic.physics.box3d.NativeBox3D;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import net.minecraft.client.Minecraft;
@@ -49,7 +49,7 @@ public final class MinecraftRagdollDeployments {
     }
 
     /** Deploys this model as a participant in an existing shared physics scene. */
-    public static Optional<RagdollDeployment> deploy(Request request, MmdPhysicsScene scene)
+    public static Optional<RagdollDeployment> deploy(Request request, ModelPhysicsScene scene)
             throws IOException {
         Minecraft minecraft = Minecraft.getInstance();
         return deploy(request, minecraft.getResourceManager(), () -> minecraft.level, scene);
@@ -68,7 +68,7 @@ public final class MinecraftRagdollDeployments {
 
     public static synchronized Optional<RagdollDeployment> deploy(
             Request request, ResourceManager resourceManager,
-            Supplier<? extends Level> levelSupplier, MmdPhysicsScene scene) throws IOException {
+            Supplier<? extends Level> levelSupplier, ModelPhysicsScene scene) throws IOException {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(resourceManager, "resourceManager");
         Objects.requireNonNull(levelSupplier, "levelSupplier");
@@ -113,7 +113,7 @@ public final class MinecraftRagdollDeployments {
         try {
             instance.getSkeletonInstance().enableFloatingOrigin(request.worldOrigin);
             instance.getSkeletonInstance().transformRoot(request.localRootTransform());
-            MmdRagdoll ragdoll = scene == null
+            SkeletonRagdoll ragdoll = scene == null
                     ? config.attach(instance, levelSupplier, request.applyInitialState)
                     : config.attach(instance, scene, levelSupplier, request.applyInitialState);
             if (ragdoll == null) {
@@ -259,14 +259,14 @@ public final class MinecraftRagdollDeployments {
         private final ResourceLocation resolvedConfig;
         private final ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline;
         private final ModelInstance instance;
-        private final MmdRagdoll ragdoll;
+        private final SkeletonRagdoll ragdoll;
         private Entity anchoredEntity;
-        private MmdRagdoll.Body anchoredBody;
+        private SkeletonRagdoll.Body anchoredBody;
 
         private DeploymentHandle(Request request, ResourceLocation resolvedModel,
                                  ResourceLocation resolvedConfig,
                                  ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline,
-                                 ModelInstance instance, MmdRagdoll ragdoll) {
+                                 ModelInstance instance, SkeletonRagdoll ragdoll) {
             this.request = request;
             this.resolvedModel = resolvedModel;
             this.resolvedConfig = resolvedConfig;
@@ -280,7 +280,7 @@ public final class MinecraftRagdollDeployments {
         @Override public String modelName() { return request.modelName; }
         @Override public ResourceLocation configResource() { return resolvedConfig; }
         @Override public ModelInstance instance() { return instance; }
-        @Override public MmdRagdoll ragdoll() { return ragdoll; }
+        @Override public SkeletonRagdoll ragdoll() { return ragdoll; }
         @Override public Entity anchoredEntity() { return anchoredEntity; }
 
         @Override
@@ -291,7 +291,7 @@ public final class MinecraftRagdollDeployments {
                 // A held mouse constraint owns the drag slot; anchoring would
                 // silently steal it and the two targets would fight.
                 if (anchoredEntity != null || ragdoll.dragging()) return false;
-                MmdRagdoll.Body body = nearestDynamicBody(entity);
+                SkeletonRagdoll.Body body = nearestDynamicBody(entity);
                 if (body == null) return false;
                 Vec3 target = anchorTarget(entity);
                 if (!ragdoll.beginDragWorld(body, target.x, target.y, target.z)) return false;
@@ -331,14 +331,14 @@ public final class MinecraftRagdollDeployments {
             return new Vec3(entity.getX(), entity.getEyeY(), entity.getZ());
         }
 
-        private MmdRagdoll.Body nearestDynamicBody(Entity entity) {
+        private SkeletonRagdoll.Body nearestDynamicBody(Entity entity) {
             double x = entity.getX();
             double y = entity.getEyeY();
             double z = entity.getZ();
-            MmdRagdoll.Body best = null;
+            SkeletonRagdoll.Body best = null;
             float bestDistanceSquared = Float.POSITIVE_INFINITY;
             Vector3f target = ragdoll.worldToSimulation(x, y, z);
-            for (MmdRagdoll.Body body : ragdoll.bodies()) {
+            for (SkeletonRagdoll.Body body : ragdoll.bodies()) {
                 if (body.source().mode() == 0 || body.source().mass() <= 0f) continue;
                 Vector3f position = body.position();
                 float dx = position.x - target.x;

@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.mc.typo;
 
 import com.mojang.logging.LogUtils;
+import com.google.common.hash.Hashing;
 import lib.kasuga.client.loading.LoadingIndicator;
 import lib.kasuga.rendering.models.mc.Constants;
 import lib.kasuga.rendering.models.mc.api.pbr.PbrConversionRegistry;
@@ -57,6 +58,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.List;
 
@@ -209,16 +211,9 @@ public class KsgPmxLoader extends PMXLoader<ZipHelper, ResourceLocation, ZipReso
 
     public Texture getTexture(ZipResource s) {
         try {
-            // 纹理图集路径必须对 (模型, 纹理) 二元组唯一：不同模型常有同名贴图（如 skin.bmp/hair.bmp），
-            // 若只按文件名哈希，PBR 变体路径会跨模型碰撞，图集按名去重后一个 sprite 被吞 → 崩溃。
-            // 中文字符无法进 ResourceLocation，故统一并入模型名哈希。
+            // Include the archive: separate outfits often contain the same model.pmx and texture names.
             String modelKey = loadingModel == null ? "?" : loadingModel.name();
-            ResourceLocation rl = ResourceLocation.tryBuild("kasuga_lib",
-                    "textures/pmx/" + Integer.toUnsignedString((s.name() + "@" + modelKey).hashCode()));
-            if (rl == null) {
-                rl = ResourceLocation.tryBuild("kasuga_lib",
-                        "textures/pmx/" + Integer.toUnsignedString(s.name().hashCode()));
-            }
+            ResourceLocation rl = textureLocation(s.file().getPath(), modelKey, s.name());
             if (loadedTextureMap.containsKey(s)) {
                 Texture texture = loadedTextureMap.get(s);
                 loadedTextures.add(Pair.of(s, texture));
@@ -296,6 +291,13 @@ public class KsgPmxLoader extends PMXLoader<ZipHelper, ResourceLocation, ZipReso
             loadedTextureMap.put(s, MISSING);
             return MISSING;
         }
+    }
+
+    static ResourceLocation textureLocation(Object archive, String modelEntry, String textureEntry) {
+        String key = Objects.requireNonNull(archive) + "\0" + Objects.requireNonNull(modelEntry) + "\0"
+                + Objects.requireNonNull(textureEntry);
+        return ResourceLocation.fromNamespaceAndPath("kasuga_lib", "textures/pmx/"
+                + Hashing.sha256().hashString(key, StandardCharsets.UTF_8));
     }
 
     @Override

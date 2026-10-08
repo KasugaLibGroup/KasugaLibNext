@@ -2,10 +2,9 @@
 
 > 类型：Reference（信息向，供查阅）。
 > 适用版本：Minecraft 1.21.1、NeoForge 21.1.203、Parchment 2024.11.17、Java 21。本页字段只在该版本区间内成立。
-> 代码基准：`KasugaLibNext` 分支 `model-loader`，基准 commit `ec864a1`。
-> **行号说明**：下文「类:行号」取自**当前工作树**——工作树与暂存区有大量未提交改动（data-driven 重实现，本页涉及的 loader / orchestrator 就在其中），行号可能随后续提交漂移。行号对不上时，请以类名 / 方法名 / 测试名为准。
+> 行号仅作定位提示，可能随源码变化；以类名、方法名和测试名为准。
 > 权威来源：元素字段来自 codec（`StateMachineDefinition.CODEC`、`AnimationClip.CODEC` 及其子 codec）；wrapper 与发现规则来自 `StateMachineDefinitionLoader` / `AnimationClipLoader` / `ReloadOrchestrator` / `FsmReloadHandler` / `FsmClipsReloadHandler`。每条规则给出处；本页不沿用重写前的旧结论。
-> 边界：本页只讲**状态机定义与动画剪辑的元素格式、文件 wrapper、reload 编排**。索引文件与注册期内容文件见 [`data-driven/schema.md`](../doc/data-driven/schema.md)；Java API 签名见 [`data-driven/api.md`](../doc/data-driven/api.md)；内容组织实践见 [`data-driven/guide-content.md`](../doc/data-driven/guide-content.md)。
+> 边界：本页只讲**状态机定义与动画剪辑的元素格式、文件 wrapper、reload 编排**。索引文件与注册期内容文件见 [`data-driven/schema.md`](data-driven/schema.md)；Java API 签名见 [`data-driven/api.md`](data-driven/api.md)；内容组织实践见 [`data-driven/guide-content.md`](data-driven/guide-content.md)。
 
 ## 0. 两个文件、三种读者
 
@@ -230,15 +229,17 @@ reload 期（`/reload` 触发的资源重读）只有**一个编排者**：`Relo
 
 ### 5.6 `pose`
 
-`pose` 是状态对模型施加的静态 pose：morph 权重、骨骼变换、材质帧。
+`pose` 是状态对模型施加的通用静态姿态：morph 权重、骨骼变换、材质帧与 IK 开关。
+同一 Pose 也可通过 [ModelPosing](model-posing.md) 使用，公共运行时不要求目标模型来自某种文件格式。
 
 | 字段 | 类型 | 必填 | 默认 | 含义 |
 |------|------|------|------|------|
 | `morphs` | object（string→float） | 否 | `{}` | morph 名 → 权重 |
 | `bones` | 数组 | 否 | `[]` | 骨骼变换列表 |
 | `frames` | 数组 | 否 | `[]` | 材质帧列表 |
+| `ik_enabled` | object（string→bool） | 否 | `{}` | 通用 IK 链名到启用状态，见 [Pose IK 通道](model-posing.md#pose-的-ik-通道) |
 
-出处：`PoseDefinition.CODEC`（`PoseDefinition.java:20-24`）。
+出处：`PoseDefinition.CODEC`。IK 通道遵循相同的姿态混合与写入所有权规则，停止驱动或切换到缺少该通道的姿态后恢复默认启用状态。
 
 `bones[]`（`PoseDefinition.BoneDefinition.CODEC`，`:31-35`）：
 
@@ -402,7 +403,7 @@ reload 期（`/reload` 触发的资源重读）只有**一个编排者**：`Relo
 
 ### 8.6 诊断走域/源键维（`Domain.RELOAD_DATA`）
 
-`ReloadOrchestrator.reportError`（`:566-573`）与两个 handler 的 `reportError` / `reportWarning` 都调 `Diagnostics.report(Diagnostics.Domain.RELOAD_DATA, namespace, ...)`，`namespace` = 出错文件所在的命名空间。reload 期的诊断走**域/源键维**（`Domain.RELOAD_DATA`，键 = 命名空间），与注册期的 mod 维分开；`runCycle` 开头按轮清空该维，不累积（`Diagnostics.clear(Domain.RELOAD_DATA)`，`:208`）。读取用 `/kasuga_data errors [mod]`（同时列出两维）；细节见 [`data-driven/api.md`](../doc/data-driven/api.md) 第 6、13 节。
+`ReloadOrchestrator.reportError`（`:566-573`）与两个 handler 的 `reportError` / `reportWarning` 都调 `Diagnostics.report(Diagnostics.Domain.RELOAD_DATA, namespace, ...)`，`namespace` = 出错文件所在的命名空间。reload 期的诊断走**域/源键维**（`Domain.RELOAD_DATA`，键 = 命名空间），与注册期的 mod 维分开；`runCycle` 开头按轮清空该维，不累积（`Diagnostics.clear(Domain.RELOAD_DATA)`，`:208`）。读取用 `/kasuga_data errors [mod]`（同时列出两维）；细节见 [`data-driven/api.md`](data-driven/api.md) 第 6、13 节。
 
 > reload 期还会对**未知顶层键**给出反向提示：若这些字段其实是注册内容（如 `blocks` / `items` / `registry_groups`），把文件改列到 `on_register`（`dispatch`，`:439-446`）。提示里的注册类型示例运行时从 `TypeHandlerRegistry` 派生。
 
@@ -442,17 +443,17 @@ reload 期（`/reload` 触发的资源重读）只有**一个编排者**：`Relo
 
 数据驱动注册的方块通过工厂 `fsm_block` / `fsm_be` 绑定一个机器 id：`fsm_block` 造方块（带默认方块物品），`fsm_be` 造 `AnimationBlockEntity`，从 `params` 读 `state_machine` / `model`（`FsmBlockEntityFactories.java:27-30,48-74`）。方块条目顶层的字符串 `state_machine` 会被转发进内嵌 BE 的 `params.state_machine`（`BlockEntityTypeHandler.extractEmbedded`，见 schema.md §2.5）。
 
-这部分属于**注册期内容文件**，格式见 [`data-driven/schema.md`](../doc/data-driven/schema.md) 的 `blocks` 与内嵌 `block_entity` 章节；一个可跑通的端到端例子见 [`data-driven/guide-content.md`](../doc/data-driven/guide-content.md)。
+这部分属于**注册期内容文件**，格式见 [`data-driven/schema.md`](data-driven/schema.md) 的 `blocks` 与内嵌 `block_entity` 章节；一个可跑通的端到端例子见 [`data-driven/guide-content.md`](data-driven/guide-content.md)。
 
 ## 13. 延伸阅读
 
 | 你想要 | 去哪 |
 |--------|------|
-| 索引文件、注册期内容文件、错误分类 | [`data-driven/schema.md`](../doc/data-driven/schema.md) |
-| Java 类 / 方法签名、加载时序 | [`data-driven/api.md`](../doc/data-driven/api.md) |
-| 从零搭第一个内容文件 | [`data-driven/guide-content.md`](../doc/data-driven/guide-content.md) |
-| 数据驱动总览 | [`data-driven/intro.md`](../doc/data-driven/intro.md) |
-| 自定义 `type` 工厂 / TypeHandler | [`data-driven/guide-extension.md`](../doc/data-driven/guide-extension.md) |
+| 索引文件、注册期内容文件、错误分类 | [`data-driven/schema.md`](data-driven/schema.md) |
+| Java 类 / 方法签名、加载时序 | [`data-driven/api.md`](data-driven/api.md) |
+| 从零搭第一个内容文件 | [`data-driven/guide-content.md`](data-driven/guide-content.md) |
+| 数据驱动总览 | [`data-driven/intro.md`](data-driven/intro.md) |
+| 自定义 `type` 工厂 / TypeHandler | [`data-driven/guide-extension.md`](data-driven/guide-extension.md) |
 
 ## 附录 A：规则出处对照
 

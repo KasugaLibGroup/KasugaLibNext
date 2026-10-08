@@ -5,6 +5,7 @@
 
 | 主题 | 原理文档 |
 | --- | --- |
+| 格式 Reader 与公共子系统、姿态组合和穿搭缓存边界 | [Model 子系统](model-subsystems.md) |
 | 共享骨骼定义、Caliko 逆向映射和菱形闭环 | [Skeleton Dynamics](skeleton-dynamics.md) |
 | 固定步长、原生求解、动画目标与物理写回 | [Physics](physics.md) |
 | 作者物理、主体 profile、次级运动与大坐标 | [MMD/glTF](mmd-ragdoll.md) |
@@ -21,4 +22,3 @@
 | 风格化纹理、材质变体与分代缓存 | [PBR](PBR.md) |
 | 天气密度层、光线步进与遮光 | [体积云](volumetric-clouds.md) |
 | 内容树、属性转换、工厂与注册分派 | [数据驱动注册](data-driven-registration.md) |
-| 数据驱动内容创作：上手、格式、扩展与 reload（五篇） | [数据驱动专题](data-driven/intro.md) |

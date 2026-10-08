@@ -16,8 +16,14 @@ public final class SkeletonDynamics {
     private final List<DiamondConstraint> diamonds;
     private final Map<String, IkChain> chainsByName;
     private final Map<Bone, List<IkChain>> ikChainsByBone;
+    private final Map<Bone, BonePoseConstraint> poseConstraints;
 
     public SkeletonDynamics(Physics physics, List<IkChain> ikChains, List<DiamondConstraint> diamonds) {
+        this(physics, ikChains, diamonds, List.of());
+    }
+
+    public SkeletonDynamics(Physics physics, List<IkChain> ikChains, List<DiamondConstraint> diamonds,
+                            List<BonePoseConstraint> poseConstraints) {
         this.physics = Objects.requireNonNull(physics, "physics");
         this.ikChains = List.copyOf(ikChains);
         this.diamonds = List.copyOf(diamonds);
@@ -32,6 +38,13 @@ public final class SkeletonDynamics {
         byBone.replaceAll((bone, chains) -> List.copyOf(chains));
         chainsByName = java.util.Collections.unmodifiableMap(byName);
         ikChainsByBone = java.util.Collections.unmodifiableMap(byBone);
+        Map<Bone, BonePoseConstraint> byTarget = new java.util.IdentityHashMap<>();
+        for (BonePoseConstraint constraint : poseConstraints) {
+            if (byTarget.put(constraint.bone(), constraint) != null) {
+                throw new IllegalArgumentException("duplicate bone pose constraint");
+            }
+        }
+        this.poseConstraints = java.util.Collections.unmodifiableMap(byTarget);
     }
 
     public Physics physics() { return physics; }
@@ -40,6 +53,36 @@ public final class SkeletonDynamics {
     public Map<String, IkChain> chainsByName() { return chainsByName; }
     /** Reverse mapping of driver bone to every IK chain that controls it, shared by all instances. */
     public Map<Bone, List<IkChain>> ikChainsByBone() { return ikChainsByBone; }
+    public Map<Bone, BonePoseConstraint> poseConstraints() { return poseConstraints; }
+
+    /** Inherits a weighted local pose delta; negative weights support counter-rotation. */
+    public record TransformInheritance(Bone source, float weight, boolean translation, boolean rotation) {
+        public TransformInheritance {
+            Objects.requireNonNull(source, "source");
+            if (!Float.isFinite(weight) || (!translation && !rotation)) {
+                throw new IllegalArgumentException("invalid transform inheritance");
+            }
+        }
+    }
+
+    /** Authored pose constraints, applied before IK and physics. fixedAxis is local to the bone. */
+    public record BonePoseConstraint(Bone bone, TransformInheritance inheritance, Vector3f fixedAxis) {
+        public BonePoseConstraint {
+            Objects.requireNonNull(bone, "bone");
+            if (inheritance == null && fixedAxis == null) {
+                throw new IllegalArgumentException("empty bone pose constraint");
+            }
+            if (fixedAxis != null) {
+                fixedAxis = vector(fixedAxis);
+                if (fixedAxis.lengthSquared() < 1e-8f) throw new IllegalArgumentException("zero fixed axis");
+                fixedAxis.normalize();
+            }
+        }
+        @Override public Vector3f fixedAxis() { return fixedAxis == null ? null : new Vector3f(fixedAxis); }
+        public boolean hasFixedAxis() { return fixedAxis != null; }
+        /** Copies into runtime scratch without allocating a vector on each bone evaluation. */
+        public Vector3f fixedAxis(Vector3f destination) { return destination.set(fixedAxis); }
+    }
 
     /** Positions and shape dimensions use unitScale; angular values always use radians. */
     public record Physics(List<RigidBody> bodies, List<Joint> joints, Vector3f unitScale,

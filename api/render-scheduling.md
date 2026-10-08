@@ -26,6 +26,7 @@ UML 模型挂载到 `mc_backend` 之后由分阶段 world pipeline 绘制。本�
 ```
 
 `McModelHandle`（`mc/api/McModelHandle`）是渲染端的唯一入口：
+资源级穿搭使用 `ofAssembly` / `switchAssembly`，见 [穿搭资源与切换](minecraft-model-assembly.md)。
 
 ```java
 // 渲染端：句柄可先于资源发布创建，姿态暂存、mount 时生效

@@ -5,8 +5,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdPhysicsScene;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.physics.ModelPhysicsScene;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.DragSettings;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.RigidBodyWorld;
 import net.minecraft.resources.ResourceLocation;
@@ -27,12 +27,12 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * Data-driven Minecraft binding for an {@link MmdRagdoll}. Resource packs may
+ * Data-driven Minecraft binding for an {@link SkeletonRagdoll}. Resource packs may
  * provide their own body topology, joint limits, Box3D cadence and terrain
  * collision settings without changing model-loader code.
  */
 public record MinecraftRagdollConfig(
-        MmdRagdoll.Profile profile,
+        SkeletonRagdoll.Profile profile,
         Simulation simulation,
         Collision collision,
         Environment environment,
@@ -67,16 +67,16 @@ public record MinecraftRagdollConfig(
         Objects.requireNonNull(root, "root");
         JsonArray bodyArray = requiredArray(root, "bodies");
         if (bodyArray.isEmpty()) throw new JsonParseException("bodies must not be empty");
-        Map<MmdRagdoll.BodyRole, MmdRagdoll.SwingTwistLimit> roleLimits = roleLimits(root);
-        List<MmdRagdoll.Registration> registrations = new ArrayList<>(bodyArray.size());
+        Map<SkeletonRagdoll.BodyRole, SkeletonRagdoll.SwingTwistLimit> roleLimits = roleLimits(root);
+        List<SkeletonRagdoll.Registration> registrations = new ArrayList<>(bodyArray.size());
         for (JsonElement element : bodyArray) {
             if (!element.isJsonObject()) throw new JsonParseException("body entry must be an object");
             JsonObject body = element.getAsJsonObject();
             int rigidBody = requiredInt(body, "rigid_body");
             int parent = integer(body, "parent", -1);
-            MmdRagdoll.BodyRole role;
+            SkeletonRagdoll.BodyRole role;
             try {
-                role = MmdRagdoll.BodyRole.valueOf(requiredString(body, "role")
+                role = SkeletonRagdoll.BodyRole.valueOf(requiredString(body, "role")
                         .toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException exception) {
                 throw new JsonParseException("Unknown body role in entry " + rigidBody, exception);
@@ -96,19 +96,19 @@ public record MinecraftRagdollConfig(
                         || !body.has("max_twist_degrees")) {
                     throw new JsonParseException("swing/twist limit requires max swing and both twist bounds");
                 }
-                registrations.add(new MmdRagdoll.Registration(rigidBody, parent, role,
-                        new MmdRagdoll.SwingTwistLimit(
+                registrations.add(new SkeletonRagdoll.Registration(rigidBody, parent, role,
+                        new SkeletonRagdoll.SwingTwistLimit(
                                 radians(requiredDecimal(body, "max_swing_degrees")),
                                 radians(requiredDecimal(body, "min_twist_degrees")),
                                 radians(requiredDecimal(body, "max_twist_degrees")),
                                 decimal(body, "limit_stiffness", 0.58f))));
             } else if (minimum == null) {
-                MmdRagdoll.SwingTwistLimit roleLimit = roleLimits.get(role);
+                SkeletonRagdoll.SwingTwistLimit roleLimit = roleLimits.get(role);
                 registrations.add(roleLimit == null
-                        ? new MmdRagdoll.Registration(rigidBody, parent, role)
-                        : new MmdRagdoll.Registration(rigidBody, parent, role, roleLimit));
+                        ? new SkeletonRagdoll.Registration(rigidBody, parent, role)
+                        : new SkeletonRagdoll.Registration(rigidBody, parent, role, roleLimit));
             } else {
-                registrations.add(new MmdRagdoll.Registration(rigidBody, parent, role,
+                registrations.add(new SkeletonRagdoll.Registration(rigidBody, parent, role,
                         radians(vector(minimum, "rotation_min_degrees")),
                         radians(vector(maximum, "rotation_max_degrees"))));
             }
@@ -121,7 +121,7 @@ public record MinecraftRagdollConfig(
         JsonObject dragging = object(root, "dragging");
         JsonObject sleeping = object(root, "sleeping");
         return new MinecraftRagdollConfig(
-                new MmdRagdoll.Profile(registrations,
+                new SkeletonRagdoll.Profile(registrations,
                         bool(root, "include_secondary_bodies", false)),
                 new Simulation(
                         decimal(simulation, "hertz", 120f),
@@ -170,22 +170,22 @@ public record MinecraftRagdollConfig(
                         decimal(sleeping, "delay_seconds", 0.75f)));
     }
 
-    private static Map<MmdRagdoll.BodyRole, MmdRagdoll.SwingTwistLimit> roleLimits(JsonObject root) {
-        EnumMap<MmdRagdoll.BodyRole, MmdRagdoll.SwingTwistLimit> result =
-                new EnumMap<>(MmdRagdoll.BodyRole.class);
+    private static Map<SkeletonRagdoll.BodyRole, SkeletonRagdoll.SwingTwistLimit> roleLimits(JsonObject root) {
+        EnumMap<SkeletonRagdoll.BodyRole, SkeletonRagdoll.SwingTwistLimit> result =
+                new EnumMap<>(SkeletonRagdoll.BodyRole.class);
         JsonObject limits = object(root, "limits");
         for (Map.Entry<String, JsonElement> entry : limits.entrySet()) {
             if (!entry.getValue().isJsonObject()) {
                 throw new JsonParseException("limit for " + entry.getKey() + " must be an object");
             }
-            MmdRagdoll.BodyRole role;
+            SkeletonRagdoll.BodyRole role;
             try {
-                role = MmdRagdoll.BodyRole.valueOf(entry.getKey().toUpperCase(Locale.ROOT));
+                role = SkeletonRagdoll.BodyRole.valueOf(entry.getKey().toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException exception) {
                 throw new JsonParseException("Unknown body role limit: " + entry.getKey(), exception);
             }
             JsonObject limit = entry.getValue().getAsJsonObject();
-            result.put(role, new MmdRagdoll.SwingTwistLimit(
+            result.put(role, new SkeletonRagdoll.SwingTwistLimit(
                     radians(requiredDecimal(limit, "max_swing_degrees")),
                     radians(requiredDecimal(limit, "min_twist_degrees")),
                     radians(requiredDecimal(limit, "max_twist_degrees")),
@@ -199,14 +199,14 @@ public record MinecraftRagdollConfig(
      * terrain adapter, or returns {@code null} when Box3D is unavailable.
      */
     @Nullable
-    public MmdRagdoll attach(ModelInstance instance, Supplier<? extends Level> levelSupplier) {
+    public SkeletonRagdoll attach(ModelInstance instance, Supplier<? extends Level> levelSupplier) {
         return attach(instance, levelSupplier, true);
     }
 
     @Nullable
-    public MmdRagdoll attach(ModelInstance instance, Supplier<? extends Level> levelSupplier,
+    public SkeletonRagdoll attach(ModelInstance instance, Supplier<? extends Level> levelSupplier,
                              boolean applyInitialState) {
-        MmdRagdoll ragdoll = instance.enablePhysics(profile);
+        SkeletonRagdoll ragdoll = instance.enablePhysics(profile);
         if (ragdoll == null) return null;
         configure(instance, ragdoll, levelSupplier, applyInitialState);
         MinecraftRagdollRuntime.register(instance, updateMode);
@@ -215,10 +215,10 @@ public record MinecraftRagdollConfig(
 
     /** Attaches one model to a shared scene; scene settings are owned collectively. */
     @Nullable
-    public MmdRagdoll attach(ModelInstance instance, MmdPhysicsScene scene,
+    public SkeletonRagdoll attach(ModelInstance instance, ModelPhysicsScene scene,
                              Supplier<? extends Level> levelSupplier,
                              boolean applyInitialState) {
-        MmdRagdoll ragdoll = scene.attach(instance, profile);
+        SkeletonRagdoll ragdoll = scene.attach(instance, profile);
         if (ragdoll == null) return null;
         configure(instance, ragdoll, levelSupplier, applyInitialState);
         MinecraftRagdollRuntime.unregister(instance);
@@ -226,7 +226,7 @@ public record MinecraftRagdollConfig(
         return ragdoll;
     }
 
-    private void configure(ModelInstance instance, MmdRagdoll ragdoll,
+    private void configure(ModelInstance instance, SkeletonRagdoll ragdoll,
                            Supplier<? extends Level> levelSupplier,
                            boolean applyInitialState) {
         ragdoll.setSimulationHertz(simulation.hertz);
@@ -255,13 +255,13 @@ public record MinecraftRagdollConfig(
         else MinecraftRagdollDragger.unregister(instance);
     }
 
-    private void applyInitialState(MmdRagdoll ragdoll) {
-        for (MmdRagdoll.Body body : ragdoll.bodies()) {
+    private void applyInitialState(SkeletonRagdoll ragdoll) {
+        for (SkeletonRagdoll.Body body : ragdoll.bodies()) {
             body.teleport(body.position().add(initialState.offset), body.rotation());
         }
         for (int i = 0; i < profile.bodies().size(); i++) {
             if (profile.bodies().get(i).parentRigidBodyIndex() >= 0) continue;
-            MmdRagdoll.Body root = ragdoll.bodies().get(i);
+            SkeletonRagdoll.Body root = ragdoll.bodies().get(i);
             root.setLinearVelocity(initialState.rootLinearVelocity);
             root.setAngularVelocity(initialState.rootAngularVelocity);
             break;

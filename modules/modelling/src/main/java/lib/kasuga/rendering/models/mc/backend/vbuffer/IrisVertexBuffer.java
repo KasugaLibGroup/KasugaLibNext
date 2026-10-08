@@ -3,11 +3,16 @@ package lib.kasuga.rendering.models.mc.backend.vbuffer;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
 import lib.kasuga.mixins.client.AccessorByteBufferBuilder;
+import lib.kasuga.mixins.client.AccessorBufferBuilder;
 import lib.kasuga.rendering.models.mc.backend.FlatModelData;
 import lombok.Getter;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
+import org.joml.Vector2f;
+import net.irisshaders.iris.vertices.ImmediateState;
+import net.irisshaders.iris.vertices.IrisVertexFormats;
+import net.irisshaders.iris.uniforms.CapturedRenderingState;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
@@ -192,7 +197,16 @@ public class IrisVertexBuffer implements IVertexBuffer {
             bbb = byteBufferBuilder;
             ((AccessorByteBufferBuilder) bbb).setWriteOffset(0);
         }
-        BufferBuilder bufferBuilder = new BufferBuilder(bbb, meshMode, format);
+        // Iris' automatic extension depends on render-thread shader state. Workers and
+        // partial dirty ranges must write the complete, already-extended format themselves.
+        Boolean previousExtension = ImmediateState.skipExtension.get();
+        BufferBuilder bufferBuilder;
+        try {
+            ImmediateState.skipExtension.set(true);
+            bufferBuilder = new BufferBuilder(bbb, meshMode, format);
+        } finally { ImmediateState.skipExtension.set(previousExtension); }
+        var attributes = (AccessorBufferBuilder) bufferBuilder;
+        var midpoint = new Vector2f();
 
         int bufOffset, vOffset, color;
         ByteBuffer src = modelData.getBuffer();
@@ -224,8 +238,45 @@ public class IrisVertexBuffer implements IVertexBuffer {
             bufferBuilder.addVertex(x, y, z, color, u, v,
                     modelData.getOverlay(), modelData.getLightmap(),
                     nx, ny, nz);
+            long pointer = attributes.kasuga$beginElement(IrisVertexFormats.MID_TEXTURE_ELEMENT);
+            if (pointer > 0) { // beginElement returns -1 when an attribute was already written or is absent.
+                midpointUv(src, srcVertexSize, modelData.getUv0Offset(), i, meshMode.primitiveLength, vertexCount, midpoint);
+                MemoryUtil.memPutFloat(pointer, midpoint.x);
+                MemoryUtil.memPutFloat(pointer + 4, midpoint.y);
+            }
+            pointer = attributes.kasuga$beginElement(IrisVertexFormats.TANGENT_ELEMENT);
+            if (pointer > 0) {
+                int tangentOffset = modelData.getTangOffset();
+                for (int component = 0; component < 4; component++) {
+                    float tangent = tangentOffset < 0 ? (component == 0 || component == 3 ? 1f : 0f)
+                            : src.getFloat(vOffset + tangentOffset + component * 4);
+                    MemoryUtil.memPutByte(pointer + component, normalizedTangent(tangent));
+                }
+            }
+            pointer = attributes.kasuga$beginElement(IrisVertexFormats.ENTITY_ID_ELEMENT);
+            if (pointer > 0) {
+                var state = CapturedRenderingState.INSTANCE;
+                MemoryUtil.memPutShort(pointer, (short) state.getCurrentRenderedEntity());
+                MemoryUtil.memPutShort(pointer + 2, (short) state.getCurrentRenderedBlockEntity());
+                MemoryUtil.memPutShort(pointer + 4, (short) state.getCurrentRenderedItem());
+            }
         }
         return bbb;
+    }
+
+    static void midpointUv(ByteBuffer source, int stride, int uvOffset, int vertex,
+                           int primitiveLength, int totalVertices, Vector2f result) {
+        int first = vertex - vertex % primitiveLength;
+        int end = Math.min(first + primitiveLength, totalVertices);
+        float u = 0, v = 0;
+        for (int i = first; i < end; i++) {
+            u += source.getFloat(i * stride + uvOffset);
+            v += source.getFloat(i * stride + uvOffset + 4);
+        }
+        result.set(u / (end - first), v / (end - first));
+    }
+    static byte normalizedTangent(float value) {
+        return (byte) Math.round(Math.clamp(value, -1f, 1f) * 127f);
     }
 
     @Override

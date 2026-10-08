@@ -108,61 +108,62 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
 
         PoseStack poseStack = context.getPoseStack();
         poseStack.pushPose();
-        Vec3 cameraPosition = context.getCamera() == null ? Vec3.ZERO : context.getCamera().getPosition();
-        var worldOrigin = model.getSkeletonInstance().getWorldOrigin();
-        // Compose camera-relative translation in double before it enters the
-        // float pose matrix. Origin-local skeletons therefore never subtract
-        // two huge float values during rendering.
-        Vector3f cameraRelativeOrigin = cameraRelativeOrigin(worldOrigin, cameraPosition);
-        poseStack.translate(cameraRelativeOrigin.x, cameraRelativeOrigin.y, cameraRelativeOrigin.z);
+        try {
+            Vec3 cameraPosition = context.getCamera() == null ? Vec3.ZERO : context.getCamera().getPosition();
+            var worldOrigin = model.getSkeletonInstance().getWorldOrigin();
+            // Compose camera-relative translation in double before it enters the
+            // float pose matrix. Origin-local skeletons therefore never subtract
+            // two huge float values during rendering.
+            Vector3f cameraRelativeOrigin = cameraRelativeOrigin(worldOrigin, cameraPosition);
+            poseStack.translate(cameraRelativeOrigin.x, cameraRelativeOrigin.y, cameraRelativeOrigin.z);
 
-        // Animation is sampled once per rendered frame. Configured ragdoll
-        // physics is advanced by MinecraftRagdollRuntime independently of
-        // render visibility; tying it to this method froze culled instances.
-        if (sampledThisFrame.firstSample(model)) {
-            model.sample(context.getPartialTickFraction());
-        }
-
-        LightData lightData;
-        int overlay;
-        float emissive;
-        if (transform != null) {
-            if (transform.isAppliesTransform()) {
-                transform.applyTransform(poseStack);
+            // Animation is sampled once per rendered frame. Configured ragdoll
+            // physics is advanced by MinecraftRagdollRuntime independently of
+            // render visibility; tying it to this method froze culled instances.
+            if (sampledThisFrame.firstSample(model)) {
+                model.sample(context.getPartialTickFraction());
             }
-            lightData = transform.getLightAndBrightness(context.getLevel());
-            overlay = transform.getOverlay();
-            emissive = transform.emissiveStrength;
-        } else {
-            lightData = new LightData(0, 0, LightTexture.FULL_BLOCK, (float) Math.abs(Math.sin(t)));
-            t += 0.05f;
-            overlay = OverlayTexture.NO_OVERLAY;
-            emissive = 1f;
-        }
 
-        BackendInstance instance = renderable.apply();
-        instance.renderInFrame(renderFrameToken);
-        float ambientLightEnhancement = effectiveAmbientLightEnhancement(
-                model, BackendInstance.isIrisEnabled());
-        instance.updateLightData(lightData.packedLight(), overlay, lightData.brightness());
-        if (prepared != null) {
-            if (instance.prepareDraw(pass)) {
-                prepared.add(new PreparedModelDraw(instance, poseStack.last().copy(),
-                        emissive, ambientLightEnhancement));
+            LightData lightData;
+            int overlay;
+            float emissive;
+            if (transform != null) {
+                if (transform.isAppliesTransform()) {
+                    transform.applyTransform(poseStack);
+                }
+                lightData = transform.getLightAndBrightness(context.getLevel());
+                overlay = transform.getOverlay();
+                emissive = transform.emissiveStrength;
+            } else {
+                lightData = new LightData(0, 0, LightTexture.FULL_BLOCK, (float) Math.abs(Math.sin(t)));
+                t += 0.05f;
+                overlay = OverlayTexture.NO_OVERLAY;
+                emissive = 1f;
             }
-        } else if (pass != ModelRenderPass.TRANSLUCENT && globalBatcher.isCollecting()
-                && globalBatcher.submit(instance, pass, poseStack.last().pose(), poseStack.last().normal(),
-                emissive, ambientLightEnhancement)) {
-            // The opaque/mask batch is flushed before any translucent pass.
-            // This preserves pass order even though both paths share a global
-            // batching implementation.
-        } else {
-            instance.drawBuffer(pass, poseStack.last(), renderType,
-                    context.getModelViewMatrix(), context.getProjectionMatrix(), emissive,
-                    ambientLightEnhancement, oitMode);
-        }
 
-        poseStack.popPose();
+            BackendInstance instance = renderable.apply();
+            instance.renderInFrame(renderFrameToken);
+            float ambientLightEnhancement = effectiveAmbientLightEnhancement(
+                    model, BackendInstance.isIrisEnabled());
+            instance.updateLightData(lightData.packedLight(), overlay, lightData.brightness());
+            if (prepared != null) {
+                if (instance.prepareDraw(pass)) {
+                    prepared.add(new PreparedModelDraw(instance, poseStack.last().copy(),
+                            emissive, ambientLightEnhancement));
+                }
+            } else if (pass != ModelRenderPass.TRANSLUCENT && globalBatcher.isCollecting()
+                    && globalBatcher.submit(instance, pass, poseStack.last().pose(), poseStack.last().normal(),
+                    emissive, ambientLightEnhancement)) {
+                // The opaque/mask batch is flushed before any translucent pass.
+                // This preserves pass order even though both paths share a global
+                // batching implementation.
+            } else {
+                instance.drawBuffer(pass, poseStack.last(), renderType,
+                        context.getModelViewMatrix(), context.getProjectionMatrix(), emissive,
+                        ambientLightEnhancement, oitMode);
+            }
+
+        } finally { poseStack.popPose(); }
     }
 
     /** Frame-local capture: callbacks, culling, lighting, morphs and uploads run once. */

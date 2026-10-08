@@ -40,6 +40,44 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class KsgBbModelLoaderSkeletonTest {
 
+    @Test
+    void unnamedBlockbenchAnimationDoesNotPreventModelLoading() {
+        var definition = BbModelDefinition.parse("{\"animations\":[{\"length\":1}]}");
+        var materials = lib.kasuga.rendering.models.uml.dynamic.ModelInstanceFixture.minimal()
+                .getModel().getMaterialSet();
+        Model model = KsgBbModelLoader.buildSkeletonAndGeometry(definition, Map.of(), materials);
+        assertTrue(model.getAnimations().contains("animation_0"));
+    }
+
+    @Test
+    void blockbenchClipsUseTheSameNamedPosingEntryAsGltfAndPlainModels() {
+        BbModelDefinition definition = BbModelDefinition.parse("""
+                {"animations":[{"name":"move","length":1,"animators":{
+                  "root-id":{"name":"root","type":"bone","keyframes":[
+                    {"channel":"position","time":0,"data_points":[{"x":"0","y":"0","z":"0"}]},
+                    {"channel":"position","time":1,"data_points":[{"x":"32","y":"0","z":"0"}]}
+                  ]}
+                }}]}
+                """);
+        MaterialSet materials = lib.kasuga.rendering.models.uml.dynamic.ModelInstanceFixture.minimal()
+                .getModel().getMaterialSet();
+        Model model = KsgBbModelLoader.buildSkeletonAndGeometry(definition, Map.of(), materials);
+        ModelInstance instance = new ModelInstance(model, null, null, null, null, null);
+        assertTrue(instance.getPosing().hasClip("move"));
+        assertTrue(instance.getPosing().play("move", false));
+        instance.animate(1); instance.sample(1);
+        assertEquals(2, instance.getSkeletonInstance().getTransforms().get(model.getSkeleton().getRoot())
+                .getPosition().x, 1e-5);
+        var body = lib.kasuga.rendering.models.uml.dynamic.ModelInstanceFixture.minimal().getModel();
+        var outfit = new lib.kasuga.rendering.models.uml.loaders.assembly.ModelAssemblyBuilder("body", body, 0)
+                .part("mc-cloth", model, 0).assemble();
+        var combined = new ModelInstance(outfit.model(), null, null, null, null, null);
+        assertTrue(combined.getPosing().play("mc-cloth/move", false));
+        combined.animate(1); combined.sample(1);
+        assertEquals(2, combined.getSkeletonInstance().getTransforms().get(outfit.model().getSkeleton().getRoot())
+                .getPosition().x, 1e-5);
+    }
+
     private static final float EPS = 1e-4f;
 
     /** BDEF skinning only — the uml skinning is CPU-side, no MC runtime needed. */

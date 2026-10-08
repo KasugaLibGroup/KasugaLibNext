@@ -14,8 +14,8 @@ import lib.kasuga.rendering.models.uml.structure.skeleton.data.SkeletonInstanceD
 import lib.kasuga.rendering.models.uml.dynamic.ik.CalikoIkSolver;
 import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics.IkChain;
 import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics.TargetMode;
-import lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.bone.ParentBoneInherit;
-import lib.kasuga.rendering.models.uml.typo.miku_miku_dance.data.bone.PmxBone;
+import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics.BonePoseConstraint;
+import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics.TransformInheritance;
 import lib.kasuga.structure.Pair;
 import lombok.Getter;
 import lombok.NonNull;
@@ -33,11 +33,13 @@ public class SkeletonInstance {
 
     private final ModelInstance modelInstance;
     private final Skeleton skeleton;
-    private final Bone[] pmxBones;
 
     private final HashMap<Bone, Transform> transforms;
     private final HashMap<Bone, Transform> absoluteTransforms;
     private final HashMap<Bone, Transform> evaluatedTransforms;
+    /** Identity map reuses its backing storage; false = visiting, true = evaluated this pass. */
+    @Getter(lombok.AccessLevel.NONE)
+    private final Map<Bone, Boolean> localEvaluationState = new IdentityHashMap<>();
     private final HashMap<Bone, Transform> ikTransforms;
     private final HashMap<Bone, Transform> physicsTransforms;
     private final HashMap<String, Boolean> ikEnabled;
@@ -98,9 +100,6 @@ public class SkeletonInstance {
     public SkeletonInstance(ModelInstance instance, Skeleton skeleton, @Nullable Transform transform, @Nullable SkeletonInstanceData data) {
         this.modelInstance = instance;
         this.skeleton = skeleton;
-        this.pmxBones = Arrays.stream(skeleton.getBones())
-                .filter(bone -> bone.getBoneData() instanceof PmxBone)
-                .toArray(Bone[]::new);
         this.transform = transform != null ? transform : new Transform();
         shouldUpdate = false;
         this.transforms = new HashMap<>();
@@ -453,10 +452,25 @@ public class SkeletonInstance {
         return true;
     }
 
+    /** Drop an explicit IK switch so the chain returns to its default enabled state. */
+    public boolean clearIkEnabled(String name) {
+        if (ikEnabled.remove(name) == null) return false;
+        requestFullUpdate();
+        return true;
+    }
+
     public void resetIkEnabled() {
         if (ikEnabled.isEmpty()) return;
         ikEnabled.clear();
         requestFullUpdate();
+    }
+
+    /** Copies persistent named pose inputs to another rig; missing bones/chains are ignored. */
+    public void copyPoseInputsTo(SkeletonInstance target) {
+        Objects.requireNonNull(target);
+        transforms.forEach((bone, local) -> target.transform(bone.getName(), local.copy()));
+        ikEnabled.forEach(target::setIkEnabled);
+        ikTargets.forEach((name, value) -> target.setIkTarget(name, new Vector3f(value.position()), value.weight()));
     }
 
     public boolean isIkEnabled(String boneName) {
@@ -538,6 +552,7 @@ public class SkeletonInstance {
     }
 
     private void evaluateHierarchy() {
+        localEvaluationState.clear();
         updateQueue.clear();
         Bone rootBone = skeleton.getRoot();
         Transform rootAbsolute = reusableAbsolute(rootBone);
@@ -597,27 +612,35 @@ public class SkeletonInstance {
      */
     private Transform evaluatedLocalTransform(Bone bone) {
         Transform result = reusableEvaluated(bone);
+        boolean constrained = !skeleton.getDynamics().poseConstraints().isEmpty();
+        if (constrained) {
+            Boolean state = localEvaluationState.get(bone);
+            if (Boolean.TRUE.equals(state)) return result;
+            if (Boolean.FALSE.equals(state)) throw new IllegalStateException("cyclic transform inheritance");
+            localEvaluationState.put(bone, false);
+        }
         Transform authored = transforms.get(bone);
-        // MMD: 启用 IK 的链上骨由解算器接管 —— 忽略动画直接旋转（VMD 大腿关键帧等），
-        // 否则"大腿直接旋转 + IK 平移"的双驱动会把腿拧成怪异的姿态。
+        // A rig can delegate authored local pose control to an enabled IK chain.
         result.set(isIkDriven(bone) ? IDENTITY_TRANSFORM
                 : (authored == null ? IDENTITY_TRANSFORM : authored));
-        if (bone.getBoneData() instanceof PmxBone pmx) {
-            applyGrant(result, pmx);
-            applyFixedAxis(result, pmx);
+        BonePoseConstraint constraint = skeleton.getDynamics().poseConstraints().get(bone);
+        if (constraint != null) {
+            applyInheritance(result, constraint.inheritance());
+            if (constraint.hasFixedAxis()) applyFixedAxis(result, constraint);
         }
         Transform ik = ikTransforms.get(bone);
         if (ik != null) result.mul(ik);
         Transform physics = physicsTransforms.get(bone);
         if (physics != null) result.set(physics);
+        if (constrained) localEvaluationState.put(bone, true);
         return result;
     }
 
     /**
      * Whether this bone is a link of at least one IK controller whose IK is
      * currently enabled. Chain membership comes from the shared reverse mapping; the
-     * enable check is a per-frame map lookup (IK enable defaults to true, per
-     * MMD). Chains may opt into this authored-pose replacement behavior.
+     * enable check is a per-frame map lookup (IK enable defaults to true).
+     * Chains may opt into this authored-pose replacement behavior.
      */
     private boolean isIkDriven(Bone bone) {
         for (IkChain chain : skeleton.getDynamics().ikChainsByBone().getOrDefault(bone, List.of())) {
@@ -645,6 +668,31 @@ public class SkeletonInstance {
      */
     @Nullable
     public Transform anchorTransform(String anchorName) {
+        Matrix4f blended = anchorMatrix(anchorName);
+        if (blended == null) return null;
+        if (floatingOriginEnabled) {
+            blended.setTranslation((float) (worldOrigin.x + blended.m30()),
+                    (float) (worldOrigin.y + blended.m31()), (float) (worldOrigin.z + blended.m32()));
+        }
+        return new Transform().set(blended);
+    }
+
+    /** Evaluated anchor relative to a double world origin, suitable for camera-relative rendering. */
+    @Nullable
+    public Transform anchorTransformRelative(String anchorName, Vector3d origin) {
+        Objects.requireNonNull(origin, "origin");
+        if (!Double.isFinite(origin.x) || !Double.isFinite(origin.y) || !Double.isFinite(origin.z))
+            throw new IllegalArgumentException("Origin must be finite");
+        Matrix4f blended = anchorMatrix(anchorName);
+        if (blended == null) return null;
+        blended.setTranslation((float) ((floatingOriginEnabled ? worldOrigin.x - origin.x : -origin.x) + blended.m30()),
+                (float) ((floatingOriginEnabled ? worldOrigin.y - origin.y : -origin.y) + blended.m31()),
+                (float) ((floatingOriginEnabled ? worldOrigin.z - origin.z : -origin.z) + blended.m32()));
+        return new Transform().set(blended);
+    }
+
+    @Nullable
+    private Matrix4f anchorMatrix(String anchorName) {
         Anchor anchor = skeleton.getAnchor(anchorName);
         if (anchor == null) return null;
         Pair<Bone, Float>[] weights = anchor.getBinding().getWeights();
@@ -660,9 +708,9 @@ public class SkeletonInstance {
             Transform absolute = absoluteTransforms.get(bone);
             Pair<Transform, Transform> binding = skeleton.getBoneTransforms().get(bone);
             if (absolute == null || binding == null) continue;
-            // bind^-1 * current == deformation from bind pose to the evaluated pose.
-            Matrix4f delta = anchorDeltaScratch.set(binding.getSecond().transform())
-                    .mul(absolute.transform());
+            // Column-vector convention: current * inverse-bind, matching production vertex skinning.
+            Matrix4f delta = anchorDeltaScratch.set(absolute.transform())
+                    .mul(binding.getSecond().transform());
             float w = weight.getSecond();
             m00 += w * delta.m00(); m01 += w * delta.m01(); m02 += w * delta.m02(); m03 += w * delta.m03();
             m10 += w * delta.m10(); m11 += w * delta.m11(); m12 += w * delta.m12(); m13 += w * delta.m13();
@@ -674,16 +722,7 @@ public class SkeletonInstance {
         Matrix4f blended = anchorBlendScratch.set(m00, m01, m02, m03,
                 m10, m11, m12, m13, m20, m21, m22, m23, m30, m31, m32, m33);
         blended.mul(anchor.getTransform().transform());
-        if (floatingOriginEnabled) {
-            // The legacy attachment API returns a float world transform. Keep
-            // it spatially compatible; precision-sensitive consumers should
-            // pair origin-local bone data with getWorldOrigin() instead.
-            blended.setTranslation(
-                    blended.m30() + (float) worldOrigin.x,
-                    blended.m31() + (float) worldOrigin.y,
-                    blended.m32() + (float) worldOrigin.z);
-        }
-        return new Transform().set(blended);
+        return blended;
     }
 
     /** Applies a complete set of physics-produced local bone transforms. */
@@ -697,32 +736,30 @@ public class SkeletonInstance {
         requestFullUpdate();
     }
 
-    private void applyGrant(Transform result, PmxBone pmx) {
-        ParentBoneInherit inherit = pmx.inherit;
+    private void applyInheritance(Transform result, TransformInheritance inherit) {
         if (inherit == null) return;
-        Bone source = pmxBone(inherit.parentIndex().intValue());
-        if (source == null) return;
-        Transform sourceTransform = evaluatedTransforms.getOrDefault(source,
-                transforms.getOrDefault(source, IDENTITY_TRANSFORM));
+        Bone source = inherit.source();
+        Transform sourceTransform = evaluatedLocalTransform(source);
         float weight = inherit.weight();
-        if (pmx.flags.inheritParentTranslation) {
+        if (inherit.translation()) {
             Vector3f position = grantPositionScratch.set(sourceTransform.transform().m30(),
                     sourceTransform.transform().m31(), sourceTransform.transform().m32());
             result.translateWorld(position.mul(weight));
         }
-        if (pmx.flags.inheritParentRotation) {
+        if (inherit.rotation()) {
             result.mul(grantSlerpScratch.identity().slerp(sourceTransform.getRotation(), weight));
         }
     }
 
-    private void applyFixedAxis(Transform result, PmxBone pmx) {
-        if (!pmx.flags.isAxisFixed || pmx.fixedAxis == null || pmx.fixedAxis.lengthSquared() < 1e-8f) return;
-        Vector3f axis = fixedAxisDirScratch.set(pmx.fixedAxis).normalize();
+    private void applyFixedAxis(Transform result, BonePoseConstraint constraint) {
+        Vector3f axis = constraint.fixedAxis(fixedAxisDirScratch);
         Quaternionf rotation = fixedAxisRotScratch.setFromUnnormalized(result.transform()).normalize();
         Vector3f vector = fixedAxisVecScratch.set(rotation.x, rotation.y, rotation.z);
         float projection = vector.dot(axis);
         Quaternionf twist = fixedAxisTwistScratch.set(axis.x * projection, axis.y * projection,
-                axis.z * projection, rotation.w).normalize();
+                axis.z * projection, rotation.w);
+        if (twist.lengthSquared() < 1e-12f) twist.identity();
+        else twist.normalize();
         Matrix4f matrix = fixedAxisMatrixScratch.translationRotateScale(
                 result.transform().getTranslation(fixedAxisPosScratch), twist,
                 result.transform().getScale(fixedAxisScaleScratch));
@@ -730,6 +767,12 @@ public class SkeletonInstance {
     }
 
     private void evaluateHierarchyFrom(Bone root, Bone requiredDescendant) {
+        // IK corrections may affect inheritance in another branch. Rebuild those dependent absolutes too.
+        if (!skeleton.getDynamics().poseConstraints().isEmpty()) {
+            evaluateHierarchy();
+            return;
+        }
+        localEvaluationState.clear();
         if (!isAncestorOf(root, requiredDescendant)) {
             evaluateHierarchy();
             return;
@@ -761,10 +804,6 @@ public class SkeletonInstance {
             if (current == ancestor) return true;
         }
         return false;
-    }
-
-    private Bone pmxBone(int pmxIndex) {
-        return pmxIndex >= 0 && pmxIndex < pmxBones.length ? pmxBones[pmxIndex] : null;
     }
 
     private record IkTarget(Vector3f position, float weight) {
@@ -804,7 +843,7 @@ public class SkeletonInstance {
             }
             newlyUpdatedBones.clear();
         }
-        if (fullUpdateRequested || dirtyBones.isEmpty()) {
+        if (fullUpdateRequested || dirtyBones.isEmpty() || !skeleton.getDynamics().poseConstraints().isEmpty()) {
             return Collections.emptySet();
         }
         Set<Bone> updatedBones = new HashSet<>();
