@@ -56,6 +56,17 @@ public final class AnimationTimeline {
 
     void tickOwned(float dt) { advance(dt); }
 
+    /** Resource rebind changes the clip duration without replacing a clock followed by other targets. */
+    synchronized void resizeOwned(float duration) {
+        if (!owned) throw new IllegalStateException("Only the owning player may resize its clock");
+        if (snapshot == null) return;
+        var current = snapshot;
+        double seconds = current.loop() ? current.seconds() : Math.min(current.seconds(), duration);
+        double previous = current.loop() ? current.previous() : Math.min(current.previous(), duration);
+        snapshot = new Snapshot(previous, seconds, duration, current.speed(), current.loop(),
+                current.playing() && (current.loop() || seconds < duration));
+    }
+
     private synchronized void advance(float dt) {
         if (!Float.isFinite(dt) || dt < 0 || snapshot == null) return;
         var current = snapshot;

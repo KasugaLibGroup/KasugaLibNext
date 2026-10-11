@@ -25,6 +25,26 @@ class GltfLoaderTest {
     @TempDir Path temporary;
 
     @Test
+    void loadedGltfCanBeAssembledAndAnimatedOnAPlainModel() throws Exception {
+        Model source = GltfModelConverter.convert(GltfLoader.loadAllAnimations(minimalSkinnedGltf()));
+        Model body = lib.kasuga.rendering.models.uml.dynamic.ModelInstanceFixture.minimal().getModel();
+        var assembled = new lib.kasuga.rendering.models.uml.loaders.assembly.ModelAssemblyBuilder("body", body, 0)
+                .part("gltf-cloth", source, 0, part -> part.matchBodyBones(false)).assemble();
+        assertNull(assembled.model().getModelData());
+        var instance = new ModelInstance(assembled.model(), null, null, null, null, null);
+        assertTrue(instance.getPosing().play("gltf-cloth/move", false));
+        instance.animate(1); instance.sample(1); instance.updateImmediate();
+        var original = ((GltfModelData) source.getModelData()).boneByNode().get(1);
+        var joint = assembled.part("gltf-cloth").bone(original);
+        assertEquals(1, instance.getSkeletonInstance().getAbsoluteTransforms().get(joint).getPosition().x, 1e-5);
+        for (var vertex : assembled.model().getVertices()) {
+            for (var weight : vertex.getBinding().getWeights()) {
+                assertTrue(assembled.model().getSkeleton().getBoneTransforms().containsKey(weight.getFirst()));
+            }
+        }
+    }
+
+    @Test
     void parsesConvertsAndAnimatesASkinnedGltf() throws Exception {
         Path file = minimalSkinnedGltf();
         GltfAsset asset = GltfLoader.load(file, Set.of("move"));
@@ -40,8 +60,7 @@ class GltfLoaderTest {
         assertEquals(2, model.getBones().length);
 
         ModelInstance instance = new ModelInstance(model, null, null, null, null, null);
-        GltfAnimationPoseDriver driver = new GltfAnimationPoseDriver(instance);
-        instance.setPoseDriver(driver);
+        var driver = instance.getPosing();
         assertTrue(driver.play("move", false));
         instance.animate(1f);
         instance.sample(1f);
@@ -129,9 +148,9 @@ class GltfLoaderTest {
                     config.profile().bodies().forEach(body ->
                             configuredParents.put(((GltfModelData) model.getModelData()).boneByNode().get(body.rigidBodyIndex()), ((GltfModelData) model.getModelData()).boneByNode().get(body.parentRigidBodyIndex())));
                     for (var joint : ragdoll.joints()) {
-                        var child = ((lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll.Body)
+                        var child = ((lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll.Body)
                                 joint.bodyB()).bone();
-                        var parent = ((lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll.Body)
+                        var parent = ((lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll.Body)
                                 joint.bodyA()).bone();
                         assertEquals(configuredParents.get(child), parent,
                                 name + " must use the configured humanoid parent for body " + child);
@@ -219,7 +238,7 @@ class GltfLoaderTest {
                     float maximumRestingAngularSpeed = 0f;
                     String maximumRestingLinearBody = "";
                     String maximumRestingAngularBody = "";
-                    lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll.Body maximumRestingBody = null;
+                    lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll.Body maximumRestingBody = null;
                     for (int step = 0; step < 1440; step++) {
                         ragdoll.step(1f / 120f);
                         if (step < 1200) continue;
@@ -256,9 +275,9 @@ class GltfLoaderTest {
                     float maximumAngularViolation = worstAngularJoint.angularLimitViolation();
                     assertTrue(maximumAngularViolation <= Math.toRadians(3.0),
                             name + " angular joint limit drift=" + Math.toDegrees(maximumAngularViolation)
-                                    + " parent=" + ((lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll.Body)
+                                    + " parent=" + ((lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll.Body)
                                     worstAngularJoint.bodyA()).bone().getName()
-                                    + " child=" + ((lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll.Body)
+                                    + " child=" + ((lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll.Body)
                                     worstAngularJoint.bodyB()).bone().getName());
                 } finally {
                     instance.close();
@@ -276,7 +295,7 @@ class GltfLoaderTest {
     }
 
     private static float lowestCapsulePoint(
-            lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll.Body body) {
+            lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll.Body body) {
         var size = body.shapeSize();
         var halfAxis = body.rotation().transform(
                 new org.joml.Vector3f(0f, 0.5f * size.y, 0f));

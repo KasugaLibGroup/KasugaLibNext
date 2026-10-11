@@ -3,7 +3,8 @@
 接口、配置和调用参考。原理说明见 [camera-animation.md](../doc/camera-animation.md)。
 
 `MinecraftCameras.create(...)` 和 `MinecraftFrameWindows.createCamera(...)` 返回的摄像机句柄
-均支持位置、旋转、光学缩放和关键帧播放。所有控制操作在渲染线程执行。
+是 Free Camera，支持位置、旋转、光学缩放和关键帧播放。三类相机及实体跟随见
+[Player / Free / Fixed Camera](cameras.md)。所有控制操作在渲染线程执行。
 
 ## 直接控制
 
@@ -18,7 +19,8 @@ WorldCameraView pose = camera.pose();   // 当前 tick 的姿态
 ```
 
 直接控制以当前动画 tick 的姿态为起点，保留未修改的分量和输出尺寸，然后替换为固定姿态，停止原动画。
-需要跟随实体时，仍可用 `updatePose(Supplier<WorldCameraView>)`；替换供应器也会清除动画。
+需要跟随实体时使用 `MinecraftCameras.createFixed(...)`；它的 FOV/投影控制会保留目标绑定。
+Free 仍可使用 `updatePose(Supplier<WorldCameraView>)` 描述自定义姿态源；替换供应器会清除动画。
 `WorldCameraView` 另提供相同的不可变变换方法，方便自行组合供应器。
 
 摄像机缩放改变投影，不缩放世界或输出分辨率。倍率 `m` 满足
@@ -75,7 +77,8 @@ Minecraft 自动每游戏 tick 推进一次时钟（20 Hz），世界暂停时�
 模型的 `AnimationPlayer<T>` 和摄像机适配器现在都使用 `AnimationPlayback<T, R>`。
 现有 `AnimationSampler<T>` 是输出模型 `Pose` 的 `AnimationSource<T, Pose>`，
 摄像机的 `CameraClipSampler` 输出未应用到世界的 `CameraPose`，统一内核负责计时和采样。
-原模型 `play(sampler, data, loop)`、glTF 播放入口及旧 JSON 保持兼容。
+原模型 `play(sampler, data, loop)` 和 JSON 保留。命名片段与静态姿态统一使用
+[ModelPosing](model-posing.md)，glTF 专用驱动已迁移到该公共入口。
 
 现有 `AnimationClip` 新增可选的 `cameras`，一个片段可以包含模型骨骼、形变、材质和多个命名镜头。
 例如以下 JSON 会同步移动模型的 root 和场景镜头：

@@ -10,7 +10,7 @@ import java.util.Set;
  * composition ({@link Layer#activePose()}) and the render-thread sampler ({@code FsmPoseDriver#sample}) so both
  * paths produce identical cross-fades.
  *
- * <p>Morphs/bones are linearly interpolated; frames snap to the nearer end (there is no meaningful
+ * <p>Morphs/bones are linearly interpolated; frames and IK switches snap to the nearer end (there is no meaningful
  * interpolation between material-frame indices).
  */
 public final class PoseBlend {
@@ -80,6 +80,13 @@ public final class PoseBlend {
             builder.frame(key, frame);
         }
 
+        Set<String> ikKeys = new HashSet<>(from.ikEnabled().keySet());
+        ikKeys.addAll(to.ikEnabled().keySet());
+        for (String key : ikKeys) {
+            Boolean first = from.ikEnabled().get(key), second = to.ikEnabled().get(key);
+            builder.ikEnabled(key, alpha < 0.5f ? (first != null ? first : second)
+                    : (second != null ? second : first));
+        }
         return builder.build();
     }
 

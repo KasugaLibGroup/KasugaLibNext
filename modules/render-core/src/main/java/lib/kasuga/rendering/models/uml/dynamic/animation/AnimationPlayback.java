@@ -25,6 +25,14 @@ public final class AnimationPlayback<T, R> {
     }
 
     public void stop() { replace(null); }
+    /** Replaces source data while keeping the current clock and its ownership. */
+    public void retarget(AnimationSource<T, R> source, T data) {
+        float duration = duration(source, data);
+        var current = binding;
+        if (current == null) return;
+        if (current.ownsClock()) current.timeline().resizeOwned(duration);
+        binding = new Binding<>(source, data, duration, current.timeline(), current.ownsClock());
+    }
     public T currentData() { var current = binding; return current == null ? null : current.data(); }
     public AnimationTimeline timeline() { var current = binding; return current == null ? null : current.timeline(); }
     public boolean isPlaying() { var current = binding; return current != null && current.timeline().isPlaying(); }

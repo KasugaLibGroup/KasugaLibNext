@@ -34,7 +34,8 @@ See [api/EFFECT_RENDERING.md](api/EFFECT_RENDERING.md) for the API behavior, exa
 Shader DSL guide.
 
 Camera movement, rotation, zoom and keyframe playback are documented in
-[api/camera-animation.md](api/camera-animation.md).
+[api/camera-animation.md](api/camera-animation.md). Player / Free / Fixed creation and entity following are documented in
+[api/cameras.md](api/cameras.md).
 
 Optional world-wide volumetric skies, placeable cumulonimbus volumes and standalone previews are documented in
 [api/volumetric-clouds.md](api/volumetric-clouds.md).

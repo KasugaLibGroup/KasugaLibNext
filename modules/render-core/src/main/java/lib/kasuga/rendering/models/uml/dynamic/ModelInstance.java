@@ -2,8 +2,8 @@ package lib.kasuga.rendering.models.uml.dynamic;
 
 import lib.kasuga.rendering.models.uml.dynamic.morph.MorphInstance;
 import lib.kasuga.rendering.models.uml.dynamic.morph.MorphResult;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdPhysicsScene;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.physics.ModelPhysicsScene;
 import lib.kasuga.rendering.models.uml.dynamic.physics.box3d.NativeBox3D;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.ModelTickLoop;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.AnchorModule;
@@ -62,9 +62,10 @@ public class ModelInstance implements AutoCloseable {
     @Setter
     @Nullable
     private PoseDriver poseDriver;
+    private ModelPosing posing;
 
     @Nullable
-    private MmdRagdoll ragdoll;
+    private SkeletonRagdoll ragdoll;
 
     /**
      * The single ordered pipeline driving this instance's procedural stages
@@ -99,6 +100,13 @@ public class ModelInstance implements AutoCloseable {
         this.flushedSkeletonVersion = skeletonInstance.getVersion();
         this.frameSamplePrepared = false;
         this.tickLoop = new ModelTickLoop(this);
+    }
+
+    /** Lazily composes the common posing driver; playback controls install it when requested. */
+    public synchronized ModelPosing getPosing() {
+        if (poseDriver instanceof ModelPosing active && active.model() == this) return active;
+        if (posing == null) posing = new ModelPosing(this);
+        return posing;
     }
 
     public SpriteSet getMaterialFrame(Material mat) {
@@ -162,12 +170,12 @@ public class ModelInstance implements AutoCloseable {
      * Returns {@code null} when this distribution has no Box3D native library.
      */
     @Nullable
-    public MmdRagdoll enablePhysics() {
+    public SkeletonRagdoll enablePhysics() {
         if (!NativeBox3D.availableOrWarn()) return null;
         if (ragdoll != null && ragdoll.physicsScene() != null) {
             ragdoll.moveTo(null);
         } else if (ragdoll == null) {
-            ragdoll = new MmdRagdoll(this);
+            ragdoll = new SkeletonRagdoll(this);
         }
         ragdoll.setEnabled(true);
         return ragdoll;
@@ -178,7 +186,7 @@ public class ModelInstance implements AutoCloseable {
      * registration. Returns {@code null} when Box3D is unavailable.
      */
     @Nullable
-    public MmdRagdoll enablePhysics(MmdRagdoll.Profile profile) {
+    public SkeletonRagdoll enablePhysics(SkeletonRagdoll.Profile profile) {
         if (!NativeBox3D.availableOrWarn()) return null;
         if (ragdoll != null && !java.util.Objects.equals(ragdoll.profile(), profile)) {
             ragdoll.close();
@@ -187,7 +195,7 @@ public class ModelInstance implements AutoCloseable {
         if (ragdoll != null && ragdoll.physicsScene() != null) {
             ragdoll.moveTo(null);
         } else if (ragdoll == null) {
-            ragdoll = new MmdRagdoll(this, profile);
+            ragdoll = new SkeletonRagdoll(this, profile);
         }
         ragdoll.setEnabled(true);
         return ragdoll;
@@ -195,7 +203,7 @@ public class ModelInstance implements AutoCloseable {
 
     /** Registers this model in a shared Box3D scene for cross-model contact and joints. */
     @Nullable
-    public MmdRagdoll enablePhysics(MmdPhysicsScene scene, @Nullable MmdRagdoll.Profile profile) {
+    public SkeletonRagdoll enablePhysics(ModelPhysicsScene scene, @Nullable SkeletonRagdoll.Profile profile) {
         if (!NativeBox3D.availableOrWarn()) return null;
         java.util.Objects.requireNonNull(scene, "scene");
         if (ragdoll != null && !java.util.Objects.equals(ragdoll.profile(), profile)) {
@@ -205,7 +213,7 @@ public class ModelInstance implements AutoCloseable {
         if (ragdoll != null && ragdoll.physicsScene() != scene) {
             ragdoll.moveTo(scene);
         } else if (ragdoll == null) {
-            ragdoll = new MmdRagdoll(this, profile, scene);
+            ragdoll = new SkeletonRagdoll(this, profile, scene);
         }
         ragdoll.setEnabled(true);
         return ragdoll;

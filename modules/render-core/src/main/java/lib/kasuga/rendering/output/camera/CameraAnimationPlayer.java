@@ -27,7 +27,7 @@ public final class CameraAnimationPlayer {
         playback.stop();
     }
 
-    void detach() { playback.stop(); }
+    void detach() { playback.stop(); provider = null; }
 
     /** Standalone playback owns its clock. Missing channels retain the live pose provider's values. */
     public void play(CameraAnimationClip clip, boolean loop) {

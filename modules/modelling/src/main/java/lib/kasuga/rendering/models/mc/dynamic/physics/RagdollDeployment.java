@@ -1,7 +1,7 @@
 package lib.kasuga.rendering.models.mc.dynamic.physics;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import org.jetbrains.annotations.Nullable;
@@ -13,7 +13,7 @@ public interface RagdollDeployment extends AutoCloseable {
     String modelName();
     ResourceLocation configResource();
     ModelInstance instance();
-    MmdRagdoll ragdoll();
+    SkeletonRagdoll ragdoll();
 
     /** Whether this handle still owns a live pipeline instance. */
     boolean active();

@@ -247,9 +247,9 @@ world.endDrag();
 ## 3. PMX 与 glTF ragdoll API
 
 ```java
-MmdRagdoll ragdoll = instance.enablePhysics();
+SkeletonRagdoll ragdoll = instance.enablePhysics();
 // 或只生成 profile 中注册的主体胶囊
-MmdRagdoll profiled = instance.enablePhysics(profile);
+SkeletonRagdoll profiled = instance.enablePhysics(profile);
 ```
 
 查询：
@@ -260,7 +260,7 @@ MmdRagdoll profiled = instance.enablePhysics(profile);
 - `animationTarget(body)`：本帧 animation + IK 后、physics 前的 body 目标
 - `raycast(...)`
 
-`MmdRagdoll` 直接转发通用 impulse、force、torque、gravity、collision、drag、fixed-step、sleep 与
+`SkeletonRagdoll` 直接转发通用 impulse、force、torque、gravity、collision、drag、fixed-step、sleep 与
 environment 控制。`Body` 另提供 `position()`、`rotation()`、`shapeSize()`、速度、`toWorldPoint(...)`、
 `toLocalPoint(...)`、`teleport(...)` 和速度 setter。
 
@@ -309,7 +309,7 @@ skeleton.resetIkEnabled();
 | --- | --- | --- |
 | `kasuga:apply` | `SkeletonApplyModule` | 把 pending transforms flush 进骨架；identity 槽位跳过，不覆盖动画写好的骨骼 |
 | `kasuga:ik` | `IkModule` | 层级求值 + 通用 Caliko IK；物理启用时由物理接管姿态，此槽自动跳过 |
-| `kasuga:physics` | `RagdollModule` | 推进 MmdRagdoll（Box3D）并写回；未启用物理时 no-op |
+| `kasuga:physics` | `RagdollModule` | 推进 SkeletonRagdoll（Box3D）并写回；未启用物理时 no-op |
 | `kasuga:anchor` | `AnchorModule` | 重算锚点世界变换并通知显示子物体 |
 
 用户模块用类型化助手挂到标准槽位之间，排序完全由管线提供：
@@ -343,7 +343,7 @@ hand.setEnabled(false);
 ### 5.2 `ActiveRagdollModule`
 
 该 controller 在 post-IK 阶段将 dynamic body 拉向同帧动画/IK body target：先调用
-`MmdRagdoll.evaluateAnimationTarget()` 刷新 kinematic target，再计算 PD spring 的 force/torque；
+`SkeletonRagdoll.evaluateAnimationTarget()` 刷新 kinematic target，再计算 PD spring 的 force/torque；
 积分、碰撞、joint、sleep 仍全部由 Box3D 在 physics 阶段执行。
 
 控制全部 dynamic body：
@@ -406,12 +406,11 @@ base-color 图片放入现有 texture atlas。
 
 ```java
 ModelInstance instance = ...;
-GltfAnimationPoseDriver animation = new GltfAnimationPoseDriver(instance);
-instance.setPoseDriver(animation);
+var animation = instance.getPosing();
 animation.play("walk", true);
 ```
 
-driver 支持 translation/rotation/scale、STEP、LINEAR 与 CUBIC_SPLINE。资源包流式 `.gltf` 只支持
+通用入口见 [ModelPosing](model-posing.md)，glTF sampler 支持 translation/rotation/scale、STEP、LINEAR 与 CUBIC_SPLINE。资源包流式 `.gltf` 只支持
 embedded/data URI；需要外部 `.bin` 或图片 URI 时使用 `Path` API，或打包为 `.glb`。
 
 Minecraft 中可在模型旁放置 `<model>.gltf.json` manifest：

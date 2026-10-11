@@ -3,7 +3,7 @@ package lib.kasuga.rendering.models.uml.typo.miku_miku_dance;
 import com.google.gson.JsonParser;
 import lib.kasuga.rendering.models.mc.dynamic.physics.MinecraftRagdollConfig;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import lib.kasuga.rendering.models.uml.loaders.MaterialSetBuilder;
 import lib.kasuga.rendering.models.uml.loaders.serial.ContextData;
 import lib.kasuga.rendering.models.uml.loaders.serial.SerialContext;
@@ -97,11 +97,11 @@ class PmxRealAssetSmokeTest {
                     .distance(instance.getSkeletonInstance().getAbsoluteTransforms().get(bone.getParent()).getPosition()));
         }
 
-        MmdRagdoll ragdoll = instance.enablePhysics(config.profile());
-        List<MmdRagdoll.Body> primaryBodies = ragdoll.bodies().stream()
-                .filter(MmdRagdoll.Body::profiledRagdollBody).toList();
-        List<MmdRagdoll.Body> secondaryBodies = ragdoll.bodies().stream()
-                .filter(MmdRagdoll.Body::authoredSecondaryBody).toList();
+        SkeletonRagdoll ragdoll = instance.enablePhysics(config.profile());
+        List<SkeletonRagdoll.Body> primaryBodies = ragdoll.bodies().stream()
+                .filter(SkeletonRagdoll.Body::profiledRagdollBody).toList();
+        List<SkeletonRagdoll.Body> secondaryBodies = ragdoll.bodies().stream()
+                .filter(SkeletonRagdoll.Body::authoredSecondaryBody).toList();
         assertEquals(config.profile().bodies().size(), primaryBodies.size(),
                 "every explicitly registered humanoid body must enter the primary ragdoll");
         assertFalse(secondaryBodies.isEmpty(),
@@ -116,7 +116,7 @@ class PmxRealAssetSmokeTest {
         ragdoll.setGravity(new Vector3f());
         ragdoll.setCollisionsEnabled(false);
         ragdoll.setSolverIterations(16);
-        for (MmdRagdoll.Body body : ragdoll.bodies()) {
+        for (SkeletonRagdoll.Body body : ragdoll.bodies()) {
             body.teleport(body.position().add(0f, 3f, 0f), body.rotation());
         }
         ragdoll.step(1f / 120f);
@@ -142,10 +142,10 @@ class PmxRealAssetSmokeTest {
         // surface point in mid-air. Dragging deliberately keeps the island
         // awake, so this catches joint/drag oscillation hidden by ground sleep.
         ragdoll.reset();
-        for (MmdRagdoll.Body body : ragdoll.bodies()) {
+        for (SkeletonRagdoll.Body body : ragdoll.bodies()) {
             body.teleport(body.position().add(0f, 3f, 0f), body.rotation());
         }
-        MmdRagdoll.Body pelvis = ragdoll.bodies().getFirst();
+        SkeletonRagdoll.Body pelvis = ragdoll.bodies().getFirst();
         Vector3f dragTarget = pelvis.toWorldPoint(
                 new Vector3f(pelvis.shapeSize().x, 0f, 0f));
         assertTrue(ragdoll.beginDrag(pelvis, dragTarget));
@@ -161,7 +161,7 @@ class PmxRealAssetSmokeTest {
         for (int step = 0; step < 120; step++) {
             ragdoll.updateDragTarget(dragTarget, 1f / 120f);
             ragdoll.step(1f / 120f);
-            for (MmdRagdoll.Body body : ragdoll.bodies()) {
+            for (SkeletonRagdoll.Body body : ragdoll.bodies()) {
                 float linearSpeed = body.linearVelocity().length();
                 if (linearSpeed > maximumAirDragLinearSpeed) {
                     maximumAirDragLinearSpeed = linearSpeed;
@@ -203,7 +203,7 @@ class PmxRealAssetSmokeTest {
         String maximumRestingAngularBody = "";
         for (int step = 0; step < 120; step++) {
             ragdoll.step(1f / 120f);
-            for (MmdRagdoll.Body body : ragdoll.bodies()) {
+            for (SkeletonRagdoll.Body body : ragdoll.bodies()) {
                 // Secondary hair/cloth deliberately remains responsive and
                 // may keep the combined Box3D island awake. The strict rest
                 // budget protects the primary humanoid; secondary motion is
@@ -222,9 +222,9 @@ class PmxRealAssetSmokeTest {
                 }
             }
         }
-        MmdRagdoll.Joint worstAnchorJoint = ragdoll.joints().stream()
-                .filter(joint -> ((MmdRagdoll.Body) joint.bodyA()).profiledRagdollBody()
-                        && ((MmdRagdoll.Body) joint.bodyB()).profiledRagdollBody())
+        SkeletonRagdoll.Joint worstAnchorJoint = ragdoll.joints().stream()
+                .filter(joint -> ((SkeletonRagdoll.Body) joint.bodyA()).profiledRagdollBody()
+                        && ((SkeletonRagdoll.Body) joint.bodyB()).profiledRagdollBody())
                 .max(Comparator.comparingDouble(joint -> joint.relativePosition().length()))
                 .orElse(null);
         float maximumAnchorError = worstAnchorJoint == null
@@ -235,17 +235,17 @@ class PmxRealAssetSmokeTest {
         assertTrue(maximumAnchorError < 0.005f,
                 "ground collision joint anchor error=" + maximumAnchorError
                         + (worstAnchorJoint == null ? "" : " joint="
-                        + ((MmdRagdoll.Body) worstAnchorJoint.bodyA()).source().name()
-                        + "->" + ((MmdRagdoll.Body) worstAnchorJoint.bodyB()).source().name()));
-        MmdRagdoll.Joint worstAngularJoint = ragdoll.joints().stream()
+                        + ((SkeletonRagdoll.Body) worstAnchorJoint.bodyA()).source().name()
+                        + "->" + ((SkeletonRagdoll.Body) worstAnchorJoint.bodyB()).source().name()));
+        SkeletonRagdoll.Joint worstAngularJoint = ragdoll.joints().stream()
                 .filter(joint -> joint.rotationLimiter() != null)
-                .max(Comparator.comparingDouble(MmdRagdoll.Joint::angularLimitViolation))
+                .max(Comparator.comparingDouble(SkeletonRagdoll.Joint::angularLimitViolation))
                 .orElseThrow();
         float maximumAngularViolation = worstAngularJoint.angularLimitViolation();
         assertTrue(maximumAngularViolation <= Math.toRadians(3.0),
                 "ground collision angular joint limit drift=" + Math.toDegrees(maximumAngularViolation)
-                        + " parent=" + ((MmdRagdoll.Body) worstAngularJoint.bodyA()).source().name()
-                        + " child=" + ((MmdRagdoll.Body) worstAngularJoint.bodyB()).source().name());
+                        + " parent=" + ((SkeletonRagdoll.Body) worstAngularJoint.bodyA()).source().name()
+                        + " child=" + ((SkeletonRagdoll.Body) worstAngularJoint.bodyB()).source().name());
         assertTrue(maximumRestingLinearSpeed < 0.05f,
                 "resting tiled-ground linear jitter=" + maximumRestingLinearSpeed
                         + " body=" + maximumRestingLinearBody
@@ -308,7 +308,8 @@ class PmxRealAssetSmokeTest {
     }
 
     private static Bounds skinnedBounds(ProbeLoader loader, ModelInstance instance, Vector3f modelScale) {
-        Bone[] pmxBones = instance.getSkeletonInstance().getPmxBones();
+        Bone[] pmxBones = java.util.Arrays.stream(instance.getModel().getBones())
+                .filter(bone -> bone.getBoneData() instanceof PmxBone).toArray(Bone[]::new);
         Vector3f minimum = new Vector3f(Float.POSITIVE_INFINITY);
         Vector3f maximum = new Vector3f(Float.NEGATIVE_INFINITY);
         for (PmxVertex vertex : loader.getVertices()) {

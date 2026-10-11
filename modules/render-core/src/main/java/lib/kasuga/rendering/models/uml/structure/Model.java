@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.uml.structure;
 
 import lib.kasuga.rendering.models.uml.dynamic.morph.Morph;
+import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationLibrary;
 import lib.kasuga.rendering.models.uml.structure.basic.BoneBinding;
 import lib.kasuga.rendering.models.uml.structure.data.ModelData;
 import lib.kasuga.rendering.models.uml.structure.basic.Mesh;
@@ -46,6 +47,7 @@ public class Model {
     private final Morph morph;
 
     private final MeshMode meshMode;
+    private final AnimationLibrary animations = new AnimationLibrary();
 
 
     public Model(Vertex[] vertices,
@@ -69,6 +71,7 @@ public class Model {
         this.vertexByBones = new HashMap<>();
         collectVertexByMaterials();
         collectVertexByBones();
+        if (modelData != null) modelData.configureModel(this);
     }
 
     protected void collectVertexByMaterials() {

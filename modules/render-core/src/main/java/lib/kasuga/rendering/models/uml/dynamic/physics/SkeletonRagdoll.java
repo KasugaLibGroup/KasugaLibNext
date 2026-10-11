@@ -40,12 +40,12 @@ import java.util.Set;
  * <p>All integration, collision, joints, sleeping and dragging constraints
  * are solved by Box3D; this class only maps authored/generated
  * rigid bodies and joints onto it, drives kinematic bodies from animated
- * bones, and writes physical poses back. PMX mode 0 bodies follow their
- * bone, while mode 1 and mode 2 bodies are fully dynamic; mode 2 preserves
- * the animated bone translation when its physical rotation is written back.
- * authored limits onto Box3D's spherical-joint cone/twist model.</p>
+ * bones, and writes physical poses back. Kinematic bodies follow their bone;
+ * dynamic bodies are simulated, and dynamic-rotation bodies preserve the
+ * animated bone translation when their physical rotation is written back.
+ * Authored limits map onto Box3D's spherical-joint cone/twist model.</p>
  */
-public final class MmdRagdoll implements AutoCloseable {
+public final class SkeletonRagdoll implements AutoCloseable {
     private static final int PROFILE_SECONDARY_SUBSTEP_COUNT = 8;
     private final ModelInstance instance;
     private final SkeletonInstance skeleton;
@@ -61,7 +61,7 @@ public final class MmdRagdoll implements AutoCloseable {
     private final Bone profileMotionRoot;
     private final Body profileRootBody;
     private RigidBodyWorld world;
-    private MmdPhysicsScene physicsScene;
+    private ModelPhysicsScene physicsScene;
     private int sharedSelfCollisionGroup;
     private boolean sharedSelfCollisionsEnabled;
     private final Profile profile;
@@ -83,7 +83,7 @@ public final class MmdRagdoll implements AutoCloseable {
         }
     };
 
-    public MmdRagdoll(ModelInstance instance) {
+    public SkeletonRagdoll(ModelInstance instance) {
         this(instance, null, null);
     }
 
@@ -92,12 +92,12 @@ public final class MmdRagdoll implements AutoCloseable {
      * profile preserves the original PMX behavior and simulates every authored
      * rigid body, which is useful for small assets and compatibility tests.
      */
-    public MmdRagdoll(ModelInstance instance, Profile profile) {
+    public SkeletonRagdoll(ModelInstance instance, Profile profile) {
         this(instance, profile, null);
     }
 
     /** Creates a model participant owned and stepped by a shared physics scene. */
-    public MmdRagdoll(ModelInstance instance, Profile profile, MmdPhysicsScene physicsScene) {
+    public SkeletonRagdoll(ModelInstance instance, Profile profile, ModelPhysicsScene physicsScene) {
         this.instance = Objects.requireNonNull(instance, "instance");
         this.skeleton = instance.getSkeletonInstance();
         this.physicsScene = physicsScene;
@@ -177,7 +177,7 @@ public final class MmdRagdoll implements AutoCloseable {
         return profile;
     }
 
-    public MmdPhysicsScene physicsScene() { return physicsScene; }
+    public ModelPhysicsScene physicsScene() { return physicsScene; }
 
     List<Body> allBodies() { return bodies; }
     List<Joint> allJoints() { return joints; }
@@ -211,7 +211,7 @@ public final class MmdRagdoll implements AutoCloseable {
         return world.localToWorld(body.pose.position);
     }
 
-    /** Finds a body by its PMX rigid-body index or profiled glTF node index. */
+    /** Finds a body by its index in the shared physics definition. */
     public Optional<Body> body(int rigidBodyIndex) {
         return Optional.ofNullable(bodyByRigidBodyIndex.get(rigidBodyIndex));
     }
@@ -533,7 +533,7 @@ public final class MmdRagdoll implements AutoCloseable {
     }
 
     /** Migrates this ragdoll and its bodies to another shared physics scene (or standalone if null). */
-    public void moveTo(MmdPhysicsScene newScene) {
+    public void moveTo(ModelPhysicsScene newScene) {
         if (this.physicsScene == newScene) return;
         Vector3d oldOrigin = world.worldOrigin();
         if (this.physicsScene != null) {
@@ -668,7 +668,7 @@ public final class MmdRagdoll implements AutoCloseable {
     /** Advances the ragdoll and writes the resulting dynamic body pose to bones. */
     public void step(float deltaSeconds) {
         if (physicsScene != null) {
-            throw new IllegalStateException("shared ragdolls must be stepped through MmdPhysicsScene.step");
+            throw new IllegalStateException("shared ragdolls must be stepped through ModelPhysicsScene.step");
         }
         if (!enabled || !(deltaSeconds > 0f) || !Float.isFinite(deltaSeconds)) return;
         long profileStart = ModelProfiler.start();

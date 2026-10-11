@@ -28,7 +28,7 @@ import java.util.Map;
  * <p>The driver owns the {@link ModelInstancePoseSink} (the machine's sink stays {@code null}); on resource-reload
  * rebind, {@link #rebind(ModelInstance)} swaps only the sink target — the machine and in-flight state survive.
  */
-public final class FsmPoseDriver implements PoseDriver {
+public final class FsmPoseDriver implements lib.kasuga.rendering.models.uml.dynamic.RebindablePoseDriver {
 
     /** One game tick in seconds; the partialTick fraction multiplies this to interpolate between ticks. */
     private static final float TICK_SECONDS = 1f / 20f;

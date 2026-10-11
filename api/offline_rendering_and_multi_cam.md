@@ -1,6 +1,8 @@
 # 离屏输出与多机位渲染
 
 本页维护接口、启动和操作参考；隔离、数据流与同步原理见 [原理文档](../doc/offline_rendering_and_multi_cam.md)。
+Player、Free、Fixed 分类与创建入口见 [相机 API](cameras.md)。下文独立世界机位的配置适用于 Free/Fixed；
+Player 共享原生最终主画面和玩家当前配置。
 下文性能和客户端验收段落保留当时的历史记录，不表示此次文档迁移重新进行了对应测试。
 
 本文对应 Minecraft 1.21.1 / NeoForge 21.1.203；兼容路径实际验证了 Sodium

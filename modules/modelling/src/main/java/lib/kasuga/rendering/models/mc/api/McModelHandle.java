@@ -14,15 +14,21 @@ import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.RebindablePoseDriver;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.AnchorModule;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
+import org.joml.Vector3d;
 
 import java.util.Objects;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -49,12 +55,20 @@ public final class McModelHandle {
 
     private static final String BACKEND = "mc_backend";
 
-    private final ResourceLocation modelLoc;
-    @Nullable private final String modelName;
+    private ResourceLocation modelLoc;
+    @Nullable private String modelName;
     private final ResourceLocation instanceLoc;
 
-    private final Binder binder;
-    private final Function<ResourceLocation, @Nullable ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?>> pipelineResolver;
+    private Binder binder;
+    private Function<ResourceLocation, @Nullable ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?>> pipelineResolver;
+    @Nullable private ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> boundPipeline;
+    @Nullable private ResourceLocation boundKey;
+    @Nullable private AutoCloseable publicationSubscription;
+    @Nullable private RebindState pendingRebind;
+    @Nullable private BiConsumer<ModelInstance, ModelInstance> onRebind;
+    private RenderScheduleMode scheduleMode = RenderScheduleMode.ALWAYS;
+    private boolean manualVisible = true;
+    private float renderDistance;
 
     @Nullable
     private ModelInstance instance;
@@ -62,6 +76,8 @@ public final class McModelHandle {
     private Transform pendingPose;
     private float ambientLightEnhancement = ModelInstance.DEFAULT_AMBIENT_LIGHT_ENHANCEMENT;
     private boolean destroyed;
+    private record AnchorCallback(ModelInstance owner, AnchorModule.Attachment adapter) {}
+    private final Map<String, IdentityHashMap<BiConsumer<String, Transform>, AnchorCallback>> anchorCallbacks = new HashMap<>();
     @Nullable
     private FsmAnimatedModel syncedFsm;
 
@@ -88,7 +104,7 @@ public final class McModelHandle {
                                    ResourceLocation instanceLoc, @Nullable Vec3 pos) {
         McModelHandle handle = new McModelHandle(modelLoc, modelName, instanceLoc,
                 pose -> KasugaModelPipelines.createAndBind(modelLoc, instanceLoc, modelName, pose),
-                PipelineRegistry::resolve);
+                McModelHandle::globalPipeline);
         if (pos != null) handle.setPos(pos);
         return handle;
     }
@@ -108,7 +124,25 @@ public final class McModelHandle {
                     }
                     return adopted;
                 },
-                PipelineRegistry::resolve);
+                McModelHandle::globalPipeline);
+    }
+
+    private static ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> globalPipeline(ResourceLocation id) {
+        return PipelineRegistry.isInitialized() ? PipelineRegistry.resolve(id) : null;
+    }
+
+    /** A resource recipe may be registered before its component models are published. */
+    public static McModelHandle ofAssembly(ResourceLocation id, ResourceLocation instanceId, @Nullable Vec3 pos) {
+        McModelHandle handle = new McModelHandle(id, null, instanceId,
+                pose -> {
+                    var service = PipelineRegistry.assemblies();
+                    return service == null ? null : service.createAndBind(id, instanceId, pose);
+                }, ignored -> {
+                    var service = PipelineRegistry.assemblies();
+                    return service == null ? null : service.pipeline();
+                });
+        if (pos != null) handle.setPos(pos);
+        return handle;
     }
 
     /** 测试与自定义管线用的底层工厂：显式提供绑定策略。 */
@@ -125,30 +159,158 @@ public final class McModelHandle {
 
     /** Attempts binding; idempotent. Re-applies the latest buffered pose on success. */
     public boolean mount() {
-        if (destroyed || isMounted()) return isMounted();
-        ModelInstance bound = binder.bind(pendingPose);
+        if (destroyed) return false;
+        if (isMounted() && (boundPipeline == null || boundPipeline.isRendering(boundKey, instanceLoc, BACKEND))) return true;
+        if (instance != null && !isMounted()) {
+            if (pendingRebind == null) pendingRebind = RebindState.capture(instance);
+            clearAnchorCallbacks();
+            instance = null;
+        }
+        if (instance != null && pendingRebind == null) pendingRebind = RebindState.capture(instance);
+        Transform root = pendingPose != null ? pendingPose : pendingRebind == null ? null : pendingRebind.root;
+        ModelInstance bound = binder.bind(root);
         if (bound == null) return false;
+        try { restore(bound, pendingRebind); }
+        catch (RuntimeException | Error failure) {
+            var pipeline = pipelineResolver.apply(modelLoc);
+            var key = pipeline == null ? null : pipeline.modelKeyOf(bound);
+            if (key != null) {
+                try { pipeline.removeInstance(key, instanceLoc); }
+                catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); }
+            }
+            throw failure;
+        }
+        if (instance != bound) clearAnchorCallbacks();
         instance = bound;
         bound.setAmbientLightEnhancement(ambientLightEnhancement);
-        if (pendingPose != null) {
+        if (pendingPose != null && pendingRebind == null) {
             bound.getSkeletonInstance().transformRoot(pendingPose.copy());
-            pendingPose = null;
         }
+        pendingPose = null; pendingRebind = null;
+        applyScheduling(bound);
+        observePublication();
         return true;
     }
 
     public boolean isMounted() {
-        return instance != null && !destroyed;
+        return instance != null && !destroyed && (boundPipeline == null || boundKey == null
+                || boundPipeline.getInstance(boundKey, instanceLoc) == instance);
+    }
+
+    /** Refresh custom drivers or physics here. Called before the old instance is retired on an explicit switch. */
+    public McModelHandle onInstanceChanged(BiConsumer<ModelInstance, ModelInstance> callback) {
+        onRebind = callback; return this;
+    }
+
+    public boolean switchAssembly(ResourceLocation id) {
+        var service = PipelineRegistry.assemblies();
+        return service != null && switchAssembly(service, id);
+    }
+
+    /** Prepare and mount the next outfit first. Missing/invalid resources leave the previous outfit intact. */
+    public boolean switchAssembly(McModelAssemblies service, ResourceLocation id) {
+        if (destroyed) return false;
+        Objects.requireNonNull(service); Objects.requireNonNull(id);
+        ModelInstance previous = instance;
+        RebindState state = previous == null ? pendingRebind : RebindState.capture(previous);
+        Transform root = pendingPose != null ? pendingPose : state == null ? null : state.root;
+        ModelInstance next = service.createAndBind(id, instanceLoc, root);
+        if (next == null) return false;
+        if (next != previous) {
+            try { restore(next, state); }
+            catch (RuntimeException | Error failure) {
+                try { service.pipeline().removeInstance(id, instanceLoc); }
+                catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); }
+                throw failure;
+            }
+        }
+        var oldPipeline = boundPipeline; var oldKey = boundKey;
+        stopObserving();
+        modelLoc = id; modelName = null;
+        binder = pose -> service.createAndBind(id, instanceLoc, pose);
+        pipelineResolver = ignored -> service.pipeline();
+        if (instance != next) clearAnchorCallbacks();
+        instance = next; pendingPose = null; pendingRebind = null;
+        next.setAmbientLightEnhancement(ambientLightEnhancement); applyScheduling(next); observePublication();
+        if (previous != null && previous != next) {
+            MinecraftRagdollRuntime.unregister(previous);
+            if (oldPipeline != null && oldKey != null) oldPipeline.removeInstance(oldKey, instanceLoc);
+            else previous.close();
+        }
+        return true;
+    }
+
+    private void restore(ModelInstance fresh, @Nullable RebindState state) {
+        if (state != null) {
+            if (state.floating) {
+                if (fresh.getSkeletonInstance().isFloatingOriginEnabled()) fresh.getSkeletonInstance().rebaseFloatingOrigin(state.origin);
+                else fresh.getSkeletonInstance().enableFloatingOrigin(state.origin);
+                fresh.getSkeletonInstance().transformRoot((pendingPose == null ? state.root : pendingPose).copy());
+            } else fresh.getSkeletonInstance().transformRootWorld((pendingPose == null ? state.root : pendingPose).copy());
+            scheduleMode = state.mode; manualVisible = state.visible; renderDistance = state.distance;
+            if (state.previous != fresh) {
+                state.previous.getSkeletonInstance().copyPoseInputsTo(fresh.getSkeletonInstance());
+                state.previous.getMorph().copyInputsTo(fresh.getMorph());
+                if (onRebind != null) onRebind.accept(state.previous, fresh);
+                if (fresh.getPoseDriver() == null && state.driver instanceof RebindablePoseDriver driver) {
+                    driver.rebind(fresh); fresh.setPoseDriver(driver);
+                }
+            }
+        }
+    }
+
+    private void observePublication() {
+        stopObserving();
+        boundPipeline = pipelineResolver.apply(modelLoc);
+        if (boundPipeline == null || instance == null) return;
+        boundKey = boundPipeline.modelKeyOf(instance);
+        if (boundKey == null) { boundPipeline = null; return; }
+        ResourceLocation observedKey = boundKey;
+        publicationSubscription = boundPipeline.onModelChanged(change -> {
+            if (observedKey.equals(change.key()) && instance != null && change.previous() == instance.getModel()) {
+                MinecraftRagdollRuntime.unregister(instance);
+                clearAnchorCallbacks();
+                pendingRebind = RebindState.capture(instance); instance = null; pendingPose = null;
+                stopObserving();
+            }
+        });
+    }
+
+    private void stopObserving() {
+        if (publicationSubscription != null) {
+            try { publicationSubscription.close(); }
+            catch (Exception failure) { throw new IllegalStateException("model publication subscription cleanup failed", failure); }
+        }
+        publicationSubscription = null; boundPipeline = null; boundKey = null;
+    }
+
+    private void applyScheduling(ModelInstance target) {
+        if (scheduleMode == RenderScheduleMode.MANUAL) ModelRenderScheduler.setVisible(target, manualVisible);
+        else ModelRenderScheduler.setMode(target, scheduleMode);
+        ModelRenderScheduler.setMaxRenderDistance(target, renderDistance);
+    }
+
+    private record RebindState(ModelInstance previous, Transform root, Vector3d origin, boolean floating,
+                               PoseDriver driver, RenderScheduleMode mode, boolean visible, float distance) {
+        static RebindState capture(ModelInstance instance) {
+            var skeleton = instance.getSkeletonInstance();
+            return new RebindState(instance, skeleton.getTransform().copy(), skeleton.getWorldOrigin(), skeleton.isFloatingOriginEnabled(),
+                    instance.getPoseDriver(), ModelRenderScheduler.mode(instance), ModelRenderScheduler.shouldRender(instance),
+                    ModelRenderScheduler.maxRenderDistance(instance));
+        }
     }
 
     /** Detaches from the render backend; scheduling state is dropped. Returns whether it was mounted. */
     public boolean unmount() {
         if (destroyed || instance == null) return false;
+        pendingRebind = RebindState.capture(instance);
+        clearAnchorCallbacks();
         ModelRenderScheduler.detach(instance);
-        var pipeline = pipelineResolver.apply(modelLoc);
+        var pipeline = boundPipeline != null ? boundPipeline : pipelineResolver.apply(modelLoc);
         if (pipeline != null) {
-            pipeline.stopRendering(modelLoc, instanceLoc, BACKEND);
+            pipeline.stopRendering(boundKey != null ? boundKey : modelLoc, instanceLoc, BACKEND);
         }
+        stopObserving();
         instance = null;
         return true;
     }
@@ -160,18 +322,24 @@ public final class McModelHandle {
      */
     public void destroy() {
         if (destroyed) return;
+        clearAnchorCallbacks();
+        if (instance != null) MinecraftRagdollRuntime.unregister(instance);
+        else if (pendingRebind != null) MinecraftRagdollRuntime.unregister(pendingRebind.previous);
+        var pipeline = boundPipeline != null ? boundPipeline : pipelineResolver.apply(modelLoc);
+        ResourceLocation key = boundKey != null ? boundKey : pipeline != null && pendingRebind != null
+                ? pipeline.modelKeyOf(pendingRebind.previous) : modelLoc;
         unmount();
         destroyed = true;
         if (syncedFsm != null) {
             syncedFsm.model(null, null, null);
             syncedFsm = null;
         }
-        var pipeline = pipelineResolver.apply(modelLoc);
         if (pipeline != null) {
-            pipeline.removeInstance(modelLoc, instanceLoc);
+            pipeline.removeInstance(key, instanceLoc);
         }
         instance = null;
         pendingPose = null;
+        pendingRebind = null; stopObserving();
     }
 
     // ------------------------------------------------------------------
@@ -189,7 +357,9 @@ public final class McModelHandle {
                 flushPose();
             }
         } else {
-            ensurePose().setPosition(new Vector3f((float) pos.x, (float) pos.y, (float) pos.z));
+            if (pendingRebind != null && pendingRebind.floating) {
+                pendingRebind.origin.set(pos.x, pos.y, pos.z); ensurePose().setPosition(new Vector3f());
+            } else ensurePose().setPosition(new Vector3f((float) pos.x, (float) pos.y, (float) pos.z));
         }
         return this;
     }
@@ -203,6 +373,13 @@ public final class McModelHandle {
         if (instance != null) {
             var p = instance.getSkeletonInstance().getWorldRootPosition();
             return new Vec3(p.x, p.y, p.z);
+        }
+        if (pendingRebind != null && pendingRebind.floating) {
+            Vector3f local = (pendingPose == null ? pendingRebind.root : pendingPose).getPosition();
+            return new Vec3(pendingRebind.origin.x + local.x, pendingRebind.origin.y + local.y, pendingRebind.origin.z + local.z);
+        }
+        if (pendingPose == null && pendingRebind != null) {
+            var p = pendingRebind.root.getPosition(); return new Vec3(p.x, p.y, p.z);
         }
         if (pendingPose == null) return null;
         Vector3f p = pendingPose.getPosition();
@@ -255,7 +432,7 @@ public final class McModelHandle {
 
     private Transform ensurePose() {
         if (pendingPose == null) {
-            pendingPose = new Transform();
+            pendingPose = pendingRebind == null ? new Transform() : pendingRebind.root;
             if (instance != null) {
                 // Mounted pose edits operate in the skeleton's origin-local
                 // coordinate system so rotation/scale changes cannot quantize
@@ -285,22 +462,26 @@ public final class McModelHandle {
 
     /** Vanilla owns visibility: an {@code EntityRenderer}/{@code BER} adapter marks each frame. */
     public McModelHandle scheduleVanillaRenderer() {
+        scheduleMode = RenderScheduleMode.VANILLA_RENDERER;
         if (instance != null) ModelRenderScheduler.setMode(instance, RenderScheduleMode.VANILLA_RENDERER);
         return this;
     }
 
     /** Legacy global-pipeline behavior: draw every frame (frustum/distance gates still apply). */
     public McModelHandle scheduleAlways() {
+        scheduleMode = RenderScheduleMode.ALWAYS;
         if (instance != null) ModelRenderScheduler.setMode(instance, RenderScheduleMode.ALWAYS);
         return this;
     }
 
     public McModelHandle show() {
+        scheduleMode = RenderScheduleMode.MANUAL; manualVisible = true;
         if (instance != null) ModelRenderScheduler.setVisible(instance, true);
         return this;
     }
 
     public McModelHandle hide() {
+        scheduleMode = RenderScheduleMode.MANUAL; manualVisible = false;
         if (instance != null) ModelRenderScheduler.setVisible(instance, false);
         return this;
     }
@@ -333,6 +514,7 @@ public final class McModelHandle {
 
     /** Per-instance view-distance cap in blocks; 0 disables distance culling. */
     public McModelHandle maxRenderDistance(float blocks) {
+        renderDistance = blocks;
         if (instance != null) {
             ModelRenderScheduler.setMaxRenderDistance(instance, blocks);
         }
@@ -437,6 +619,7 @@ public final class McModelHandle {
 
     private synchronized void adoptFromFsm(ModelInstance bound) {
         if (destroyed || instance == bound) return;
+        clearAnchorCallbacks();
         instance = bound;
         bound.setAmbientLightEnhancement(ambientLightEnhancement);
         pendingPose = null; // FSM 在创建实例时已应用 rootTransform supplier 的值
@@ -469,15 +652,28 @@ public final class McModelHandle {
 
     /** Attaches a display sub-object to a skeleton anchor (e.g. a held item). */
     public boolean attachToAnchor(String anchorName, BiConsumer<String, Transform> receiver) {
+        Objects.requireNonNull(anchorName); Objects.requireNonNull(receiver);
         if (instance == null) return false;
-        return instance.attachToAnchor(anchorName,
-                transform -> receiver.accept(anchorName, transform));
+        var receivers = anchorCallbacks.computeIfAbsent(anchorName, ignored -> new IdentityHashMap<>());
+        if (receivers.containsKey(receiver)) return true;
+        AnchorModule.Attachment adapter = transform -> receiver.accept(anchorName, transform);
+        if (!instance.attachToAnchor(anchorName, adapter)) return false;
+        receivers.put(receiver, new AnchorCallback(instance, adapter));
+        return true;
     }
 
     public boolean detachFromAnchor(String anchorName, BiConsumer<String, Transform> receiver) {
-        if (instance == null) return false;
-        return instance.detachFromAnchor(anchorName,
-                transform -> receiver.accept(anchorName, transform));
+        var receivers = anchorCallbacks.get(anchorName);
+        if (receivers == null) return false;
+        var callback = receivers.remove(receiver);
+        if (receivers.isEmpty()) anchorCallbacks.remove(anchorName);
+        return callback != null && callback.owner.detachFromAnchor(anchorName, callback.adapter);
+    }
+
+    private void clearAnchorCallbacks() {
+        for (var entry : anchorCallbacks.entrySet()) for (var callback : entry.getValue().values())
+            callback.owner.detachFromAnchor(entry.getKey(), callback.adapter);
+        anchorCallbacks.clear();
     }
 
     /**
@@ -485,9 +681,9 @@ public final class McModelHandle {
      * or returns {@code null} when Box3D is unavailable.
      */
     @Nullable
-    public MmdRagdoll enablePhysics(MinecraftRagdollConfig.UpdateMode updateMode) {
+    public SkeletonRagdoll enablePhysics(MinecraftRagdollConfig.UpdateMode updateMode) {
         requireMounted();
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         if (ragdoll == null) return null;
         MinecraftRagdollRuntime.register(instance, updateMode);
         return ragdoll;

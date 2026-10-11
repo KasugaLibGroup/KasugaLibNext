@@ -248,6 +248,7 @@ public final class DefinitionStateMachineFactory<O> {
     }
 
     private void applyPose(State<O> state, PoseDefinition def) {
+        def.ikEnabled().forEach(state::ikEnabled);
         for (Map.Entry<String, Float> morph : def.morphs().entrySet()) {
             state.morph(morph.getKey(), morph.getValue());
         }

@@ -98,10 +98,16 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
         }
 
         Skeleton skeleton = new Skeleton(bones.toArray(new Bone[0]), root, new lib.kasuga.rendering.models.uml.structure.skeleton.Anchor[0], null, new Transform());
-        return new Model(
+        Model model = new Model(
                 vertices.toArray(new Vertex[0]), meshes.toArray(new Mesh[0]), bones.toArray(new Bone[0]), skeleton,
                 materialSet, MeshMode.QUADS, null, null
         );
+        for (int index = 0; index < definition.animations().size(); index++) {
+            BbModelAnimation animation = definition.animations().get(index);
+            String clipName = animation.name().isBlank() ? "animation_" + index : animation.name();
+            model.getAnimations().register(clipName, BbModelSampler.INSTANCE, animation);
+        }
+        return model;
     }
 
     private static final Vector3f ZERO_PX = new Vector3f();

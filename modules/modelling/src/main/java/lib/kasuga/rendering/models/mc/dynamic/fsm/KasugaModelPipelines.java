@@ -6,6 +6,8 @@ import lib.kasuga.rendering.models.mc.typo.KsgPmxLoader;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
 import lib.kasuga.rendering.models.uml.math.Transform;
+import lib.kasuga.rendering.models.mc.api.McModelAssemblies;
+import lib.kasuga.client.loading.LoadingIndicator;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -34,6 +36,15 @@ public final class KasugaModelPipelines {
     private static final Set<String> warned = ConcurrentHashMap.newKeySet();
 
     private KasugaModelPipelines() {}
+
+    /** Resource lookup shared by normal model handles and assembled models. */
+    @Nullable public static McModelAssemblies.PublishedSource publishedSource(McModelAssemblies.Reference reference) {
+        if (LoadingIndicator.snapshot().active()) return null;
+        var pipeline = route(reference.model());
+        if (pipeline == null) return null;
+        var key = resolveLoc(reference.model(), reference.modelName(), pipeline);
+        return key == null ? null : new McModelAssemblies.PublishedSource(pipeline, key);
+    }
 
     /**
      * Create (or reuse) the model instance and bind it to the render backend.
@@ -105,7 +116,7 @@ public final class KasugaModelPipelines {
 
     @Nullable
     private static ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> route(@Nullable ResourceLocation modelLoc) {
-        if (modelLoc == null) {
+        if (modelLoc == null || !PipelineRegistry.isInitialized()) {
             return null;
         }
         ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = PipelineRegistry.resolve(modelLoc);

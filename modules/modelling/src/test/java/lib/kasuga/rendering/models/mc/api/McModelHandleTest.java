@@ -27,6 +27,28 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class McModelHandleTest {
+    @Test void anchorReceiverDetachesByIdentityAndIsReleasedOnUnmount() {
+        ModelInstance instance = fixture(null);
+        instance.getModel().getSkeleton().defineAnchor("grip", instance.getModel().getSkeleton().getRoot(), new Transform());
+        McModelHandle handle = McModelHandle.custom(MODEL, null, INSTANCE, pose -> instance, loc -> null);
+        assertTrue(handle.mount());
+        AtomicInteger calls = new AtomicInteger();
+        java.util.function.BiConsumer<String, Transform> receiver = (name, transform) -> calls.incrementAndGet();
+        assertTrue(handle.attachToAnchor("grip", receiver)); assertTrue(handle.attachToAnchor("grip", receiver));
+        instance.tick(0); assertEquals(1, calls.get());
+        assertTrue(handle.detachFromAnchor("grip", receiver)); assertFalse(handle.detachFromAnchor("grip", receiver));
+        instance.tick(0); assertEquals(1, calls.get());
+        handle.attachToAnchor("grip", receiver); handle.unmount();
+        instance.tick(0); assertEquals(1, calls.get()); handle.destroy();
+    }
+    @Test
+    void handleCanBeDestroyedBeforeGlobalPipelinesInitialize() {
+        McModelHandle handle = McModelHandle.of(
+                ResourceLocation.fromNamespaceAndPath("test", "missing.obj"), null,
+                ResourceLocation.fromNamespaceAndPath("test", "early"), null);
+        assertFalse(handle.mount());
+        handle.destroy(); assertFalse(handle.mount());
+    }
     private static final ResourceLocation MODEL =
             ResourceLocation.fromNamespaceAndPath("test", "model");
     private static final ResourceLocation INSTANCE =

@@ -21,12 +21,12 @@ import java.util.Objects;
  * Bodies from different ragdolls collide in the same native world and may be
  * connected by generic Box3D joints.
  */
-public final class MmdPhysicsScene implements AutoCloseable {
+public final class ModelPhysicsScene implements AutoCloseable {
     public static final int DEFAULT_SUBSTEP_COUNT = 8;
 
     private final RigidBodyWorld world;
-    private final List<MmdRagdoll> ragdolls = new ArrayList<>();
-    private final Map<SimBody, MmdRagdoll> ownerByBody = new IdentityHashMap<>();
+    private final List<SkeletonRagdoll> ragdolls = new ArrayList<>();
+    private final Map<SimBody, SkeletonRagdoll> ownerByBody = new IdentityHashMap<>();
     private int nextSelfCollisionGroup = -1;
     private boolean closed;
     private boolean stepping;
@@ -36,17 +36,17 @@ public final class MmdPhysicsScene implements AutoCloseable {
 
         @Override
         public Frames.Pose kinematicTarget(SimBody body) {
-            MmdRagdoll owner = ownerByBody.get(body);
+            SkeletonRagdoll owner = ownerByBody.get(body);
             return owner == null ? new Frames.Pose(body.positionRef(), body.rotationRef())
                     : owner.sharedKinematicTarget(body);
         }
     };
 
-    public MmdPhysicsScene(Vector3dc worldOrigin) {
+    public ModelPhysicsScene(Vector3dc worldOrigin) {
         this(worldOrigin, DEFAULT_SUBSTEP_COUNT);
     }
 
-    public MmdPhysicsScene(Vector3dc worldOrigin, int substepCount) {
+    public ModelPhysicsScene(Vector3dc worldOrigin, int substepCount) {
         world = new RigidBodyWorld(List.of(), List.of(), substepCount);
         world.setWorldOrigin(Objects.requireNonNull(worldOrigin, "worldOrigin"));
         // Each ragdoll receives a distinct negative Box3D group, disabling
@@ -56,15 +56,15 @@ public final class MmdPhysicsScene implements AutoCloseable {
 
     public Vector3d worldOrigin() { return world.worldOrigin(); }
     public RigidBodyWorld world() { return world; }
-    public List<MmdRagdoll> ragdolls() { return Collections.unmodifiableList(ragdolls); }
+    public List<SkeletonRagdoll> ragdolls() { return Collections.unmodifiableList(ragdolls); }
     public boolean closed() { return closed; }
 
-    public MmdRagdoll attach(ModelInstance instance, MmdRagdoll.Profile profile) {
+    public SkeletonRagdoll attach(ModelInstance instance, SkeletonRagdoll.Profile profile) {
         ensureOpen();
         return Objects.requireNonNull(instance, "instance").enablePhysics(this, profile);
     }
 
-    public MmdRagdoll attach(ModelInstance instance) {
+    public SkeletonRagdoll attach(ModelInstance instance) {
         ensureOpen();
         return Objects.requireNonNull(instance, "instance").enablePhysics(this, null);
     }
@@ -77,20 +77,20 @@ public final class MmdPhysicsScene implements AutoCloseable {
         return nextSelfCollisionGroup--;
     }
 
-    void register(MmdRagdoll ragdoll) {
+    void register(SkeletonRagdoll ragdoll) {
         ensureOpen();
         if (ragdolls.contains(ragdoll)) return;
         ragdolls.add(ragdoll);
-        for (MmdRagdoll.Body body : ragdoll.allBodies()) {
+        for (SkeletonRagdoll.Body body : ragdoll.allBodies()) {
             ownerByBody.put(body, ragdoll);
             world.add(body);
         }
-        for (MmdRagdoll.Joint joint : ragdoll.allJoints()) world.add(joint);
+        for (SkeletonRagdoll.Joint joint : ragdoll.allJoints()) world.add(joint);
     }
 
-    void detach(MmdRagdoll ragdoll) {
+    void detach(SkeletonRagdoll ragdoll) {
         if (!ragdolls.remove(ragdoll)) return;
-        for (MmdRagdoll.Body body : ragdoll.allBodies()) {
+        for (SkeletonRagdoll.Body body : ragdoll.allBodies()) {
             ownerByBody.remove(body);
             world.remove(body);
         }
@@ -116,8 +116,8 @@ public final class MmdPhysicsScene implements AutoCloseable {
 
     private void ensureSharedBodies(SimBody a, SimBody b) {
         ensureOpen();
-        MmdRagdoll ownerA = ownerByBody.get(Objects.requireNonNull(a, "bodyA"));
-        MmdRagdoll ownerB = ownerByBody.get(Objects.requireNonNull(b, "bodyB"));
+        SkeletonRagdoll ownerA = ownerByBody.get(Objects.requireNonNull(a, "bodyA"));
+        SkeletonRagdoll ownerB = ownerByBody.get(Objects.requireNonNull(b, "bodyB"));
         if (ownerA == null || ownerB == null) {
             throw new IllegalArgumentException("joint bodies must belong to this shared scene");
         }
@@ -129,7 +129,7 @@ public final class MmdPhysicsScene implements AutoCloseable {
         if (stepping) throw new IllegalStateException("shared physics scene cannot step recursively");
         stepping = true;
         try {
-            for (MmdRagdoll ragdoll : ragdolls) {
+            for (SkeletonRagdoll ragdoll : ragdolls) {
                 if (!ragdoll.enabled()) continue;
                 ModelInstance instance = ragdoll.modelInstance();
                 instance.getTickLoop().tickBeforeSharedPhysics(deltaSeconds);
@@ -138,7 +138,7 @@ public final class MmdPhysicsScene implements AutoCloseable {
             }
             world.step(deltaSeconds, driver);
             float alpha = world.interpolationAlpha();
-            for (MmdRagdoll ragdoll : ragdolls) {
+            for (SkeletonRagdoll ragdoll : ragdolls) {
                 if (!ragdoll.enabled()) continue;
                 ragdoll.finishSharedStep(alpha);
                 ragdoll.modelInstance().getTickLoop().tickAfterSharedPhysics(deltaSeconds);
@@ -150,7 +150,7 @@ public final class MmdPhysicsScene implements AutoCloseable {
 
     /** Samples every participant's animation, then performs one shared native step. */
     public void evaluateFrame(float partialTick, float deltaSeconds) {
-        for (MmdRagdoll ragdoll : ragdolls) {
+        for (SkeletonRagdoll ragdoll : ragdolls) {
             if (ragdoll.enabled()) ragdoll.modelInstance().prepareSharedPhysicsFrame(partialTick);
         }
         step(deltaSeconds);
@@ -159,7 +159,7 @@ public final class MmdPhysicsScene implements AutoCloseable {
     @Override
     public void close() {
         if (closed) return;
-        for (MmdRagdoll ragdoll : List.copyOf(ragdolls)) ragdoll.onSharedSceneClosed();
+        for (SkeletonRagdoll ragdoll : List.copyOf(ragdolls)) ragdoll.onSharedSceneClosed();
         ragdolls.clear();
         ownerByBody.clear();
         world.close();

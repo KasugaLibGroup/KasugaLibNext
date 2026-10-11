@@ -3,10 +3,10 @@
 接口、配置和调用参考。原理说明见 [mmd-ragdoll.md](../doc/mmd-ragdoll.md)。
 
 物理定义、IK 与菱形闭环现统一挂在 `Skeleton.getDynamics()` 下。扩展 Reader/Builder 和
-Caliko 接入说明见 [skeleton-dynamics.md](skeleton-dynamics.md)。`MmdRagdoll` 保留历史 API 名称，
+Caliko 接入说明见 [skeleton-dynamics.md](skeleton-dynamics.md)。`SkeletonRagdoll` 保留历史 API 名称，
 运行时只读取通用骨骼定义。
 
-`MmdRagdoll` 有两种构建方式：
+`SkeletonRagdoll` 有两种构建方式：
 
 - `enablePhysics()` 使用 PMX 中全部刚体，因此会包含裙摆、头发等次级物理刚体。
 - `enablePhysics(profile)` 可用于 PMX 或 glTF，使用 profile 的 `bodies` 生成稳定的人形胶囊和
@@ -15,11 +15,11 @@ Caliko 接入说明见 [skeleton-dynamics.md](skeleton-dynamics.md)。`MmdRagdol
 
 物理求解由 vendored Box3D C17 引擎完成。`uml/dynamic/physics/core` 中的
 `RigidBodyWorld`、`SimBody`、`GenericRigidBody` 和 `BallJoint` 只负责 Java 对象映射、
-固定步长、生命周期与状态同步；`MmdRagdoll` 是 PMX/骨骼适配器。任何代码都可以直接创建世界：
+固定步长、生命周期与状态同步；`SkeletonRagdoll` 是 PMX/骨骼适配器。任何代码都可以直接创建世界：
 
 ## 大坐标精度
 
-启用 `MmdRagdoll` 时，模型根节点的世界平移会从 float 骨骼矩阵中移出，作为独立的 double
+启用 `SkeletonRagdoll` 时，模型根节点的世界平移会从 float 骨骼矩阵中移出，作为独立的 double
 `worldOrigin` 保存。骨骼求值、Box3D 刚体、关节以及缓存的方块碰撞均使用原点附近的局部坐标；
 渲染阶段先以 double 计算 `worldOrigin - cameraPosition`，然后才写入 float pose matrix。
 

@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import lib.kasuga.KasugaLib;
 import lib.kasuga.rendering.output.camera.CameraRenderSettings;
 import lib.kasuga.rendering.output.camera.CameraState;
+import lib.kasuga.rendering.output.camera.CameraProjection;
 import lib.kasuga.rendering.output.gl.FramePreviewWindow;
 import lib.kasuga.rendering.output.mc.MinecraftFrameWindows;
 import lib.kasuga.rendering.output.mc.MinecraftFrameOutputs;
@@ -25,6 +26,7 @@ public final class FrameWindowsSmokeTest {
     private static MinecraftFrameWindows.WindowCamera first, second;
     private static MinecraftFrameWindows.WindowOutput mirror;
     private static MinecraftFrameWindows.WindowCamera paused;
+    private static FrameOutputRouter<FrameTexture>.Registration projectionObserver;
     private static net.minecraft.client.multiplayer.ClientLevel mainLevel;
     private static Object mainRenderer, capabilities;
     private static int warmup, phase;
@@ -44,6 +46,12 @@ public final class FrameWindowsSmokeTest {
                 first = MinecraftFrameWindows.createCamera("window:first", () ->
                         new WorldCameraView(eye.x, eye.y + 2, eye.z, mc.player.getYRot(), 20, 0, 70, 320, 180), settings,
                         new FramePreviewWindow.Options("Kasuga test | Front", 320, 180));
+                projectionObserver = MinecraftFrameOutputs.open("window:first", FrameOutputMode.MIRROR, frame -> {
+                    var size = first.framebufferSize();
+                    var view = lib.kasuga.rendering.output.mc.MinecraftWorldViews.currentView();
+                    if (view.width() != size[0] || view.height() != size[1] || view.verticalFov() != (phase > 0 ? 55 : 70))
+                        throw new IllegalStateException("Window projection edits froze framebuffer/DPI following");
+                });
                 second = MinecraftFrameWindows.createCamera("window:second", () ->
                         new WorldCameraView(eye.x, eye.y + 2, eye.z, mc.player.getYRot() + 180, 20, 0, 90, 320, 180), settings,
                         new FramePreviewWindow.Options("Kasuga test | Rear", 320, 180));
@@ -64,9 +72,11 @@ public final class FrameWindowsSmokeTest {
                 throw new IllegalStateException("Secondary presentation corrupted the main render context");
             if (first.state() == CameraState.FAILED || second.state() == CameraState.FAILED)
                 throw new IllegalStateException("Window camera failed", first.failure().orElse(second.failure().orElse(null)));
+            if (phase < 2 && projectionObserver.isClosed()) throw new IllegalStateException("Window projection observer failed");
             if (GL11.glGetError() != GL11.GL_NO_ERROR) throw new IllegalStateException("MC window GL error");
             if (phase == 0 && first.presentedFrames() > 30 && second.presentedFrames() > 30 && mirror.presentedFrames() > 30) {
                 if (!paused.isClosed() || paused.state() != CameraState.CLOSED) throw new IllegalStateException("Paused window did not close via event pump");
+                first.setProjection(new CameraProjection(55, 16, 16));
                 first.resize(400, 250); startedResize = first.presentedFrames(); phase = 1;
             } else if (phase == 1 && first.presentedFrames() > startedResize + 20) {
                 var size = first.framebufferSize();
@@ -87,6 +97,7 @@ public final class FrameWindowsSmokeTest {
         var mc = Minecraft.getInstance();
         try {
             MinecraftFrameWindows.shutdown();
+            if (projectionObserver != null) projectionObserver.close();
             if (second != null && second.state() != CameraState.CLOSED) throw new IllegalStateException("Shutdown left camera alive");
             var report = mc.gameDirectory.toPath().resolve("debug/frame-windows.json");
             java.nio.file.Files.createDirectories(report.getParent());

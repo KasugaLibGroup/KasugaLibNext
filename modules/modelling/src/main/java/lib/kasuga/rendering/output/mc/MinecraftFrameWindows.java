@@ -9,6 +9,8 @@ import lib.kasuga.rendering.output.camera.CameraHandle;
 import lib.kasuga.rendering.output.camera.CameraAnimationPlayer;
 import lib.kasuga.rendering.output.camera.CameraRenderSettings;
 import lib.kasuga.rendering.output.camera.CameraState;
+import lib.kasuga.rendering.output.camera.CameraType;
+import lib.kasuga.rendering.output.camera.CameraProjection;
 import lib.kasuga.rendering.output.gl.FramePreviewWindow;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
@@ -97,10 +99,17 @@ public final class MinecraftFrameWindows {
         }
         @Override protected boolean sourceClosed() { return camera.state() == CameraState.CLOSED || camera.state() == CameraState.FAILED; }
         public String viewId() { return camera.viewId(); }
+        public CameraType type() { return camera.type(); }
         public CameraState state() { return camera.state(); }
         public Optional<Throwable> failure() { return camera.failure(); }
         public WorldCameraView pose() { return windowPose(camera.pose()); }
         public CameraAnimationPlayer animation() { return camera.animation(); }
+        public Optional<CameraRenderSettings> renderSettings() { return camera.renderSettings(); }
+        public void updateRenderSettings(CameraRenderSettings settings) { camera.updateRenderSettings(settings); }
+        public void setProjection(CameraProjection projection) {
+            java.util.Objects.requireNonNull(projection, "projection");
+            updatePose(projection.apply(pose()));
+        }
         public void updatePose(Supplier<WorldCameraView> pose) {
             java.util.Objects.requireNonNull(pose, "pose");
             camera.updatePose(() -> windowPose(pose.get()));

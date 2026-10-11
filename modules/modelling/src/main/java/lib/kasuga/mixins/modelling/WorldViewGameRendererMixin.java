@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import lib.kasuga.rendering.output.mc.MinecraftWorldViews;
+import lib.kasuga.rendering.output.mc.MinecraftCameras;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.renderer.GameRenderer;
@@ -30,6 +31,15 @@ abstract class WorldViewGameRendererMixin {
     private Camera kasuga$camera(Camera original) {
         Camera camera = MinecraftWorldViews.currentCamera();
         return camera == null ? original : camera;
+    }
+
+    @WrapOperation(method = "renderLevel", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/renderer/GameRenderer;getFov(Lnet/minecraft/client/Camera;FZ)D"), require = 1)
+    private double kasuga$nativeFov(GameRenderer renderer, Camera camera, float partialTick,
+                                    boolean useSetting, Operation<Double> original) {
+        double fov = original.call(renderer, camera, partialTick, useSetting);
+        if (MinecraftWorldViews.currentView() == null && useSetting) MinecraftCameras.capturePlayerFov(fov);
+        return fov;
     }
 
     @Inject(method = "getMainCamera", at = @At("HEAD"), cancellable = true)

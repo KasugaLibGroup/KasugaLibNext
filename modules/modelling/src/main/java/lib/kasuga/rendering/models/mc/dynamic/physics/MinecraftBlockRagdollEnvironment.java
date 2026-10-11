@@ -30,7 +30,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
- * Incremental Minecraft terrain adapter for {@link lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll MmdRagdoll}.
+ * Incremental Minecraft terrain adapter for {@link lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll SkeletonRagdoll}.
  *
  * <p>Every block position is a cached mesh cell. Moving the ragdoll only adds
  * cells entering the broad phase and removes cells leaving it. The retained

@@ -48,7 +48,7 @@ import java.util.List;
 | IK 角度、`maxRotationStep`、`Rotor`、`Hinge` | 弧度 |
 | IK `tolerance` | 当前求值空间的距离单位；导入/根缩放会影响实际对应尺度 |
 | `setIkTarget`, `setFrameIkTarget`, `IkTargetModule` 的目标 | 世界坐标，`Vector3f`；浮动原点开启后在求值时减去 double 世界锚点 |
-| `MmdRagdoll.Body.position()` 和普通物理查询 | 模拟局部坐标；使用 `worldPosition`/`*World` 接口取得或输入世界坐标 |
+| `SkeletonRagdoll.Body.position()` 和普通物理查询 | 模拟局部坐标；使用 `worldPosition`/`*World` 接口取得或输入世界坐标 |
 
 float 外部目标本身已受精度限制；浮动原点不会恢复在 `Vector3f` 构造时丢失的世界坐标小数。
 
@@ -60,6 +60,8 @@ void Skeleton.setDynamics(SkeletonDynamics dynamics);
 
 new SkeletonDynamics(Physics physics, List<IkChain> ikChains,
                      List<DiamondConstraint> diamonds);
+new SkeletonDynamics(Physics physics, List<IkChain> ikChains,
+                     List<DiamondConstraint> diamonds, List<BonePoseConstraint> poseConstraints);
 ```
 
 Skeleton 默认使用 `SkeletonDynamics.EMPTY`。通常通过 Builder 验证后挂载；直接构造和 setter
@@ -68,6 +70,7 @@ Skeleton 默认使用 `SkeletonDynamics.EMPTY`。通常通过 Builder 验证后�
 | 访问器 | 返回值 |
 | --- | --- |
 | `physics()` | 共用物理定义 |
+| `poseConstraints()` | 目标 Bone 到继承/固定轴约束的不可修改映射；三参数构造默认为空 |
 | `ikChains()` | 保留定义顺序的 IK 链列表 |
 | `diamonds()` | 闭环约束列表 |
 | `chainsByName()` | 只读 `Map<String, IkChain>`；链名必须唯一 |
@@ -90,12 +93,14 @@ new SkeletonDynamicsBuilder(Skeleton skeleton);
 | `SkeletonDynamicsBuilder physics(List<RigidBody> bodies, List<Joint> joints)` | 替换 bodies/joints；单位缩放、无强制 profile、affine 写回、半径比例 1、无绑定跟随骨 |
 | `SkeletonDynamicsBuilder ik(IkChain chain)` | 添加链；相同链名替换已有链 |
 | `SkeletonDynamicsBuilder diamond(DiamondConstraint diamond)` | 添加约束；相同约束名替换已有约束 |
+| `SkeletonDynamicsBuilder pose(BonePoseConstraint constraint)` | 添加骨骼姿态约束；同一目标 Bone 替换已有约束 |
 | `SkeletonDynamics build()` | 校验并返回定义；不挂载、不创建求解器或 native world |
 | `SkeletonDynamics attach()` | 先 `build()`，再写入 Skeleton，返回挂载的定义 |
 
 `build()`/`attach()` 的结构校验包括：
 
 - 非空 body 骨、绑定跟随骨、IK controller/effector/link 都属于目标 Skeleton。
+- 姿态约束的目标和继承源都属于此 Skeleton，拒绝自身引用和继承环。
 - 关节的两刚体索引有效且不同；索引对应 `Physics.bodies()`，不是 `Bone.index`。
 - IK 链非空，驱动骨不重复，后续 link/effector 必须是前一 link 的后代；允许跳过中间骨。
 - 闭环引用两条已存在的 POSITION 链；同一链不能属于多个闭环。
@@ -136,6 +141,29 @@ SkeletonBuilder dynamics(Consumer<SkeletonDynamicsBuilder> configure);
 `void configureSkeleton(Skeleton skeleton)`，在 Model 构建时接入 Reader。
 格式 metadata 的 Model 构造钩子晚于 SkeletonBuilder 回调，可能覆盖物理表或同名链；
 需要覆盖格式默认值的配置应放在 Model 加载完成后、ModelInstance 创建前。
+
+## 通用骨骼姿态约束
+
+```java
+new TransformInheritance(Bone source, float weight, boolean translation, boolean rotation);
+new BonePoseConstraint(Bone bone, TransformInheritance inheritance, Vector3f fixedAxis);
+```
+
+两者是 `SkeletonDynamics` 下的公共 record，不要求 BoneData 的类型。
+继承的权重必须有限，允许负值；至少启用平移或旋转。继承源提供当前求值后的局部姿态增量，
+平移乘以 weight，旋转从单位 quaternion 按 weight slerp；不继承源的绑定姿态或世界位置。
+目标骨骼的原始局部姿态先应用继承，再提取沿 fixedAxis 的 twist，然后应用 IK 和物理覆盖。
+固定轴在目标骨骼局部坐标中，输入向量复制并归一化，长度平方小于 `1e-8` 时拒绝。
+物理覆盖以最终模拟姿态为准；此轴约束不替代物理关节限位。
+
+`inheritance` 或 `fixedAxis` 可以为 null，但不能同时为空。
+`fixedAxis()` 返回副本；`hasFixedAxis()` 查询是否定义轴，`fixedAxis(Vector3f destination)`
+在已定义轴时复制到调用方 scratch。Builder 按骨骼引用校验所属骨架及继承环。
+实例按依赖顺序求值，跨分支继承不依赖层级遍历顺序，并扩大更新范围以覆盖受影响的顶点。
+
+PMX/PMD 的骨继承和固定轴在 `MmdSkeletonDynamicsReader.read` 时转换；单独读取 PMX 骨表时，
+也可调用 `MmdSkeletonDynamicsReader.readBoneConstraints(builder)` 和 `readIk(builder)`。
+格式文件的索引仅存在于 Reader 层；MC 或外部格式通过相同 Builder 填充这些定义即可。
 
 ## 物理数据
 
@@ -329,6 +357,7 @@ var skeleton = instance.getSkeletonInstance();
 | `boolean setIkEnabled(String name, boolean enabled)` | 未定义链返回 false；成功时要求重新求值 |
 | `boolean isIkEnabled(String name)` | 读取开关，缺省 true；不是存在性检查，未知链也返回 true |
 | `void resetIkEnabled()` | 清除覆盖开关，恢复缺省 true |
+| `boolean clearIkEnabled(String name)` | 清除单个链的显式开关；有状态被移除时返回 true |
 | `boolean setIkTarget(String name, Vector3f worldTarget, float weight)` | 持久目标；未定义链 false；复制目标并要求更新 |
 | `boolean clearIkTarget(String name)` | 清除持久目标；没有目标返回 false |
 | `void clearIkTargets()` | 清除全部持久目标 |
@@ -386,6 +415,7 @@ target.setEnabled(false);
 | --- | --- | --- |
 | `MmdSkeletonDynamicsReader` | `void read(MmdModelData, SkeletonDynamicsBuilder)` | 作者刚体顺序、直接 Bone 引用、有效关节、导入 unitScale；不强制 profile，rigid 写回，profile 半径比例 1 |
 | 同上 | `static void readIk(SkeletonDynamicsBuilder)` | 仅转换已挂在骨骼上的 PMX IK；可用于无完整 tail 的骨架 |
+| 同上 | `static void readBoneConstraints(SkeletonDynamicsBuilder)` | 将 PMX 继承/固定轴转换为通用约束；完整 read 会自动调用 |
 | `GltfSkeletonDynamicsReader` | `void read(GltfModelData, SkeletonDynamicsBuilder)` | 按 node 顺序生成候选；强制显式 profile，affine 写回，skin 骨绑定跟随；不自动猜测/创建 IK |
 
 MMD 的 controller 骨名作为链名，链从文件的 tip-to-base 反转为 base-to-tip；正的迭代次数

@@ -1,7 +1,7 @@
 package lib.kasuga.rendering.models.mc.dynamic.physics;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.RayHit;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
@@ -70,7 +70,7 @@ public final class MinecraftRagdollDragger {
                 : REGISTRATIONS.entrySet()) {
             MinecraftRagdollConfig.Dragging settings = entry.getValue();
             if (!settings.enabled() || settings.mouseButton() != event.getButton()) continue;
-            MmdRagdoll ragdoll = entry.getKey().getRagdoll();
+            SkeletonRagdoll ragdoll = entry.getKey().getRagdoll();
             if (ragdoll == null || !ragdoll.enabled()) continue;
             RayHit hit = ragdoll.raycastWorld(origin.x, origin.y, origin.z,
                             direction, settings.maxDistance())
@@ -116,9 +116,9 @@ public final class MinecraftRagdollDragger {
         active = null;
     }
 
-    private record Pick(ModelInstance instance, MmdRagdoll ragdoll,
+    private record Pick(ModelInstance instance, SkeletonRagdoll ragdoll,
                         MinecraftRagdollConfig.Dragging settings, RayHit hit) {}
 
-    private record ActiveDrag(ModelInstance instance, MmdRagdoll ragdoll,
+    private record ActiveDrag(ModelInstance instance, SkeletonRagdoll ragdoll,
                               int mouseButton, float distance) {}
 }

@@ -7,13 +7,14 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * A pose: morph weights, bone targets, and material/sprite frame picks. Immutable; {@link Bone} copies
+ * A pose: morph weights, bone targets, material/sprite frame picks, and IK switches. Immutable; {@link Bone} copies
  * its {@link Transform} on construction. Used both as a state's target pose and as a layer's cross-faded output.
  */
 public record Pose(
         Map<Object, Morph> morphs,
         Map<String, Bone> bones,
-        Map<Object, Frame> frames
+        Map<Object, Frame> frames,
+        Map<String, Boolean> ikEnabled
 ) {
 
     public record Morph(float value, float factor) {}
@@ -32,10 +33,15 @@ public record Pose(
         }
     }
 
+    public Pose(Map<Object, Morph> morphs, Map<String, Bone> bones, Map<Object, Frame> frames) {
+        this(morphs, bones, frames, Map.of());
+    }
+
     public Pose {
         morphs = Map.copyOf(morphs);
         bones = Map.copyOf(bones);
         frames = Map.copyOf(frames);
+        ikEnabled = Map.copyOf(ikEnabled);
     }
 
     private static final Pose EMPTY = new Pose(Map.of(), Map.of(), Map.of());
@@ -65,7 +71,7 @@ public record Pose(
     }
 
     public boolean isEmpty() {
-        return morphs.isEmpty() && bones.isEmpty() && frames.isEmpty();
+        return morphs.isEmpty() && bones.isEmpty() && frames.isEmpty() && ikEnabled.isEmpty();
     }
 
     /**
@@ -77,6 +83,7 @@ public record Pose(
         private final Map<Object, Morph> morphs = new LinkedHashMap<>();
         private final Map<String, Bone> bones = new LinkedHashMap<>();
         private final Map<Object, Frame> frames = new LinkedHashMap<>();
+        private final Map<String, Boolean> ikEnabled = new LinkedHashMap<>();
 
         public Builder morph(Object id, float value, float factor) {
             morphs.put(id, new Morph(value, factor));
@@ -93,6 +100,11 @@ public record Pose(
             return this;
         }
 
+        public Builder ikEnabled(String chain, boolean enabled) {
+            ikEnabled.put(Objects.requireNonNull(chain, "chain"), enabled);
+            return this;
+        }
+
         public Builder merge(Pose other) {
             if (other == null) {
                 return this;
@@ -100,15 +112,16 @@ public record Pose(
             morphs.putAll(other.morphs());
             bones.putAll(other.bones());
             frames.putAll(other.frames());
+            ikEnabled.putAll(other.ikEnabled());
             return this;
         }
 
         public boolean isEmpty() {
-            return morphs.isEmpty() && bones.isEmpty() && frames.isEmpty();
+            return morphs.isEmpty() && bones.isEmpty() && frames.isEmpty() && ikEnabled.isEmpty();
         }
 
         public Pose build() {
-            return new Pose(morphs, bones, frames);
+            return new Pose(morphs, bones, frames, ikEnabled);
         }
     }
 }

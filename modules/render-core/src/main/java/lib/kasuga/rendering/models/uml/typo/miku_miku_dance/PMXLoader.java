@@ -523,10 +523,7 @@ public abstract class PMXLoader<InputType, OutputIdentifier, TextureIdentifier, 
     private record UvTarget(Mesh mesh, Material material) {}
 
     private static Bone createSyntheticRoot() {
-        // Synthetic root 不是 PMX 文件骨：data 必须是 null（而非 PmxBone），否则
-        // SkeletonInstance 用 `instanceof PmxBone` 过滤 pmxBones 时会把它收进数组，
-        // 使文件骨整体右移一位 → IK 链/effector 的 PMX 文件索引（boneIndex）全部
-        // 错位 -1 → 足ＩＫ 链变成 [左足,腰キャンセル左]（缺 左ひざ）→ 腿不弯、整体折叠。
+        // Keep synthetic roots out of the reader's PMX file-index mapping.
         return new Bone("dummy_root", new Transform(), null);
     }
 

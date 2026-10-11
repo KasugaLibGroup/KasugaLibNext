@@ -99,6 +99,31 @@ def graphicsApiIsolation = tasks.register('checkGraphicsApiIsolation', CheckGrap
 tasks.named('compileJava') { dependsOn graphicsApiIsolation }
 tasks.named('check') { dependsOn graphicsApiIsolation }
 
+abstract class CheckModelFormatIsolation extends DefaultTask {
+    @InputFiles
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract ConfigurableFileCollection getJavaSources()
+
+    @TaskAction
+    void verify() {
+        def formatReference = ~/\blib\.kasuga\.rendering\.models\.uml\.typo\./
+        def violations = javaSources.files.findAll { it.text =~ formatReference }
+        if (!violations.empty) {
+            throw new GradleException("Shared model subsystems depend on concrete formats: ${violations}")
+        }
+    }
+}
+
+def modelFormatIsolation = tasks.register('checkModelFormatIsolation', CheckModelFormatIsolation) {
+    group = 'verification'
+    description = 'Checks that shared model definitions and runtime subsystems do not depend on format adapters.'
+    javaSources.from(fileTree('src/main/java/lib/kasuga/rendering/models/uml') {
+        include 'structure/**/*.java', 'dynamic/**/*.java', 'framework/**/*.java', 'math/**/*.java', 'loaders/assembly/**/*.java'
+    })
+}
+tasks.named('compileJava') { dependsOn modelFormatIsolation }
+tasks.named('check') { dependsOn modelFormatIsolation }
+
 publishing {
     publications {
         register('mavenJava', MavenPublication) { from components.java }

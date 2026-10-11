@@ -24,8 +24,7 @@ import java.util.function.ToLongFunction;
  * Morph weights are linear. Camera / light / shadow tracks are not part of a model pose and are not
  * sampled here (raw keyframes stay available on {@link VmdMotion}).
  *
- * <p>MMD-specific per-frame state that the pose has no channel for — IK enable/disable — is exposed via
- * {@link #sampleIkStates(VmdMotion, float)} for the caller to apply ({@code setIkEnabled}).
+ * <p>Property keyframes become common Pose IK switches and follow the same playback/FSM write path.
  */
 public final class VmdSampler implements AnimationSampler<VmdMotion> {
 
@@ -56,13 +55,12 @@ public final class VmdSampler implements AnimationSampler<VmdMotion> {
                 builder.bone(name, sampleBone(track, frame), ApplyMode.REPLACE));
         data.morphTracks().forEach((name, track) ->
                 builder.morph(name, sampleMorph(track, frame), 1f));
+        sampleIkStates(data, time).forEach(builder::ikEnabled);
         return builder.build();
     }
 
     /**
-     * IK enable/disable state at the given time (from the last property keyframe ≤ {@code time}). The pose
-     * shape has no IK channel, so the caller applies these ({@code SkeletonInstance.setIkEnabled}) after
-     * flushing the sampled pose. Empty when the motion has no property track.
+     * IK enable/disable state at the given time (from the last property keyframe ≤ {@code time}). Also included in {@link #sample}. Empty when the motion has no property track.
      */
     public Map<String, Boolean> sampleIkStates(VmdMotion data, float time) {
         double frame = (double) Math.max(0f, time) * FRAMES_PER_SECOND;

@@ -26,7 +26,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Tag("box3d")
-class MmdPhysicsClusterManagerTest {
+class ModelPhysicsClusterManagerTest {
 
     @Test
     void distantInstancesFormSeparateClustersWithLocalizedOrigins() {
@@ -38,13 +38,13 @@ class MmdPhysicsClusterManagerTest {
         instanceA.getSkeletonInstance().enableFloatingOrigin(originA);
         instanceB.getSkeletonInstance().enableFloatingOrigin(originB);
 
-        try (MmdPhysicsClusterManager manager = new MmdPhysicsClusterManager(24.0)) {
+        try (ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(24.0)) {
             manager.attach(instanceA);
             manager.attach(instanceB);
 
             assertEquals(2, manager.clusterCount(), "distant models must be split into separate clusters");
             assertNotSame(manager.sceneOf(instanceA), manager.sceneOf(instanceB),
-                    "each distant model must have its own MmdPhysicsScene");
+                    "each distant model must have its own ModelPhysicsScene");
 
             Vector3d sceneOriginA = manager.sceneOf(instanceA).worldOrigin();
             Vector3d sceneOriginB = manager.sceneOf(instanceB).worldOrigin();
@@ -62,16 +62,16 @@ class MmdPhysicsClusterManagerTest {
         leftInstance.getSkeletonInstance().enableFloatingOrigin(new Vector3d(baseOrigin).add(-1.5, 0.0, 0.0));
         rightInstance.getSkeletonInstance().enableFloatingOrigin(new Vector3d(baseOrigin).add(1.5, 0.0, 0.0));
 
-        try (MmdPhysicsClusterManager manager = new MmdPhysicsClusterManager(24.0)) {
-            MmdRagdoll left = manager.attach(leftInstance);
-            MmdRagdoll right = manager.attach(rightInstance);
+        try (ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(24.0)) {
+            SkeletonRagdoll left = manager.attach(leftInstance);
+            SkeletonRagdoll right = manager.attach(rightInstance);
 
             assertEquals(1, manager.clusterCount(), "models within cluster radius must merge into 1 cluster");
             assertSame(manager.sceneOf(leftInstance), manager.sceneOf(rightInstance),
-                    "both models must share the same MmdPhysicsScene");
+                    "both models must share the same ModelPhysicsScene");
 
-            MmdRagdoll.Body leftBody = left.bodies().getFirst();
-            MmdRagdoll.Body rightBody = right.bodies().getFirst();
+            SkeletonRagdoll.Body leftBody = left.bodies().getFirst();
+            SkeletonRagdoll.Body rightBody = right.bodies().getFirst();
             left.setGravity(new Vector3f());
             right.setGravity(new Vector3f());
             left.setSelfCollisionsEnabled(false);
@@ -101,10 +101,10 @@ class MmdPhysicsClusterManagerTest {
         // Base cluster radius is 20m, distance is 60m.
         // If lookahead is 0.5s and closing velocity is 100m/s:
         // effectiveMergeRadius = 20 + 100 * 0.5 = 70m > 60m -> should pre-emptively merge!
-        try (MmdPhysicsClusterManager manager = new MmdPhysicsClusterManager(20.0, 30.0, 8)) {
+        try (ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(20.0, 30.0, 8)) {
             manager.setVelocityLookaheadSeconds(0.5);
-            MmdRagdoll ragdollA = manager.attach(instanceA);
-            MmdRagdoll ragdollB = manager.attach(instanceB);
+            SkeletonRagdoll ragdollA = manager.attach(instanceA);
+            SkeletonRagdoll ragdollB = manager.attach(instanceB);
             assertEquals(2, manager.clusterCount(), "without high velocity -> 2 separate clusters");
 
             // Set high closing velocity: A flying at +60 m/s towards B, B flying at -40 m/s towards A
@@ -133,7 +133,7 @@ class MmdPhysicsClusterManagerTest {
         instanceA.getSkeletonInstance().enableFloatingOrigin(new Vector3d(baseOrigin).add(0.0, 0.0, 0.0));
         instanceB.getSkeletonInstance().enableFloatingOrigin(new Vector3d(baseOrigin).add(10.0, 0.0, 0.0));
 
-        try (MmdPhysicsClusterManager manager = new MmdPhysicsClusterManager(20.0, 30.0, 8)) {
+        try (ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(20.0, 30.0, 8)) {
             manager.setSplitGraceSeconds(0.5); // 0.5s grace period
             manager.attach(instanceA);
             manager.attach(instanceB);
@@ -173,10 +173,10 @@ class MmdPhysicsClusterManagerTest {
         instanceA.getSkeletonInstance().enableFloatingOrigin(new Vector3d(baseOrigin).add(0.0, 0.0, 0.0));
         instanceB.getSkeletonInstance().enableFloatingOrigin(new Vector3d(baseOrigin).add(100.0, 0.0, 0.0));
 
-        try (MmdPhysicsClusterManager manager = new MmdPhysicsClusterManager(20.0, 30.0, 8)) {
+        try (ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(20.0, 30.0, 8)) {
             manager.setSplitGraceSeconds(0.0); // instant split on test verification
-            MmdRagdoll ragdollA = manager.attach(instanceA);
-            MmdRagdoll ragdollB = manager.attach(instanceB);
+            SkeletonRagdoll ragdollA = manager.attach(instanceA);
+            SkeletonRagdoll ragdollB = manager.attach(instanceB);
             assertEquals(2, manager.clusterCount(), "without joint and 100m apart -> 2 clusters");
 
             DistanceJoint tether = DistanceJoint.between(
@@ -204,7 +204,7 @@ class MmdPhysicsClusterManagerTest {
         instanceA.getSkeletonInstance().enableFloatingOrigin(new Vector3d(baseOrigin));
         instanceB.getSkeletonInstance().enableFloatingOrigin(new Vector3d(baseOrigin).add(15.0, 0.0, 0.0));
 
-        try (MmdPhysicsClusterManager manager = new MmdPhysicsClusterManager(10.0, 15.0, 8)) {
+        try (ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(10.0, 15.0, 8)) {
             manager.setSplitGraceSeconds(0.0); // instant split for direct threshold verification
             manager.attach(instanceA);
             manager.attach(instanceB);
@@ -236,7 +236,7 @@ class MmdPhysicsClusterManagerTest {
         ModelInstance instanceA = freeBodyInstance();
         ModelInstance instanceB = freeBodyInstance();
 
-        try (MmdPhysicsClusterManager manager = new MmdPhysicsClusterManager(24.0)) {
+        try (ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(24.0)) {
             manager.attach(instanceA);
             manager.attach(instanceB);
             assertEquals(1, manager.clusterCount());

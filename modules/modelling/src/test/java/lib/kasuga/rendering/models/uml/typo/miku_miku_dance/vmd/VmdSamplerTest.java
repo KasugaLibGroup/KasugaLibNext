@@ -67,6 +67,8 @@ class VmdSamplerTest {
         Map<String, Boolean> late = sampler.sampleIkStates(motion, 1f);
         assertTrue(early.getOrDefault("iki", false));
         assertFalse(late.getOrDefault("iki", true));
+        assertEquals(early, sampler.sample(motion, 0).ikEnabled());
+        assertEquals(late, sampler.sample(motion, 1).ikEnabled());
     }
 
     @Test

@@ -12,6 +12,7 @@ import lib.kasuga.rendering.output.gl.FramebufferScope;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.GameRenderer;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
@@ -25,6 +26,7 @@ public final class MinecraftWorldViews {
     private static final LinkedHashMap<String, Registration> VIEWS = new LinkedHashMap<>();
     private static Registration active;
     private static Object frameToken;
+    private static ClientLevel sourceLevel;
     private static boolean lightUpdated;
     private static boolean shutdown;
 
@@ -36,6 +38,15 @@ public final class MinecraftWorldViews {
     }
 
     public static Registration register(String viewId, Supplier<WorldCameraView> camera, CameraRenderSettings settings) {
+        return register(viewId, camera, settings, false);
+    }
+
+    /** A null pose skips this frame, retaining resources and subscriptions until the target returns. */
+    public static Registration registerWhenAvailable(String viewId, Supplier<WorldCameraView> camera, CameraRenderSettings settings) {
+        return register(viewId, camera, settings, true);
+    }
+
+    private static Registration register(String viewId, Supplier<WorldCameraView> camera, CameraRenderSettings settings, boolean optionalPose) {
         RenderSystem.assertOnRenderThread();
         Objects.requireNonNull(settings);
         Objects.requireNonNull(viewId, "viewId");
@@ -44,7 +55,7 @@ public final class MinecraftWorldViews {
         if (viewId.isBlank() || viewId.equals(MinecraftFrameOutputs.MAIN_VIEW))
             throw new IllegalArgumentException("Use a non-main view ID");
         if (VIEWS.containsKey(viewId)) throw new IllegalArgumentException("Duplicate view: " + viewId);
-        Registration registration = new Registration(viewId, camera, settings);
+        Registration registration = new Registration(viewId, camera, settings, optionalPose);
         VIEWS.put(viewId, registration);
         return registration;
     }
@@ -61,6 +72,8 @@ public final class MinecraftWorldViews {
     public static String currentViewId() { return active == null ? MinecraftFrameOutputs.MAIN_VIEW : active.id; }
     /** Shared across all world views in one host frame; null outside a multi-view frame. */
     public static Object currentFrameToken() { return frameToken; }
+    /** Native source level, including while callbacks run with a camera's private level installed. */
+    public static ClientLevel sourceLevel() { return frameToken == null ? Minecraft.getInstance().level : sourceLevel; }
 
     /** Mixin entry. The ordinary world render always runs, including unsupported modes. */
     public static void renderViewsAndMain(GameRenderer renderer, DeltaTracker delta, Runnable main) {
@@ -72,12 +85,16 @@ public final class MinecraftWorldViews {
             return;
         }
         frameToken = new Object();
+        sourceLevel = mc.level;
         lightUpdated = false;
         try {
             for (Registration registration : VIEWS.values().toArray(Registration[]::new)) {
                 if (registration.closed || !registration.enabled || !MinecraftFrameOutputs.hasOutputs(registration.id)) continue;
                 WorldCameraView view;
-                try { view = Objects.requireNonNull(registration.provider.get(), "Camera provider returned null"); }
+                try {
+                    view = registration.provider.get();
+                    if (view == null && !registration.optionalPose) throw new NullPointerException("Camera provider returned null");
+                }
                 catch (RuntimeException failure) {
                     registration.failure = failure;
                     registration.close();
@@ -85,6 +102,7 @@ public final class MinecraftWorldViews {
                     continue;
                 }
                 if (registration.closed) continue;
+                if (view == null) { if (registration.session != null) registration.session.pause(); continue; }
                 try (var ignored = new WorldRenderScope()) {
                     try { registration.resize(view); }
                     catch (RuntimeException failure) {
@@ -94,6 +112,7 @@ public final class MinecraftWorldViews {
                         continue;
                     }
                     try {
+                        if (registration.settingsChanged) registration.releaseSession();
                         registration.view = view;
                         active = registration;
                         registration.fog.install();
@@ -125,6 +144,7 @@ public final class MinecraftWorldViews {
         } finally {
             active = null;
             frameToken = null;
+            sourceLevel = null;
         }
     }
 
@@ -161,7 +181,9 @@ public final class MinecraftWorldViews {
     public static final class Registration implements AutoCloseable {
         private final String id;
         private final Supplier<WorldCameraView> provider;
-        private final CameraRenderSettings settings;
+        private CameraRenderSettings settings;
+        private final boolean optionalPose;
+        private boolean settingsChanged;
         private WorldViewRenderSession session;
         private final WorldViewCamera camera = new WorldViewCamera();
         private WorldCameraView view;
@@ -171,13 +193,21 @@ public final class MinecraftWorldViews {
         private boolean closed;
         private Throwable failure;
 
-        private Registration(String id, Supplier<WorldCameraView> provider, CameraRenderSettings settings) {
-            this.id = id; this.provider = provider; this.settings = settings;
+        private Registration(String id, Supplier<WorldCameraView> provider, CameraRenderSettings settings, boolean optionalPose) {
+            this.id = id; this.provider = provider; this.settings = settings; this.optionalPose = optionalPose;
         }
         public String viewId() { return id; }
         public boolean isClosed() { return closed; }
         public java.util.Optional<Throwable> failure() { return java.util.Optional.ofNullable(failure); }
         public boolean isEnabled() { return enabled && !closed; }
+        public CameraRenderSettings renderSettings() { RenderSystem.assertOnRenderThread(); return settings; }
+        /** Rebuild the owned renderer/assets/shader on the next available frame, after current callbacks finish. */
+        public void updateRenderSettings(CameraRenderSettings settings) {
+            RenderSystem.assertOnRenderThread();
+            if (closed) throw new IllegalStateException("Camera closed");
+            Objects.requireNonNull(settings);
+            if (!this.settings.equals(settings)) { this.settings = settings; settingsChanged = true; }
+        }
         public void setEnabled(boolean enabled) {
             RenderSystem.assertOnRenderThread();
             if (closed) throw new IllegalStateException("Camera closed");
@@ -213,12 +243,17 @@ public final class MinecraftWorldViews {
             }
         }
 
-        private void release() {
+        private void releaseSession() {
+            settingsChanged = false;
             if (session != null) {
                 try { session.close(); }
                 catch (Exception failure) { LogUtils.getLogger().error("Cannot release camera renderer {}", id, failure); }
                 finally { session = null; }
             }
+        }
+
+        private void release() {
+            releaseSession();
             if (target != null) { target.destroyBuffers(); target = null; }
             camera.reset();
         }

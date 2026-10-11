@@ -1,7 +1,7 @@
 package lib.kasuga.rendering.models.mc.dynamic.physics;
 
 import com.google.gson.JsonParser;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -72,13 +72,13 @@ class MinecraftRagdollConfigTest {
         assertTrue(config.profile().includeSecondaryBodies());
         assertEquals((float) Math.toRadians(30),
                 config.profile().bodies().getFirst().swingTwistLimit().maxSwing(), 1e-6f);
-        MmdRagdoll.Registration spine = config.profile().bodies().get(1);
+        SkeletonRagdoll.Registration spine = config.profile().bodies().get(1);
         assertEquals(null, spine.swingTwistLimit(),
                 "legacy Euler limits remain an explicit compatibility path");
         assertEquals(7, spine.parentRigidBodyIndex());
         assertEquals((float) Math.toRadians(-20), spine.rotationMinimum().y, 1e-6f);
         assertEquals((float) Math.toRadians(30), spine.rotationMaximum().z, 1e-6f);
-        MmdRagdoll.SwingTwistLimit head = config.profile().bodies().get(2).swingTwistLimit();
+        SkeletonRagdoll.SwingTwistLimit head = config.profile().bodies().get(2).swingTwistLimit();
         assertEquals((float) Math.toRadians(42), head.maxSwing(), 1e-6f);
         assertEquals((float) Math.toRadians(-18), head.minTwist(), 1e-6f);
         assertEquals((float) Math.toRadians(24), head.maxTwist(), 1e-6f);
@@ -113,7 +113,7 @@ class MinecraftRagdollConfigTest {
         assertEquals((float)Math.toRadians(9),
                 config.profile().bodies().getFirst().swingTwistLimit().maxSwing(), 1e-6f);
         assertEquals(0.84f, config.profile().bodies().getFirst().swingTwistLimit().stiffness());
-        assertEquals(MmdRagdoll.BodyRole.TOE, config.profile().bodies().get(1).role());
+        assertEquals(SkeletonRagdoll.BodyRole.TOE, config.profile().bodies().get(1).role());
         assertEquals((float)Math.toRadians(7),
                 config.profile().bodies().get(1).swingTwistLimit().maxTwist(), 1e-6f);
     }

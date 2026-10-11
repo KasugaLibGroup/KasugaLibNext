@@ -1,7 +1,7 @@
 package lib.kasuga.rendering.models.mc.dynamic.physics;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdPhysicsScene;
+import lib.kasuga.rendering.models.uml.dynamic.physics.ModelPhysicsScene;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.neoforged.api.distmarker.Dist;
@@ -20,7 +20,7 @@ import java.util.WeakHashMap;
 public final class MinecraftRagdollRuntime {
     private static final Map<ModelInstance, MinecraftRagdollConfig.UpdateMode> INSTANCES =
             new WeakHashMap<>();
-    private static final Map<MmdPhysicsScene, MinecraftRagdollConfig.UpdateMode> SCENES =
+    private static final Map<ModelPhysicsScene, MinecraftRagdollConfig.UpdateMode> SCENES =
             new WeakHashMap<>();
     private static ClientLevel previousLevel;
 
@@ -41,7 +41,7 @@ public final class MinecraftRagdollRuntime {
         INSTANCES.remove(instance);
     }
 
-    public static synchronized void register(MmdPhysicsScene scene,
+    public static synchronized void register(ModelPhysicsScene scene,
                                              MinecraftRagdollConfig.UpdateMode updateMode) {
         Objects.requireNonNull(scene, "scene");
         Objects.requireNonNull(updateMode, "updateMode");
@@ -49,7 +49,7 @@ public final class MinecraftRagdollRuntime {
         else SCENES.put(scene, updateMode);
     }
 
-    public static synchronized void unregister(MmdPhysicsScene scene) {
+    public static synchronized void unregister(ModelPhysicsScene scene) {
         SCENES.remove(scene);
     }
 
@@ -63,7 +63,7 @@ public final class MinecraftRagdollRuntime {
     }
 
     static synchronized int registeredSceneCount() {
-        SCENES.keySet().removeIf(MmdPhysicsScene::closed);
+        SCENES.keySet().removeIf(ModelPhysicsScene::closed);
         return SCENES.size();
     }
 
@@ -78,7 +78,7 @@ public final class MinecraftRagdollRuntime {
         for (ModelInstance instance : snapshot()) {
             instance.evaluatePhysicsFrame(partialTick, deltaSeconds);
         }
-        for (MmdPhysicsScene scene : sceneSnapshot()) {
+        for (ModelPhysicsScene scene : sceneSnapshot()) {
             if (!scene.closed()) scene.evaluateFrame(partialTick, deltaSeconds);
         }
     }
@@ -103,8 +103,8 @@ public final class MinecraftRagdollRuntime {
         return new ArrayList<>(INSTANCES.keySet());
     }
 
-    private static synchronized ArrayList<MmdPhysicsScene> sceneSnapshot() {
-        SCENES.keySet().removeIf(MmdPhysicsScene::closed);
+    private static synchronized ArrayList<ModelPhysicsScene> sceneSnapshot() {
+        SCENES.keySet().removeIf(ModelPhysicsScene::closed);
         return new ArrayList<>(SCENES.keySet());
     }
 }

@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("box3d")
-class MmdRagdollTest {
+class SkeletonRagdollTest {
     @Test
     void sharedSceneLetsDifferentModelsCollideAtALargeWorldOrigin() {
         Vector3d sceneOrigin = new Vector3d(30_000_000.375, 96.125, -29_999_999.625);
@@ -51,11 +51,11 @@ class MmdRagdollTest {
         rightInstance.getSkeletonInstance().enableFloatingOrigin(
                 new Vector3d(sceneOrigin).add(1.5, 0.0, 0.0));
 
-        try (MmdPhysicsScene scene = new MmdPhysicsScene(sceneOrigin, 4)) {
-            MmdRagdoll left = scene.attach(leftInstance);
-            MmdRagdoll right = scene.attach(rightInstance);
-            MmdRagdoll.Body leftBody = left.bodies().getFirst();
-            MmdRagdoll.Body rightBody = right.bodies().getFirst();
+        try (ModelPhysicsScene scene = new ModelPhysicsScene(sceneOrigin, 4)) {
+            SkeletonRagdoll left = scene.attach(leftInstance);
+            SkeletonRagdoll right = scene.attach(rightInstance);
+            SkeletonRagdoll.Body leftBody = left.bodies().getFirst();
+            SkeletonRagdoll.Body rightBody = right.bodies().getFirst();
             scene.world().setGravity(new Vector3f());
             left.setSelfCollisionsEnabled(false);
             right.setSelfCollisionsEnabled(false);
@@ -83,11 +83,11 @@ class MmdRagdollTest {
         firstInstance.getSkeletonInstance().enableFloatingOrigin(new Vector3d(origin).add(-3.0, 0.0, 0.0));
         secondInstance.getSkeletonInstance().enableFloatingOrigin(new Vector3d(origin).add(3.0, 0.0, 0.0));
 
-        try (MmdPhysicsScene scene = new MmdPhysicsScene(origin, 4)) {
-            MmdRagdoll first = scene.attach(firstInstance);
-            MmdRagdoll second = scene.attach(secondInstance);
-            MmdRagdoll.Body a = first.bodies().getFirst();
-            MmdRagdoll.Body b = second.bodies().getFirst();
+        try (ModelPhysicsScene scene = new ModelPhysicsScene(origin, 4)) {
+            SkeletonRagdoll first = scene.attach(firstInstance);
+            SkeletonRagdoll second = scene.attach(secondInstance);
+            SkeletonRagdoll.Body a = first.bodies().getFirst();
+            SkeletonRagdoll.Body b = second.bodies().getFirst();
             scene.world().setGravity(new Vector3f());
             DistanceJoint tether = DistanceJoint.between(a, b)
                     .length(2f)
@@ -106,9 +106,9 @@ class MmdRagdollTest {
     @Test
     void disabledSharedRagdollLeavesTheNativeSimulationUntilReenabled() {
         ModelInstance instance = freeBodyInstance(0f);
-        try (MmdPhysicsScene scene = new MmdPhysicsScene(new Vector3d(), 4)) {
-            MmdRagdoll ragdoll = scene.attach(instance);
-            MmdRagdoll.Body body = ragdoll.bodies().getFirst();
+        try (ModelPhysicsScene scene = new ModelPhysicsScene(new Vector3d(), 4)) {
+            SkeletonRagdoll ragdoll = scene.attach(instance);
+            SkeletonRagdoll.Body body = ragdoll.bodies().getFirst();
             scene.world().setGravity(new Vector3f());
             body.setLinearVelocity(new Vector3f(5f, 0f, 0f));
 
@@ -129,9 +129,9 @@ class MmdRagdollTest {
         Vector3d origin = new Vector3d(30_000_000.375, 96.125, -29_999_999.625);
         ModelInstance instance = freeBodyInstance(0f);
         instance.getSkeletonInstance().enableFloatingOrigin(origin);
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f());
-        MmdRagdoll.Body body = ragdoll.bodies().getFirst();
+        SkeletonRagdoll.Body body = ragdoll.bodies().getFirst();
 
         assertEquals(origin.x, ragdoll.worldOrigin().x, 0.0);
         assertEquals(origin.z, ragdoll.worldOrigin().z, 0.0);
@@ -171,7 +171,7 @@ class MmdRagdollTest {
     @Test
     void ordersTickLoopModulesAroundTheIkAndPhysicsSlotsDeterministically() {
         ModelInstance instance = freeBodyInstance(0f);
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f());
         List<String> executed = new ArrayList<>();
         ModelTickLoop loop = instance.getTickLoop();
@@ -198,7 +198,7 @@ class MmdRagdollTest {
             @Override public void close() { closed = true; }
         }
         ModelInstance instance = freeBodyInstance(0f);
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ClosingEnvironment environment = new ClosingEnvironment();
         ragdoll.setCollisionEnvironment(environment);
 
@@ -211,7 +211,7 @@ class MmdRagdollTest {
 
     @Test
     void defaultGravityUsesWorldUnitsInsteadOfModelScale() {
-        MmdRagdoll ragdoll = instance(new Vector3f(1f / 12f)).enablePhysics();
+        SkeletonRagdoll ragdoll = instance(new Vector3f(1f / 12f)).enablePhysics();
 
         assertEquals(-9.80665f, ragdoll.gravity().y, 1e-6f,
                 "PMX model scaling must not weaken world acceleration");
@@ -220,9 +220,9 @@ class MmdRagdollTest {
     @Test
     void dampingMatchesBox3dRateInsteadOfSixtyTimesThatRate() {
         ModelInstance instance = freeBodyInstance(2f);
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f());
-        MmdRagdoll.Body body = ragdoll.bodies().getFirst();
+        SkeletonRagdoll.Body body = ragdoll.bodies().getFirst();
         body.setLinearVelocity(new Vector3f(12f, 0f, 0f));
 
         float dt = 1f / 120f;
@@ -236,9 +236,9 @@ class MmdRagdollTest {
     @Test
     void accumulatesRenderDeltasIntoFixedWorldSteps() {
         ModelInstance instance = freeBodyInstance(0f);
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f());
-        MmdRagdoll.Body body = ragdoll.bodies().getFirst();
+        SkeletonRagdoll.Body body = ragdoll.bodies().getFirst();
         body.setLinearVelocity(new Vector3f(1f, 0f, 0f));
 
         ragdoll.step(1f / 240f);
@@ -253,10 +253,10 @@ class MmdRagdollTest {
 
     @Test
     void boundsPerUpdateCatchUpWorkAndReportsDiscardedTime() {
-        MmdRagdoll ragdoll = freeBodyInstance(0f).enablePhysics();
+        SkeletonRagdoll ragdoll = freeBodyInstance(0f).enablePhysics();
         ragdoll.setGravity(new Vector3f());
         ragdoll.setMaxFixedStepsPerUpdate(3);
-        MmdRagdoll.Body body = ragdoll.bodies().getFirst();
+        SkeletonRagdoll.Body body = ragdoll.bodies().getFirst();
         body.setLinearVelocity(new Vector3f(1f, 0f, 0f));
 
         ragdoll.step(10f / 120f);
@@ -271,8 +271,8 @@ class MmdRagdollTest {
 
     @Test
     void exposesBodyLookupAndWorldSpaceImpulseControls() {
-        MmdRagdoll ragdoll = freeBodyInstance(0f).enablePhysics();
-        MmdRagdoll.Body body = ragdoll.bodies().getFirst();
+        SkeletonRagdoll ragdoll = freeBodyInstance(0f).enablePhysics();
+        SkeletonRagdoll.Body body = ragdoll.bodies().getFirst();
 
         assertEquals(body, ragdoll.body(0).orElseThrow());
         assertEquals(body, ragdoll.body("root").orElseThrow());
@@ -290,9 +290,9 @@ class MmdRagdollTest {
 
     @Test
     void exposesNativeContinuousForceTorqueAndGravityScaleControls() {
-        MmdRagdoll ragdoll = freeBodyInstance(0f).enablePhysics();
+        SkeletonRagdoll ragdoll = freeBodyInstance(0f).enablePhysics();
         ragdoll.setGravity(new Vector3f());
-        MmdRagdoll.Body body = ragdoll.bodies().getFirst();
+        SkeletonRagdoll.Body body = ragdoll.bodies().getFirst();
 
         assertTrue(ragdoll.setGravityScale(body, 0.25f));
         assertEquals(0.25f, ragdoll.gravityScale(body), 1e-6f);
@@ -307,9 +307,9 @@ class MmdRagdollTest {
     @Test
     void activeRagdollModuleDrivesBox3dTowardThePostIkAnimationPose() {
         ModelInstance instance = freeBodyInstance(0f);
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f());
-        MmdRagdoll.Body body = ragdoll.bodies().getFirst();
+        SkeletonRagdoll.Body body = ragdoll.bodies().getFirst();
         instance.getTickLoop().addPostIk("active",
                 new ActiveRagdollModule(4f, 1f, 1000f, 1000f));
         instance.getSkeletonInstance().offset("root", new Vector3f(1f, 0f, 0f));
@@ -322,7 +322,7 @@ class MmdRagdollTest {
 
     @Test
     void disabledSleepingNeverFreezesAQuietSupportedIsland() {
-        MmdRagdoll ragdoll = freeBodyInstance(0f).enablePhysics();
+        SkeletonRagdoll ragdoll = freeBodyInstance(0f).enablePhysics();
         ragdoll.setGravity(new Vector3f());
         ragdoll.addGroundPlane(0f, 0.8f, 0f);
         ragdoll.setSleepingEnabled(false);
@@ -336,11 +336,11 @@ class MmdRagdollTest {
     @Test
     void enforcesTranslationAndRotationLimitsAsHardConstraints() {
         ModelInstance instance = instance(new Vector3f(1f));
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f());
         ragdoll.setSolverIterations(16);
 
-        MmdRagdoll.Body dynamic = ragdoll.bodies().get(1);
+        SkeletonRagdoll.Body dynamic = ragdoll.bodies().get(1);
         dynamic.teleport(new Vector3f(2f, -1f, 0.8f),
                 new Quaternionf().rotationXYZ(0.9f, -0.7f, 0.6f));
         for (int step = 0; step < 120; step++) ragdoll.step(1f / 120f);
@@ -354,7 +354,7 @@ class MmdRagdollTest {
     @Test
     void scalesBodiesAndLinearJointLimitsWithTheLoadedModel() {
         ModelInstance instance = instance(new Vector3f(0.5f));
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f());
         assertEquals(new Vector3f(0.5f), ragdoll.bodies().getFirst().shapeSize());
 
@@ -367,9 +367,9 @@ class MmdRagdollTest {
     @Test
     void modeTwoSimulatesTheBodyButPreservesAnimatedBonePosition() {
         ModelInstance instance = instance(new Vector3f(1f), 2);
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f(0f, -20f, 0f));
-        MmdRagdoll.Body body = ragdoll.bodies().get(1);
+        SkeletonRagdoll.Body body = ragdoll.bodies().get(1);
         body.setLinearVelocity(new Vector3f(0f, 1f, 0f));
         body.setAngularVelocity(new Vector3f(0f, 0f, 2f));
         ragdoll.step(1f / 60f);
@@ -403,9 +403,9 @@ class MmdRagdollTest {
                 new lib.kasuga.rendering.models.uml.structure.basic.Mesh[0], bones, skeleton,
                 new MaterialSet(List.of(), List.of()), MeshMode.TRIANGLES, data, null);
         ModelInstance instance = new ModelInstance(model, null, null, null, null, null);
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f());
-        for (MmdRagdoll.Body body : ragdoll.bodies()) {
+        for (SkeletonRagdoll.Body body : ragdoll.bodies()) {
             body.teleport(body.position().add(0f, 3f, 0f), body.rotation());
         }
         ragdoll.step(1f / 120f);
@@ -421,7 +421,7 @@ class MmdRagdollTest {
     @Test
     void dynamicBodyMotionIsWrittenBackToItsBone() {
         ModelInstance instance = instance(new Vector3f(1f));
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f(0f, -20f, 0f));
         Bone child = instance.getModel().getSkeleton().getBoneMap().get("child");
         float initialY = instance.getSkeletonInstance().getAbsoluteTransforms().get(child).getPosition().y;
@@ -436,7 +436,7 @@ class MmdRagdollTest {
     @Test
     void completedPhysicsPoseIsExposedForUploadWithoutSecondHierarchyEvaluation() {
         ModelInstance instance = instance(new Vector3f(1f));
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f(0f, -20f, 0f));
 
         ragdoll.step(1f / 20f);
@@ -453,11 +453,11 @@ class MmdRagdollTest {
     @Test
     void explicitProfilePromotesPrimaryBodiesAndBuildsRegisteredTopology() {
         ModelInstance instance = instance(new Vector3f(1f));
-        MmdRagdoll.Profile profile = MmdRagdoll.Profile.of(
-                new MmdRagdoll.Registration(0, MmdRagdoll.BodyRole.PELVIS),
-                new MmdRagdoll.Registration(1, 0, MmdRagdoll.BodyRole.SPINE));
+        SkeletonRagdoll.Profile profile = SkeletonRagdoll.Profile.of(
+                new SkeletonRagdoll.Registration(0, SkeletonRagdoll.BodyRole.PELVIS),
+                new SkeletonRagdoll.Registration(1, 0, SkeletonRagdoll.BodyRole.SPINE));
 
-        MmdRagdoll ragdoll = instance.enablePhysics(profile);
+        SkeletonRagdoll ragdoll = instance.enablePhysics(profile);
 
         assertEquals(2, ragdoll.bodies().size());
         assertEquals(1, ragdoll.joints().size());
@@ -472,18 +472,18 @@ class MmdRagdollTest {
     @Test
     void pmxProfileCanRetainAuthoredSecondaryBodyChains() {
         ModelInstance instance = instance(new Vector3f(1f));
-        MmdRagdoll.Profile profile = MmdRagdoll.Profile.of(
-                new MmdRagdoll.Registration(0, MmdRagdoll.BodyRole.PELVIS))
+        SkeletonRagdoll.Profile profile = SkeletonRagdoll.Profile.of(
+                new SkeletonRagdoll.Registration(0, SkeletonRagdoll.BodyRole.PELVIS))
                 .withSecondaryBodies();
 
-        MmdRagdoll ragdoll = instance.enablePhysics(profile);
+        SkeletonRagdoll ragdoll = instance.enablePhysics(profile);
 
         assertTrue(ragdoll.profile().includeSecondaryBodies());
         assertEquals(2, ragdoll.bodies().size(),
                 "the unregistered authored child must remain as secondary motion");
         assertEquals(1, ragdoll.joints().size(),
                 "an authored primary-to-secondary joint must be retained");
-        assertTrue(((MmdRagdoll.Body) ragdoll.joints().getFirst().bodyA()).secondaryAnchorBody(),
+        assertTrue(((SkeletonRagdoll.Body) ragdoll.joints().getFirst().bodyA()).secondaryAnchorBody(),
                 "secondary chains must use a one-way kinematic primary anchor");
         assertEquals(ragdoll.body(1).orElseThrow(), ragdoll.joints().getFirst().bodyB());
         assertEquals(new Vector3f(1f), ragdoll.body(1).orElseThrow().shapeSize(),
@@ -493,9 +493,9 @@ class MmdRagdollTest {
     @Test
     void profileFreeFallIsNotSlowedByStabilizationDamping() {
         ModelInstance instance = instance(new Vector3f(1f));
-        MmdRagdoll ragdoll = instance.enablePhysics(MmdRagdoll.Profile.of(
-                new MmdRagdoll.Registration(0, MmdRagdoll.BodyRole.PELVIS),
-                new MmdRagdoll.Registration(1, 0, MmdRagdoll.BodyRole.SPINE)));
+        SkeletonRagdoll ragdoll = instance.enablePhysics(SkeletonRagdoll.Profile.of(
+                new SkeletonRagdoll.Registration(0, SkeletonRagdoll.BodyRole.PELVIS),
+                new SkeletonRagdoll.Registration(1, 0, SkeletonRagdoll.BodyRole.SPINE)));
         ragdoll.setCollisionsEnabled(false);
         ragdoll.setGravity(new Vector3f(0f, -9.80665f, 0f));
         float startY = ragdoll.bodies().getFirst().position().y;
@@ -519,13 +519,13 @@ class MmdRagdollTest {
     @Test
     void profileUsesSwingTwistLimitsWithoutEulerFlipping() {
         ModelInstance instance = instance(new Vector3f(1f));
-        MmdRagdoll ragdoll = instance.enablePhysics(MmdRagdoll.Profile.of(
-                new MmdRagdoll.Registration(0, MmdRagdoll.BodyRole.PELVIS),
-                new MmdRagdoll.Registration(1, 0, MmdRagdoll.BodyRole.SPINE)));
+        SkeletonRagdoll ragdoll = instance.enablePhysics(SkeletonRagdoll.Profile.of(
+                new SkeletonRagdoll.Registration(0, SkeletonRagdoll.BodyRole.PELVIS),
+                new SkeletonRagdoll.Registration(1, 0, SkeletonRagdoll.BodyRole.SPINE)));
         ragdoll.setGravity(new Vector3f());
         ragdoll.setCollisionsEnabled(false);
         ragdoll.setSolverIterations(24);
-        MmdRagdoll.Body child = ragdoll.bodies().get(1);
+        SkeletonRagdoll.Body child = ragdoll.bodies().get(1);
         child.teleport(child.position(), new Quaternionf(child.rotation())
                 .rotateX(2.2f).rotateY(1.4f));
         float initialViolation = ragdoll.joints().getFirst().angularLimitViolation();
@@ -562,12 +562,12 @@ class MmdRagdollTest {
                 new lib.kasuga.rendering.models.uml.structure.basic.Mesh[0], bones, skeleton,
                 new MaterialSet(List.of(), List.of()), MeshMode.TRIANGLES, data, null);
         ModelInstance instance = new ModelInstance(model, null, null, null, null, null);
-        MmdRagdoll.Profile profile = MmdRagdoll.Profile.of(
-                new MmdRagdoll.Registration(0, MmdRagdoll.BodyRole.PELVIS),
-                new MmdRagdoll.Registration(1, 0, MmdRagdoll.BodyRole.SPINE));
-        MmdRagdoll ragdoll = instance.enablePhysics(profile);
+        SkeletonRagdoll.Profile profile = SkeletonRagdoll.Profile.of(
+                new SkeletonRagdoll.Registration(0, SkeletonRagdoll.BodyRole.PELVIS),
+                new SkeletonRagdoll.Registration(1, 0, SkeletonRagdoll.BodyRole.SPINE));
+        SkeletonRagdoll ragdoll = instance.enablePhysics(profile);
         ragdoll.setGravity(new Vector3f());
-        for (MmdRagdoll.Body body : ragdoll.bodies()) {
+        for (SkeletonRagdoll.Body body : ragdoll.bodies()) {
             body.teleport(body.position().add(0f, 3f, 0f), body.rotation());
         }
 
@@ -616,11 +616,11 @@ class MmdRagdollTest {
                 new lib.kasuga.rendering.models.uml.structure.basic.Mesh[0], bones, skeleton,
                 new MaterialSet(List.of(), List.of()), MeshMode.TRIANGLES, data, null);
         ModelInstance instance = new ModelInstance(model, null, null, null, null, null);
-        MmdRagdoll ragdoll = instance.enablePhysics(MmdRagdoll.Profile.of(
-                new MmdRagdoll.Registration(0, MmdRagdoll.BodyRole.PELVIS),
-                new MmdRagdoll.Registration(1, 0, MmdRagdoll.BodyRole.SPINE)));
+        SkeletonRagdoll ragdoll = instance.enablePhysics(SkeletonRagdoll.Profile.of(
+                new SkeletonRagdoll.Registration(0, SkeletonRagdoll.BodyRole.PELVIS),
+                new SkeletonRagdoll.Registration(1, 0, SkeletonRagdoll.BodyRole.SPINE)));
         ragdoll.setGravity(new Vector3f());
-        for (MmdRagdoll.Body body : ragdoll.bodies()) {
+        for (SkeletonRagdoll.Body body : ragdoll.bodies()) {
             body.teleport(body.position().add(0f, 3f, 0f), body.rotation());
         }
         ragdoll.bodies().getFirst().setAngularVelocity(new Vector3f(0.6f, -0.4f, 1.8f));
@@ -640,7 +640,7 @@ class MmdRagdollTest {
     @Test
     void raycastDragsThePickedLocalPointWithoutTeleportingTheBody() {
         ModelInstance instance = freeBodyInstance(0f);
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f());
         ragdoll.setCollisionsEnabled(false);
 
@@ -652,7 +652,7 @@ class MmdRagdollTest {
 
         for (int step = 0; step < 60; step++) ragdoll.step(1f / 120f);
 
-        Vector3f pickedPoint = ((MmdRagdoll.Body) hit.body()).toWorldPoint(new Vector3f(0f, 0f, -1f));
+        Vector3f pickedPoint = ((SkeletonRagdoll.Body) hit.body()).toWorldPoint(new Vector3f(0f, 0f, -1f));
         assertTrue(pickedPoint.x > 0.8f, "the picked surface point must follow the drag target");
         assertEquals(-1f, pickedPoint.z, 0.2f);
         assertTrue(ragdoll.dragging());
@@ -663,10 +663,10 @@ class MmdRagdollTest {
     @Test
     void activeDragConstraintNeverFreezesTheSimulatedIsland() {
         ModelInstance instance = freeBodyInstance(0f);
-        MmdRagdoll ragdoll = instance.enablePhysics();
+        SkeletonRagdoll ragdoll = instance.enablePhysics();
         ragdoll.setGravity(new Vector3f());
         ragdoll.setCollisionsEnabled(false);
-        MmdRagdoll.Body body = ragdoll.bodies().getFirst();
+        SkeletonRagdoll.Body body = ragdoll.bodies().getFirst();
         Vector3f target = body.position();
 
         assertTrue(ragdoll.beginDrag(body, target));
@@ -692,11 +692,11 @@ class MmdRagdollTest {
 
     @Test
     void stationaryDragDoesNotDampUnrelatedBodies() {
-        MmdRagdoll ragdoll = twoFreeBodyInstance().enablePhysics();
+        SkeletonRagdoll ragdoll = twoFreeBodyInstance().enablePhysics();
         ragdoll.setGravity(new Vector3f());
         ragdoll.setCollisionsEnabled(false);
-        MmdRagdoll.Body held = ragdoll.bodies().get(0);
-        MmdRagdoll.Body unrelated = ragdoll.bodies().get(1);
+        SkeletonRagdoll.Body held = ragdoll.bodies().get(0);
+        SkeletonRagdoll.Body unrelated = ragdoll.bodies().get(1);
         unrelated.setLinearVelocity(new Vector3f(1f, 0f, 0f));
         unrelated.setAngularVelocity(new Vector3f(0f, 1f, 0f));
         assertTrue(ragdoll.beginDrag(held, held.position()));

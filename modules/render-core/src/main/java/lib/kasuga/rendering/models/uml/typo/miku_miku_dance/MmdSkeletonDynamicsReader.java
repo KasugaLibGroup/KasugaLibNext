@@ -31,7 +31,28 @@ public final class MmdSkeletonDynamicsReader implements SkeletonDynamicsReader<M
                         joint.positionMin(), joint.positionMax(), joint.rotationMin(), joint.rotationMax(),
                         joint.positionSpring(), joint.rotationSpring())).toList();
         builder.physics(new Physics(bodies, joints, data.modelScale(), false, false, 1f, Set.of()));
+        readBoneConstraints(builder);
         readIk(builder);
+    }
+
+    /** Converts file-index references and flags into direct, format-neutral bone constraints. */
+    public static void readBoneConstraints(SkeletonDynamicsBuilder builder) {
+        List<Bone> bones = pmxBones(builder.skeleton());
+        for (Bone target : bones) {
+            PmxBone definition = (PmxBone) target.getBoneData();
+            TransformInheritance inheritance = null;
+            if (definition.inherit != null) {
+                Bone source = bone(bones, definition.inherit.parentIndex().intValue());
+                if (source != null && source != target
+                        && (definition.flags.inheritParentTranslation || definition.flags.inheritParentRotation)) {
+                    inheritance = new TransformInheritance(source, definition.inherit.weight(),
+                            definition.flags.inheritParentTranslation, definition.flags.inheritParentRotation);
+                }
+            }
+            Vector3f axis = definition.flags.isAxisFixed && definition.fixedAxis != null
+                    && definition.fixedAxis.lengthSquared() >= 1e-8f ? definition.fixedAxis : null;
+            if (inheritance != null || axis != null) builder.pose(new BonePoseConstraint(target, inheritance, axis));
+        }
     }
 
     /** Also usable when an application supplies PMX bones without a complete model tail. */

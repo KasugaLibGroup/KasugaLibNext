@@ -1,7 +1,7 @@
 package lib.kasuga.rendering.models.uml.dynamic;
 
 import lib.kasuga.rendering.models.uml.loaders.SkeletonDynamicsBuilder;
-import lib.kasuga.rendering.models.uml.dynamic.physics.MmdRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.uml.structure.Model;
 import lib.kasuga.rendering.models.uml.structure.basic.Mesh;
@@ -22,6 +22,69 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SkeletonDynamicsTest {
+    @Test
+    void assemblyReusesSharedIkAndPreservesAClothingSuppliedDiamond() {
+        Skeleton body = diamond(false), cloth = diamond(false);
+        var dynamics = body.getDynamics();
+        body.setDynamics(new lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics(
+                dynamics.physics(), dynamics.ikChains(), List.of()));
+        var outfit = new lib.kasuga.rendering.models.uml.loaders.assembly.ModelAssemblyBuilder("body", model(body), 0)
+                .part("cloth", model(cloth), 0).assemble();
+        var output = outfit.model().getSkeleton().getDynamics();
+        assertEquals(2, output.ikChains().size());
+        assertEquals(1, output.diamonds().size());
+        assertEquals("cloth/diamond", output.diamonds().getFirst().name());
+        ModelInstance instance = new ModelInstance(outfit.model(), null, null, null, null, null);
+        instance.updateImmediate();
+        assertTrue(instance.getSkeletonInstance().ikSolveResults().get("cloth/diamond").satisfied());
+        assertEquals(0, position(instance, outfit.model().getSkeleton().getBoneMap().get("a-tip"))
+                .distance(position(instance, outfit.model().getSkeleton().getBoneMap().get("b-tip"))), 1e-4f);
+    }
+
+    @Test
+    void plainBonesInheritCurrentPoseAcrossBranchesWithoutTraversalOrderDependence() {
+        Bone root = bone("root", 0, 0, 0), source = bone("source", 0, 0, 0);
+        Bone follower = bone("follower", 0, 0, 0), tip = bone("tip", 1, 0, 0);
+        connect(root, follower, source); connect(follower, tip); // Follower precedes its source.
+        Skeleton skeleton = new Skeleton(new Bone[]{root, follower, source, tip}, root,
+                new Anchor[0], null, new Transform());
+        Vector3f axis = new Vector3f(1, 0, 0);
+        new SkeletonDynamicsBuilder(skeleton).pose(new BonePoseConstraint(follower,
+                new TransformInheritance(source, 0.5f, true, true), axis)).attach();
+        axis.set(0, 0, 1); // Definitions copy mutable authoring inputs.
+        ModelInstance instance = new ModelInstance(model(skeleton), null, null, null, null, null);
+        instance.getSkeletonInstance().transform(source,
+                new Transform().translate(4, 0, 0).mul(new Quaternionf().rotateX(1)));
+        instance.updateImmediate();
+        assertEquals(2, position(instance, follower).x, 1e-5);
+        assertEquals(0.5f, instance.getSkeletonInstance().getEvaluatedTransforms().get(follower)
+                .getRotation().angle(), 1e-5);
+        assertTrue(instance.getSkeletonInstance().isLastFullUpdate());
+        instance.getSkeletonInstance().transform(source, new Transform().translate(8, 0, 0));
+        instance.updateImmediate();
+        assertEquals(4, position(instance, follower).x, 1e-5);
+        assertEquals(5, position(instance, tip).x, 1e-5);
+    }
+
+    @Test
+    void inheritanceRejectsCyclesAndForeignReferencesAndFixedAxisHandlesHalfTurn() {
+        Bone root = bone("root", 0, 0, 0), child = bone("child", 1, 0, 0);
+        connect(root, child);
+        Skeleton skeleton = new Skeleton(new Bone[]{root, child}, root, new Anchor[0], null, new Transform());
+        assertThrows(IllegalArgumentException.class, () -> new SkeletonDynamicsBuilder(skeleton)
+                .pose(new BonePoseConstraint(child, new TransformInheritance(bone("foreign", 0, 0, 0),
+                        1, true, false), null)).build());
+        assertThrows(IllegalArgumentException.class, () -> new SkeletonDynamicsBuilder(skeleton)
+                .pose(new BonePoseConstraint(root, new TransformInheritance(child, 1, true, false), null))
+                .pose(new BonePoseConstraint(child, new TransformInheritance(root, 1, true, false), null)).build());
+        new SkeletonDynamicsBuilder(skeleton).pose(new BonePoseConstraint(child, null, new Vector3f(1, 0, 0))).attach();
+        ModelInstance instance = new ModelInstance(model(skeleton), null, null, null, null, null);
+        instance.getSkeletonInstance().transform(child, new Transform().mul(new Quaternionf().rotateY((float) Math.PI)));
+        instance.updateImmediate();
+        assertTrue(instance.getSkeletonInstance().getEvaluatedTransforms().get(child).transform().isFinite());
+        assertEquals(0, instance.getSkeletonInstance().getEvaluatedTransforms().get(child).getRotation().angle(), 1e-5);
+    }
+
     @Test
     void alreadySatisfiedPmxStyleKneeKeepsTheNeutralPose() {
         Bone root = bone("root", 0, 0, 0), base = bone("base", 0, 0, 0);
@@ -167,11 +230,11 @@ class SkeletonDynamicsTest {
                 new RigidBody(bone.getName(), "", bone, 0, 0, RigidBody.CAPSULE, new Vector3f(0.1f),
                         new Vector3f(), new Vector3f(), 1, 0, 0, 0, 0.5f, RigidBody.DYNAMIC)).toList();
         new SkeletonDynamicsBuilder(skeleton).physics(bodies, List.of()).attach();
-        var root = new MmdRagdoll.Registration(0, MmdRagdoll.BodyRole.PELVIS);
-        var leftBody = new MmdRagdoll.Registration(1, 0, MmdRagdoll.BodyRole.UPPER_LEG);
-        var rightBody = new MmdRagdoll.Registration(2, 0, MmdRagdoll.BodyRole.UPPER_LEG);
-        for (var profile : List.of(MmdRagdoll.Profile.of(root, leftBody, rightBody),
-                MmdRagdoll.Profile.of(rightBody, leftBody, root))) {
+        var root = new SkeletonRagdoll.Registration(0, SkeletonRagdoll.BodyRole.PELVIS);
+        var leftBody = new SkeletonRagdoll.Registration(1, 0, SkeletonRagdoll.BodyRole.UPPER_LEG);
+        var rightBody = new SkeletonRagdoll.Registration(2, 0, SkeletonRagdoll.BodyRole.UPPER_LEG);
+        for (var profile : List.of(SkeletonRagdoll.Profile.of(root, leftBody, rightBody),
+                SkeletonRagdoll.Profile.of(rightBody, leftBody, root))) {
             ModelInstance instance = new ModelInstance(model(skeleton), null, null, null, null, null);
             try (var ragdoll = instance.enablePhysics(profile)) {
                 assertEquals(0, ragdoll.body(0).orElseThrow().position().distance(new Vector3f(0.5f, -0.5f, 0)), 1e-6f);

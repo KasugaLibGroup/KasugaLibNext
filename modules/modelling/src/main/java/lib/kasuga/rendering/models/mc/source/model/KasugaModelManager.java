@@ -5,6 +5,11 @@ import lib.kasuga.client.loading.LoadingIndicator;
 import com.google.gson.JsonObject;
 import lib.kasuga.rendering.models.mc.source.texture.KasugaTextureManager;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPublicationBatch;
+import lib.kasuga.rendering.models.mc.registry.PipelineRegistry;
+import lib.kasuga.rendering.models.mc.source.model.assembly.AssemblyResourceDefinitions;
+import lib.kasuga.rendering.models.mc.api.McModelAssemblies;
+import lib.kasuga.rendering.models.uml.loaders.assembly.ModelAssemblyDefinition;
 import lib.kasuga.rendering.models.uml.loaders.sources.SourceManager;
 import lib.kasuga.rendering.models.uml.loaders.sources.SourceType;
 import lombok.NonNull;
@@ -27,6 +32,7 @@ public class KasugaModelManager implements PreparableReloadListener, AutoCloseab
 
     private ModelScanner modelScanner;
     private PipeLineRouter pipeLineRouter;
+    private final ModelPublicationBatch<Object> publications = new ModelPublicationBatch<>();
 
     public KasugaModelManager(Collection<KasugaTextureManager> textureManagers) {
         this.textureManagers = textureManagers;
@@ -71,12 +77,14 @@ public class KasugaModelManager implements PreparableReloadListener, AutoCloseab
                                           @NonNull Executor gameExecutor) {
         Map<ModelPipeLine, Map<Object, lib.kasuga.rendering.models.uml.structure.Model>> preparedModels =
                 new IdentityHashMap<>();
+        Map<ResourceLocation, ModelAssemblyDefinition<McModelAssemblies.Reference>> preparedAssemblies = new HashMap<>();
         CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             LoadingIndicator.begin("Scanning model resources", 1);
             PbrUserConfig.reload(Minecraft.getInstance().gameDirectory.toPath().resolve("config"));
 
             modelScanner.setConfig(ModelProxyConfigLoader.loadConfig(resourceManager));
             List<ResourceLocation> scanned = modelScanner.scan(resourceManager);
+            preparedAssemblies.putAll(AssemblyResourceDefinitions.load(resourceManager));
 
             Map<ModelPipeLine, List<ResourceLocation>> routed = pipeLineRouter.route(scanned);
             int modelCount = routed.values().stream().mapToInt(List::size).sum();
@@ -103,7 +111,17 @@ public class KasugaModelManager implements PreparableReloadListener, AutoCloseab
         });
         return allTexturesFuture.thenRunAsync(() -> {
             LoadingIndicator.label("Publishing models");
-            preparedModels.forEach(ModelPipeLine::publishModels);
+            RuntimeException failure = null;
+            var assemblies = PipelineRegistry.assemblies();
+            if (assemblies != null) {
+                try { assemblies.replaceResourceDefinitions(preparedAssemblies); }
+                catch (RuntimeException cleanup) { failure = cleanup; }
+            }
+            try { publications.publish((Map) preparedModels); }
+            catch (RuntimeException cleanup) {
+                if (failure == null) failure = cleanup; else failure.addSuppressed(cleanup);
+            }
+            if (failure != null) throw failure;
         }, gameExecutor).whenComplete((ignored, throwable) -> LoadingIndicator.complete());
     }
 
