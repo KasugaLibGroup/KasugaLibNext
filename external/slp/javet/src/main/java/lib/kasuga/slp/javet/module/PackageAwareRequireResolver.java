@@ -7,6 +7,7 @@ import lib.kasuga.scripting.module.ResolvedScript;
 import lib.kasuga.scripting.module.ScriptModuleHandle;
 import lib.kasuga.slp.javet.JavetScriptEngine;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -17,7 +18,10 @@ import java.util.List;
  *
  * <p>Relative resolution ({@code ./x}, {@code ../x}) is owner-scoped: the engine tracks which
  * {@link ResolvedPackage} each loaded module/entry belongs to, so {@code ./utils} from
- * {@code scripts/index.js} resolves against <em>that</em> package's resource root. For the entry's first
+ * {@code scripts/index.js} resolves against <em>that</em> package's resource root. The path is
+ * normalized segment-by-segment ({@code .} and empty segments are dropped, {@code ..} pops the
+ * previous segment), and a {@code ..} that would climb above the owner package root is rejected
+ * (resolve returns {@code null}) — a relative require can never escape its package. For the entry's first
  * frame (no prior load) the owner comes from the 3-arg {@code executeEntry}; if still unknown it falls back
  * to scanning all packages — correct for the common single-package-engine case, ambiguous if two packages
  * each have a file at the same relative path.
@@ -51,13 +55,35 @@ public final class PackageAwareRequireResolver implements RequireResolver {
 
         // In-package relative: require("./utils") / require("../utils").
         if (moduleName.startsWith("./") || moduleName.startsWith("../")) {
+            // Normalize the path relative to the requiring file's directory. `..` is legal only while it
+            // stays inside the owner package: popping past the root means the require escapes the package
+            // and is rejected (same "not found" contract as every other miss in this method).
+            List<String> segments = new ArrayList<>();
             String dir = fromSourcePath != null && fromSourcePath.contains("/")
                     ? fromSourcePath.substring(0, fromSourcePath.lastIndexOf('/'))
                     : "";
-            String target = dir.isEmpty()
-                    ? moduleName.substring(2)
-                    : dir + "/" + moduleName.substring(2);
-            if (target.isEmpty()) {
+            if (!dir.isEmpty()) {
+                for (String part : dir.split("/")) {
+                    if (!part.isEmpty() && !part.equals(".")) {
+                        segments.add(part);
+                    }
+                }
+            }
+            for (String part : moduleName.split("/")) {
+                if (part.isEmpty() || part.equals(".")) {
+                    continue;
+                }
+                if (part.equals("..")) {
+                    if (segments.isEmpty()) {
+                        return null; // escapes the package root
+                    }
+                    segments.remove(segments.size() - 1);
+                } else {
+                    segments.add(part);
+                }
+            }
+            segments = List.copyOf(segments);
+            if (segments.isEmpty()) {
                 // require("./") → owning package root (index.js).
                 ResolvedPackage owner = engine.getOwningPackage(fromSourcePath);
                 if (owner != null) {
@@ -68,7 +94,6 @@ public final class PackageAwareRequireResolver implements RequireResolver {
                 }
                 return null;
             }
-            List<String> segments = List.of(target.split("/"));
 
             // Owner-scoped first (the common, unambiguous path).
             ResolvedPackage owner = engine.getOwningPackage(fromSourcePath);

@@ -14,8 +14,11 @@ import lib.kasuga.slp.javet.module.PackageAwareRequireResolver;
 import lib.kasuga.slp.javet.module.RequireResolver;
 import lib.kasuga.slp.javet.value.JavetValuePrimitive;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -273,5 +276,138 @@ public class ModuleResolutionTest {
     @Test
     public void shouldResolveJsExtension() {
         assertEquals("js", resolver.getExtension());
+    }
+
+    // --- relative-path normalization (owner root must not be escapable) ---
+
+    @Test
+    public void shouldRejectRelativePathsEscapingPackageRoot() throws URISyntaxException, ScriptException {
+        loadTestPackage();
+        var requireFunc = createRequireResolver();
+
+        // A single `..` from the package entry already leaves the package root: it must not resolve (and in
+        // particular must not silently collapse to the sibling `utils.js` as the un-normalized path did).
+        assertNull(requireFunc.resolve("../utils", "index.js"));
+        assertNull(requireFunc.resolve("../../../../utils", "index.js"));
+        assertNull(requireFunc.resolve("../outside", "sub/deep.js"));
+    }
+
+    @Test
+    public void shouldResolveRelativePathsThatStayInsidePackage() throws URISyntaxException, ScriptException {
+        loadTestPackage();
+        var requireFunc = createRequireResolver();
+
+        // Sibling in the same directory.
+        ScriptModuleHandle sameDir = requireFunc.resolve("./utils", "index.js");
+        assertNotNull(sameDir, "./utils from the package entry must resolve within the package");
+        assertEquals("utils.js", sameDir.getSourcePath());
+
+        // Up one level from a subdirectory is legal while it stays inside the package.
+        ScriptModuleHandle upOne = requireFunc.resolve("../utils", "sub/deep.js");
+        assertNotNull(upOne, "../utils from sub/deep.js must resolve to the package's utils.js");
+        assertEquals("utils.js", upOne.getSourcePath());
+    }
+
+    @Test
+    public void shouldResolveRelativeRootToPackageEntry() throws URISyntaxException, ScriptException {
+        ResolvedPackage pkg = loadTestPackage();
+        // Seed the owner mapping the way a real entry frame does before its first relative require.
+        engine.loadModule(resolver.locateScript(pkg, List.of("index")));
+
+        ScriptModuleHandle root = createRequireResolver().resolve("./", "index.js");
+        assertNotNull(root, "./ must resolve to the owning package's root entry");
+        assertEquals("index.js", root.getSourcePath());
+    }
+
+    // --- entry / main path normalization (package.toml `entry.*` and `main` must not escape the root) ---
+
+    /**
+     * Builds a throwaway package on the real filesystem: the entry/main paths never go through the
+     * require resolver, so proving they cannot read outside the package needs files that really sit
+     * <em>outside</em> the pack root — without committing new fixtures under {@code src/test/resources}.
+     *
+     * <pre>
+     * &lt;root&gt;/index.js        ← outside the pack root, reachable via "../.."
+     * &lt;root&gt;/evil.js         ← outside the pack root, reachable via "../../evil"
+     * &lt;root&gt;/pkg/evil.js     ← outside the pack root, reachable via "../evil"
+     * &lt;root&gt;/pkg/scripts/    ← the pack root (packRelativeRoot = "scripts")
+     *     index.js, utils.js, sub/utils.js, sub/deep.js
+     * </pre>
+     */
+    private ResolvedPackage buildTempPackage(Path root, String main) throws IOException {
+        Path packPath = root.resolve("pkg");
+        Path packRoot = packPath.resolve("scripts");
+        Files.createDirectories(packRoot.resolve("sub"));
+        Files.writeString(root.resolve("index.js"), "module.exports = { escaped: true };\n");
+        Files.writeString(root.resolve("evil.js"), "module.exports = { escaped: true };\n");
+        Files.writeString(packPath.resolve("evil.js"), "module.exports = { escaped: true };\n");
+        Files.writeString(packRoot.resolve("index.js"), "module.exports = { ok: true };\n");
+        Files.writeString(packRoot.resolve("utils.js"), "module.exports = { ok: true };\n");
+        Files.writeString(packRoot.resolve("sub").resolve("utils.js"), "module.exports = { ok: true };\n");
+        Files.writeString(packRoot.resolve("sub").resolve("deep.js"), "module.exports = { ok: true };\n");
+
+        PackageInfo info = new PackageInfo(
+            "@test/temp-pack", "javascript", null, "1.0.0", main,
+            List.of(),
+            new PackageInfo.EntryConfig(List.of(), List.of(), List.of())
+        );
+        return new ResolvedPackage(
+            info,
+            new test.kasuga.slp.javet.TestPackResources(packPath, "temp_pack"),
+            "scripts",
+            engineType
+        );
+    }
+
+    @Test
+    public void shouldRejectSingleSegmentEntryPathEscapingPackageRoot(@TempDir Path tempRoot) throws IOException {
+        ResolvedPackage pkg = buildTempPackage(tempRoot, "index");
+
+        // The main vector: `[entry] common = ["../../evil"]` reaches locateScript as ONE segment that
+        // itself contains slashes, so a per-segment `equals("..")` check alone would miss it. Both
+        // candidates ("../../evil.js", "../../evil/index.js") are outside the pack root and
+        // <tempRoot>/evil.js really exists — un-normalized, this resolved to that out-of-package file.
+        assertNull(resolver.locateScript(pkg, List.of("../../evil")));
+        assertNull(resolver.locateScript(pkg, List.of("../..")));
+        assertNull(resolver.locateScript(pkg, List.of("/../../evil")));
+    }
+
+    @Test
+    public void shouldRejectMultiSegmentEntryPathEscapingPackageRoot(@TempDir Path tempRoot) throws IOException {
+        ResolvedPackage pkg = buildTempPackage(tempRoot, "index");
+
+        // Popping past the root is rejected even when the `..` arrive as separate segments; the targets
+        // below exist on disk, just outside the pack root.
+        assertNull(resolver.locateScript(pkg, List.of("..", "evil")));
+        assertNull(resolver.locateScript(pkg, List.of("..", "..")));
+        assertNull(resolver.locateScript(pkg, List.of("sub", "..", "..", "evil")));
+    }
+
+    @Test
+    public void shouldRejectMainEntryEscapingPackageRoot(@TempDir Path tempRoot) throws IOException {
+        // `main` is read from package.toml and reaches locateScript as `locateScript(pkg, List.of())`.
+        ResolvedPackage pkg = buildTempPackage(tempRoot, "../../evil");
+        assertNull(resolver.locateScript(pkg, List.of()));
+    }
+
+    @Test
+    public void shouldResolveEntryPathsThatStayInsidePackage(@TempDir Path tempRoot) throws IOException {
+        ResolvedPackage pkg = buildTempPackage(tempRoot, "index");
+
+        assertEquals("sub/utils.js", resolver.locateScript(pkg, List.of("sub", "utils")).filePath());
+        assertEquals("sub/deep.js", resolver.locateScript(pkg, List.of("sub/deep")).filePath());
+        // Empty and `.` segments are dropped, in-bounds `..` still pops, and an absolute-style leading
+        // `/` is stripped rather than rejected as invalid input.
+        assertEquals("sub/utils.js", resolver.locateScript(pkg, List.of("sub", ".", "utils")).filePath());
+        assertEquals("utils.js", resolver.locateScript(pkg, List.of("sub", "..", "utils")).filePath());
+        assertEquals("sub/deep.js", resolver.locateScript(pkg, List.of("/sub/deep")).filePath());
+        // Collapsing back onto the package root keeps the "resolve main" semantics.
+        assertEquals("index.js", resolver.locateScript(pkg, List.of("sub", "..")).filePath());
+    }
+
+    @Test
+    public void shouldResolveMainEntryInsidePackage(@TempDir Path tempRoot) throws IOException {
+        assertEquals("index.js", resolver.locateScript(buildTempPackage(tempRoot, "index"), List.of()).filePath());
+        assertEquals("sub/deep.js", resolver.locateScript(buildTempPackage(tempRoot, "sub/deep"), List.of()).filePath());
     }
 }
