@@ -5,11 +5,15 @@ import lib.kasuga.formula.compute.data.Namespace;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Pose;
 import lib.kasuga.rendering.models.uml.math.QuaternionHelper;
+import lib.kasuga.rendering.models.uml.math.Transform;
+import org.joml.Matrix3f;
 import org.joml.Quaternionf;
+import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -117,5 +121,50 @@ class ClipSamplerFormulaTest {
         assertRotationEquals(rotation(atT0, "fan"), rotation(atT3, "fan"), "fan identical across time");
         assertRotationEquals(rotation(atT0, "cover"), rotation(atT3, "cover"), "cover identical across time");
         assertRotationEquals(rotation(atT0, "group"), rotation(atT3, "group"), "group identical across time");
+    }
+
+    // --- SCALE channel: blank axes must keep the identity scale 1 (A2) ---
+
+    private static AnimationClip scaleClip() {
+        return new AnimationClip(
+                Id.fromNamespaceAndPath("kasuga_lib", "scale_fsm"),
+                1f,
+                List.of(), List.of(), List.of(),
+                List.of(new AnimationClip.FunctionTrack("piston", AnimationClip.FunctionChannel.SCALE,
+                        "", "query.scale", ""))
+        );
+    }
+
+    /**
+     * A SCALE track driving only y must leave x/z at the identity scale 1. The old shared {@code 0f}
+     * fallback produced a (0, y, 0) scale, whose inverse-transpose normal matrix is non-finite
+     * (0⁻¹ = ±Inf ⇒ {@code 0.0 * Inf} = NaN), i.e. NaN normals on a bone that only meant to stretch.
+     */
+    @Test
+    void scaleBlankAxesKeepIdentityAndStayFinite() {
+        Namespace ns = new Namespace(Code.ROOT_NAMESPACE);
+        ClipSampler.INSTANCE.sample(scaleClip(), 0f, ns); // warm-up: registers query.scale in the namespace
+        ns.assign("query.scale", 1.5f);
+
+        Pose pose = ClipSampler.INSTANCE.sample(scaleClip(), 0f, ns);
+        Pose.Bone entry = pose.bones().get("piston");
+        assertNotNull(entry, "pose should carry bone 'piston'");
+        Transform transform = entry.transform();
+
+        Matrix3f normal = transform.normal();
+        float[] elements = {
+                normal.m00(), normal.m01(), normal.m02(),
+                normal.m10(), normal.m11(), normal.m12(),
+                normal.m20(), normal.m21(), normal.m22()
+        };
+        for (float element : elements) {
+            assertTrue(Float.isFinite(element),
+                    "normal matrix element must be finite for a blank-axis scale track, but was " + element);
+        }
+
+        Vector3f scale = transform.transform().getScale(new Vector3f());
+        assertEquals(1f, scale.x, 1e-5f, "blank x axis must stay at the identity scale");
+        assertEquals(1f, scale.z, 1e-5f, "blank z axis must stay at the identity scale");
+        assertEquals(1.5f, scale.y, 1e-5f, "y axis must carry the formula value");
     }
 }

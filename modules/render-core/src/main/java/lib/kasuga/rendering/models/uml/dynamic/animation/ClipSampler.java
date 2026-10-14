@@ -73,9 +73,12 @@ public final class ClipSampler implements AnimationSampler<AnimationClip> {
     }
 
     private static TransformDefinition sampleFunction(AnimationClip.FunctionTrack track, Namespace ns) {
-        float rx = eval(track.x(), 0f, ns);
-        float ry = eval(track.y(), 0f, ns);
-        float rz = eval(track.z(), 0f, ns);
+        // The identity fallback is per-channel: a blank axis (or a throwing formula) leaves that component
+        // untouched — 0 for rotate/translate, 1 for scale. Mirrors TransformDefinition.CODEC's scale default.
+        float identity = track.channel() == AnimationClip.FunctionChannel.SCALE ? 1f : 0f;
+        float rx = eval(track.x(), identity, ns);
+        float ry = eval(track.y(), identity, ns);
+        float rz = eval(track.z(), identity, ns);
         switch (track.channel()) {
             case ROTATE -> { return new TransformDefinition(Optional.empty(), Optional.of(new Vector3f(rx, ry, rz)), Optional.empty()); }
             case TRANSLATE -> { return new TransformDefinition(Optional.of(new Vector3f(rx, ry, rz)), Optional.empty(), Optional.empty()); }
