@@ -46,6 +46,10 @@ sourceSets {
     }
 }
 
+tasks.named('processContentTestingResources', ProcessResources) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 configurations {
     shadowLibrary
     implementation.extendsFrom shadowLibrary
@@ -109,6 +113,11 @@ neoForge {
             sourceSet(sourceSets.contentTesting)
         }
     }
+
+    unitTest {
+        enable()
+        testedMod = mods.named(mod_id)
+    }
 }
 
 configurations {
@@ -128,13 +137,18 @@ dependencies {
         exclude group : 'org.slf4j', module: 'slf4j-api'
     }
 
+    additionalRuntimeClasspath 'com.google.zxing:core:3.5.3'
+
     implementation project(":modules:inject")
 
     implementation project(":modules:utils")
 
+    testImplementation project(":modules:core")
+
     implementation("cc.tweaked:cc-tweaked-$minecraft_version-forge:$cct_version")
 
     annotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
+    contentTestingAnnotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
 
 
     implementation("com.simibubi.create:create-${minecraft_version}:${create_version}:slim") { transitive = false }
@@ -147,6 +161,7 @@ dependencies {
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.7.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation "net.neoforged:testframework:${project.neo_version}"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

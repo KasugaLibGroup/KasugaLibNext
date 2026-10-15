@@ -1,0 +1,7 @@
+{
+  "parent": "kasuga_lib:block/track/standard/obj_track",
+  "loader": "neoforge:obj",
+  "render_type": "minecraft:cutout_mipped",
+  "flip_v": true,
+  "model": "kasuga_lib:models/block/track/tieless/cross_d2_zo.obj"
+}
