@@ -3,7 +3,6 @@ package lib.kasuga.rendering.models.uml.backend.gpu.buf.vbo;
 import lib.kasuga.rendering.models.uml.backend.gpu.buf.GpuBuffer;
 import lombok.Getter;
 import org.lwjgl.opengl.GL15;
-import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
 
@@ -50,34 +49,11 @@ public class VBOBuffer extends GpuBuffer<VBOBuffer> {
             throw new IllegalArgumentException("Buffer size must be greater than zero.");
         }
 
-        final long oldSize = size;
-        if (!copyDataToNewBuffer || oldSize == 0) {
-            context.enter(this);
-
-            try {
-                GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, id);
-                GL15.glBufferData(GL15.GL_ARRAY_BUFFER, newSize, usage);
-            } finally {
-                context.exit(this);
-            }
-        } else {
-            int bytesToRead = (int) Math.min(oldSize, Integer.MAX_VALUE);
-            ByteBuffer tempBuffer = ByteBuffer.allocateDirect(bytesToRead);
-
-            context.enter(this);
-            try {
-                GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, id);
-                GL15.glGetBufferSubData(GL15.GL_ARRAY_BUFFER, 0, tempBuffer);
-                tempBuffer.flip();
-
-                GL15.glBufferData(GL15.GL_ARRAY_BUFFER, newSize, usage);
-                int copySize = (int) Math.min(newSize, oldSize);
-
-                GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, 0, tempBuffer.limit(copySize));
-                MemoryUtil.memFree(tempBuffer);
-            } finally {
-                context.exit(this);
-            }
+        context.enter(this);
+        try {
+            resizeStorage(GL15.GL_ARRAY_BUFFER, id, newSize, copyDataToNewBuffer);
+        } finally {
+            context.exit(this);
         }
     }
 
@@ -104,7 +80,7 @@ public class VBOBuffer extends GpuBuffer<VBOBuffer> {
         context.enter(this);
         try {
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, id);
-            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, data, usage);
+            GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, 0, data);
         } finally {
             context.exit(this);
         }

@@ -4,7 +4,6 @@ import org.joml.*;
 
 import java.lang.Math;
 import java.util.Objects;
-import java.util.Vector;
 
 public class Transform {
 
@@ -66,10 +65,14 @@ public class Transform {
         return this;
     }
 
-    /** Replaces this transform and derives its inverse-transpose normal matrix in place. */
+    /** Replaces this transform; singular bases use cofactors to keep collapsed geometry's normals finite. */
     public Transform set(Matrix4f value) {
         transform.set(Objects.requireNonNull(value, "value"));
         normal.set(value).invert().transpose();
+        if (!normal.isFinite()) {
+            normal.set(value).cofactor();
+            if (!normal.isFinite()) normal.identity();
+        }
         return this;
     }
 
@@ -122,21 +125,27 @@ public class Transform {
     }
 
     public Transform scale(float x, float y, float z) {
+        if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z)) {
+            throw new IllegalArgumentException("Scale components must be finite");
+        }
         transform.mul(createScalingMatrix(x, y, z));
 
-        if (x == y && y == z) {
-            if (x > 0) {
-                return this;
-            }
-
-            normal.scale(-1.0F);
+        if (x == 0f || y == 0f || z == 0f) {
+            // An inverse does not exist. Cofactors retain the surviving plane's normal;
+            // normalize their magnitude in double precision before converting to floats.
+            double nx = (double) y * z, ny = (double) x * z, nz = (double) x * y;
+            double largest = Math.max(Math.abs(nx), Math.max(Math.abs(ny), Math.abs(nz)));
+            if (largest > 0) normal.scale((float) (nx / largest), (float) (ny / largest), (float) (nz / largest));
+            return this;
         }
 
-        float f = 1.0F / x;
-        float f1 = 1.0F / y;
-        float f2 = 1.0F / z;
-        float f3 = fastInvCubeRoot(f * f1 * f2);
-        normal.mul(createScalingMatrix3f(f3 * f, f3 * f1, f3 * f2));
+        if (x == y && y == z) {
+            if (x < 0) normal.scale(-1f);
+            return this;
+        }
+
+        double magnitude = Math.cbrt(Math.abs((double) x * y * z));
+        normal.scale((float) (magnitude / x), (float) (magnitude / y), (float) (magnitude / z));
         return this;
     }
 

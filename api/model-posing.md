@@ -14,6 +14,13 @@
 | `void ModelData.configureModel(Model)` | 同上 | Model 的公共字段初始化完成后接入通用子系统，默认空实现 |
 
 glTF Converter 将所加载的动画注册到片段库；未加载的轨道不在库中。
+glTF 的 `weights` 轨道与 TRS 共用此入口，支持 STEP、LINEAR 和 CUBIC_SPLINE。
+`POSITION` / `NORMAL` morph target 按节点实例注册为 `GltfAsset.MorphId(nodeIndex, targetIndex)`；
+同一个 mesh 的不同节点独立控制。默认权重依次取 `node.weights`、`mesh.weights`、全零，
+并烘入静态几何；采样器输出相对默认值的偏移，停止播放后恢复默认形态。
+权重允许为负或大于 1，组装与交叉淡入淡出保留其线性含义。自定义采样器可用
+`Pose.Builder.morphWeight(id, weight)` 写入有限的有符号权重；`morph(id, value, factor)`
+继续使用原有的归一化激活语义。
 Blockbench Loader 将文件内的动画注册到同一个库。两种格式的未命名片段使用 `animation_<文件索引>`。
 VMD/VPD、通用 AnimationClip 或自定义格式使用 sampler/data 接入，不需要新建模型类型。
 骨骼名、morph 标识、材质引用仍须与目标模型匹配；此接口不自动重定向不同拓扑的骨架。

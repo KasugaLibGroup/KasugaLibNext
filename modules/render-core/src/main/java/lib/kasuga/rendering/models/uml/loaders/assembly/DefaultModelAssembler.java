@@ -399,7 +399,7 @@ final class DefaultModelAssembler implements ModelAssembler {
         public Pose pose(Pose source) {
             Pose.Builder target = new Pose.Builder();
             source.bones().forEach((name, value) -> target.bone(boneName(name), value.transform(), value.mode()));
-            source.morphs().forEach((id, value) -> target.morph(morphId(id), value.value(), value.factor()));
+            source.morphs().forEach((id, value) -> target.morph(morphId(id), value));
             source.ikEnabled().forEach((name, enabled) -> target.ikEnabled(ikName(name), enabled));
             source.frames().forEach((ref, frame) -> {
                 Object mapped = frameRef(ref);

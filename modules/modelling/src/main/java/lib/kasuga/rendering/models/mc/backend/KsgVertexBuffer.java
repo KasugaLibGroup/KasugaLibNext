@@ -246,7 +246,7 @@ public class KsgVertexBuffer implements AutoCloseable, VersionedBackendRenderabl
         }
         if (multiThreadedUploadCaches != null) {
             for (ByteBufferBuilder bbb : multiThreadedUploadCaches) {
-                MemoryUtil.nmemFree(((AccessorByteBufferBuilder) bbb).getPointer());
+                MemoryUtil.nmemFree(((AccessorByteBufferBuilder) bbb).kasuga$getPointer());
             }
             multiThreadedUploadCaches = null;
         }
@@ -445,7 +445,7 @@ public class KsgVertexBuffer implements AutoCloseable, VersionedBackendRenderabl
             bbb = new ByteBufferBuilder(numVertices * vertexSize);
         } else {
             bbb = byteBufferBuilder;
-            ((AccessorByteBufferBuilder) bbb).setWriteOffset(0);
+            ((AccessorByteBufferBuilder) bbb).kasuga$setWriteOffset(0);
         }
         BufferBuilder bufferBuilder = new BufferBuilder(bbb, VertexFormat.Mode.QUADS, DefaultVertexFormat.NEW_ENTITY);
 
@@ -1349,7 +1349,7 @@ public class KsgVertexBuffer implements AutoCloseable, VersionedBackendRenderabl
                     }, executor));
                 }
                 byteBufferBuilder = new ByteBufferBuilder(numVertices * vertexSize);
-                long pointer = ((AccessorByteBufferBuilder) byteBufferBuilder).getPointer();
+                long pointer = ((AccessorByteBufferBuilder) byteBufferBuilder).kasuga$getPointer();
                 CompletableFuture.allOf(irisSkinningFutures).join();
 
                 for (int i = 0; i < taskCount; i++) {
@@ -1357,11 +1357,11 @@ public class KsgVertexBuffer implements AutoCloseable, VersionedBackendRenderabl
                     int taskStart = i * MULTI_THREADED_SKINNING_THRESHOLD;
                     int taskVertices = Math.min(MULTI_THREADED_SKINNING_THRESHOLD, numVertices - taskStart);
                     int byteCount = taskVertices * vertexSize;
-                    long innerPointer = ((AccessorByteBufferBuilder) bbb).getPointer();
+                    long innerPointer = ((AccessorByteBufferBuilder) bbb).kasuga$getPointer();
                     MemoryUtil.memCopy(innerPointer, pointer, byteCount);
                     pointer += byteCount;
                 }
-                ((AccessorByteBufferBuilder) byteBufferBuilder).setWriteOffset(numVertices * vertexSize);
+                ((AccessorByteBufferBuilder) byteBufferBuilder).kasuga$setWriteOffset(numVertices * vertexSize);
             }
             ByteBufferBuilder.Result result = Objects.requireNonNull(byteBufferBuilder.build());
             MeshData meshData = new MeshData(result, new MeshData.DrawState(

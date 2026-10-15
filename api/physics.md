@@ -410,7 +410,7 @@ var animation = instance.getPosing();
 animation.play("walk", true);
 ```
 
-通用入口见 [ModelPosing](model-posing.md)，glTF sampler 支持 translation/rotation/scale、STEP、LINEAR 与 CUBIC_SPLINE。资源包流式 `.gltf` 只支持
+通用入口见 [ModelPosing](model-posing.md)，glTF sampler 支持 translation/rotation/scale/weights、STEP、LINEAR 与 CUBIC_SPLINE。资源包流式 `.gltf` 只支持
 embedded/data URI；需要外部 `.bin` 或图片 URI 时使用 `Path` API，或打包为 `.glb`。
 
 Minecraft 中可在模型旁放置 `<model>.gltf.json` manifest：
@@ -467,7 +467,7 @@ Block/Entity，不参与服务端权威碰撞、保存、区块序列化或多�
 - Box3D 没有内建 Minecraft 流体体积/浮力 API；旧 Java 浮力模型已删除。
 - PMX 六轴 joint 当前映射为 spherical joint；旋转盒近似为 cone/twist，三轴平移收紧为固定 anchor。
 - 一个 world 当前只有一个 drag constraint。
-- glTF morph targets、第二套 skin weights、非 triangle primitive 与材质扩展尚未转换。
+- glTF morph targets 已转换 POSITION / NORMAL 及其权重动画；TANGENT、TEXCOORD / COLOR target、第二套 skin weights、非 triangle primitive 与材质扩展尚未转换。
 - glTF parser 保存 metallic/roughness factor，但当前 Minecraft adapter 只直接上传 base-color；Kasuga 的
   stylized PBR 转换仍使用 [PBR.md](PBR.md) 中的独立规则和 atlas baker。
 
