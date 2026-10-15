@@ -1,0 +1,14 @@
+{
+  "vertex": "kasuga_lib:ksglib_oit_visual_composite",
+  "fragment": "kasuga_lib:ksglib_oit_visual_composite",
+  "samplers": [
+    { "name": "AccumulationSampler" },
+    { "name": "RevealageSampler" },
+    { "name": "DepthSampler" }
+  ],
+  "uniforms": [
+    { "name": "DebugView", "type": "int", "count": 1, "values": [0] },
+    { "name": "NearPlane", "type": "float", "count": 1, "values": [0.05] },
+    { "name": "FarPlane", "type": "float", "count": 1, "values": [256.0] }
+  ]
+}

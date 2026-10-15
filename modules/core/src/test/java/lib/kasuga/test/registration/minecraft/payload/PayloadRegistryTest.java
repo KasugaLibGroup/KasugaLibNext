@@ -17,6 +17,9 @@ import net.neoforged.testframework.junit.EphemeralTestServerProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
 @ExtendWith(EphemeralTestServerProvider.class)
 public class PayloadRegistryTest{
 
@@ -44,7 +47,7 @@ public class PayloadRegistryTest{
     @Test()
     public void testPayloadRegistry() {
         // Test that payload is registered
-        assert TEST_PAYLOAD.getEntry() != null;
+        assertNotNull(TEST_PAYLOAD.getEntry());
 
         StreamCodec<? super FriendlyByteBuf, ? extends CustomPacketPayload> codec = NetworkRegistry.getCodec(
                 ResourceLocation.fromNamespaceAndPath(KasugaLib.MODID, "test_payload"),
@@ -52,7 +55,7 @@ public class PayloadRegistryTest{
                 PacketFlow.CLIENTBOUND
         );
 
-        assert codec != null;
-        assert codec == TestMyClass.CODEC;
+        assertNotNull(codec);
+        assertSame(TestMyClass.CODEC, codec);
     }
 }

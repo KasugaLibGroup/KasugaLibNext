@@ -23,9 +23,6 @@ repositories {
     }
 }
 
-base {
-    archivesName = mod_id
-}
 
 configurations {
     shadowLibrary

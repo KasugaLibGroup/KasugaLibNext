@@ -1,0 +1,29 @@
+{
+  "vertex": "kasuga_lib:ksglib_global_batch",
+  "fragment": "kasuga_lib:ksglib_main",
+  "samplers": [
+    {"name": "Sampler0"},
+    {"name": "Sampler1"},
+    {"name": "Sampler2"},
+    {"name": "ksg_NormalMap"},
+    {"name": "ksg_SpecularMap"}
+  ],
+  "uniforms": [
+    {"name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]},
+    {"name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]},
+    {"name": "ColorModulator", "type": "float", "count": 4, "values": [1.0, 1.0, 1.0, 1.0]},
+    {"name": "Light0_Direction", "type": "float", "count": 3, "values": [0.0, 0.0, 0.0]},
+    {"name": "Light1_Direction", "type": "float", "count": 3, "values": [0.0, 0.0, 0.0]},
+    {"name": "FogStart", "type": "float", "count": 1, "values": [0.0]},
+    {"name": "FogEnd", "type": "float", "count": 1, "values": [1.0]},
+    {"name": "FogColor", "type": "float", "count": 4, "values": [0.0, 0.0, 0.0, 0.0]},
+    {"name": "FogShape", "type": "int", "count": 1, "values": [0]},
+    {"name": "ksg_EmissiveStrength", "type": "float", "count": 1, "values": [1.0]},
+    {"name": "ksg_ParallaxScale", "type": "float", "count": 1, "values": [0.05]},
+    {"name": "ksg_ParallaxSamples", "type": "int", "count": 1, "values": [4]},
+    {"name": "ksg_AmbientLightEnhancement", "type": "float", "count": 1, "values": [1.0]},
+    {"name": "ksg_StylizedShadingStrength", "type": "float", "count": 1, "values": [0.65]}
+    ,{"name": "ksg_AlphaMode", "type": "int", "count": 1, "values": [0]}
+    ,{"name": "ksg_OitMode", "type": "int", "count": 1, "values": [0]}
+  ]
+}

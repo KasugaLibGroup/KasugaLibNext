@@ -4,7 +4,11 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,11 +24,92 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # Allow reusing older caches (not just exact key matches) and
+          # let pushes write cache entries so non-default branches don't cold-start.
+          gradle-home-cache-strict-match: false
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
 
       # This is needed to be able to run ./gradlew below
       # You can run `git update-index --chmod +x gradlew` then remove this step.
       - name: Make Gradle wrapper executable
+        if: runner.os != 'Windows'
         run: chmod +x ./gradlew
 
-      - name: Build with Gradle
-        run: ./gradlew build
+      - name: Build with Gradle (Unix)
+        if: runner.os != 'Windows'
+        run: ./gradlew build renderingReleaseCheck
+
+      - name: Build with Gradle (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat build renderingReleaseCheck
+
+      - name: Upload Box3D native library
+        uses: actions/upload-artifact@v4
+        with:
+          name: box3d-native-${{ runner.os }}-${{ runner.arch }}
+          path: modules/modelling/build/native/box3d/resources/native
+          if-no-files-found: error
+
+      - name: Upload modelling jar
+        # One platform's jar is enough as the base for the universal jar -
+        # native libraries for all three platforms are merged in package-universal.
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kasuga-modelling-base
+          path: modules/modelling/build/libs/kasuga-modelling-*.jar
+          if-no-files-found: error
+
+  # Package a single jar containing the box3d native libraries for all
+  # platforms without re-running the Gradle/NeoForge pipeline.
+  package-universal:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Download modelling jar
+        uses: actions/download-artifact@v4
+        with:
+          name: kasuga-modelling-base
+          path: build/modelling-base
+
+      - name: Download all Box3D native libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: box3d-native-*
+          path: build/box3d-universal/native
+          merge-multiple: true
+
+      - name: Merge native libraries into universal jar
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar_file=$(find build/modelling-base -name 'kasuga-modelling-*.jar' | head -n1)
+          echo "Merging native libraries into ${jar_file}"
+          # Native artifacts are downloaded under build/box3d-universal/native/<classifier>/,
+          # and the runtime looks them up at /native/<os>-<arch>/<lib>, so the "native"
+          # directory itself must be kept as the top-level entry inside the jar.
+          jar uf "${jar_file}" -C build/box3d-universal .
+          mv "${jar_file}" build/kasuga-modelling-universal.jar
+
+      - name: Verify native libraries are inside the universal jar
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=$(jar tf build/kasuga-modelling-universal.jar | grep -cE '^native/.+\.(dll|so|dylib)$')
+          echo "Native libraries bundled: ${found}"
+          test "${found}" -ge 3
+          jar tf build/kasuga-modelling-universal.jar | grep -E '^native/.+\.(dll|so|dylib)$' | sort
+
+      - name: Upload universal modelling jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: kasuga-modelling-universal
+          path: build/kasuga-modelling-universal.jar
+          if-no-files-found: error

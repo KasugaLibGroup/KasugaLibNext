@@ -141,7 +141,13 @@ public class FastJavetClassConverter extends JavetObjectConverter {
                     return (T) nativeObject;
                 }
             }
-
+            // A plain JS object (no Java-proxy address): preserve it as a live ScriptValue reference
+            // (a fresh strong handle to the SAME underlying V8 object) rather than snapshot-copying it to
+            // a Map. This keeps object identity across the boundary, so JS-side mutations stay visible to
+            // Java holders (e.g. an FSM owner passed from JS) and writes made through the round-tripped
+            // reference propagate back. Arrays/primitives/functions are distinct V8Value types and take
+            // their own paths; only plain objects are affected.
+            return (T) JavetValueBridge.wrap(object.toClone());
         }
         T parentConvertResult = super.toObject(v8Value, depth);
         if(parentConvertResult instanceof V8Value){

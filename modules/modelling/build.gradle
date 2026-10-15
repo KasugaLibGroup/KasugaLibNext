@@ -10,17 +10,32 @@ plugins {
 version = mod_version
 group = mod_group_id
 
+def kasugaTestModel = providers.gradleProperty('kasugaTestModel')
+def kasugaTestBbmodel = providers.gradleProperty('kasugaTestBbmodel')
+def kasugaTestFmtModel = providers.gradleProperty('kasugaTestFmtModel')
+
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
     maven { url = "https://maven.createmod.net" } // Create, Ponder, Flywheel
     maven { url = "https://maven.ithundxr.dev/snapshots" } // Registrate
+    flatDir {
+        dir 'libs'
+    }
 }
 
 useModProject(project(":modules:core"))
+useModProject(project(':modules:render-core'))
+useModProject(project(':modules:render-opengl'))
 
-base {
-    archivesName = mod_id
-}
+// The reload orchestrator (which lands in a follow-up) will reuse the data-driven index reader
+// (JsonTreeBuilder.indexDirectorySegments / parseIndexManifest / resolveIndexManifests), so modelling
+// takes the data-driven dependency now (see the dependencies block). The mods{} mirror below reads
+// `project(':modules:data-driven').sourceSets.main` across projects, which needs data-driven evaluated
+// first; without evaluationDependsOn that lookup silently resolves to the root project's source sets.
+// useModProject() declares this for its own targets, but data-driven is added as a plain project
+// dependency, so it must be declared here explicitly.
+evaluationDependsOn(':modules:data-driven')
+
 
 configurations {
     shadowLibrary
@@ -28,6 +43,18 @@ configurations {
 }
 
 test {
+    useJUnitPlatform()
+}
+
+tasks.register('modelUnitTest', Test) {
+    description = 'Runs pure Java modelling tests without the NeoForge dedicated-server test launcher.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    // contentTesting.output carries the shipped fixtures this task reads (e.g. fsm_blocks.json); the
+    // junit-fml- filter keeps it a plain-JVM run without the NeoForge dedicated-server test launcher.
+    classpath = (sourceSets.test.runtimeClasspath + sourceSets.contentTesting.output).filter {
+        !it.name.startsWith('junit-fml-')
+    }
     useJUnitPlatform()
 }
 
@@ -46,11 +73,56 @@ sourceSets {
         compileClasspath += sourceSets.main.compileClasspath
         runtimeClasspath += sourceSets.main.runtimeClasspath
     }
+
+    gameTest {
+        java {
+            srcDir 'src/gameTest/java'
+        }
+        resources {
+            srcDir 'src/gameTest/resources'
+        }
+
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+
+        compileClasspath += sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+    }
+
+    jmh {
+        java {
+            srcDir 'src/jmh/java'
+        }
+
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+
+        compileClasspath += sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+    }
+
+    renderHarness {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+
+tasks.named('processContentTestingResources', ProcessResources) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 
 // Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+tasks.named('sourcesJar').configure {
+    dependsOn(':modules:core:generateModMetadata')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
 
 neoForge {
     // Specify the version of NeoForge to use.
@@ -64,23 +136,63 @@ neoForge {
     runs {
         client {
             client()
-
-            // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
+            gameDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/client'))
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            def quickPlayWorld = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (quickPlayWorld.isPresent()) {
+                programArguments.addAll '--quickPlaySingleplayer', quickPlayWorld.get()
+            }
+        }
+
+        clientHeadless {
+            client()
+            gameDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/headless-client'))
+            systemProperty 'kasuga.headless', providers.gradleProperty('kasugaHeadlessBackend').getOrElse(
+                    System.getProperty('os.name').toLowerCase().contains('linux') ? 'egl' : 'hidden')
+            systemProperty 'kasuga.headless.fps', providers.gradleProperty('kasugaHeadlessFps').getOrElse('60')
+            systemProperty 'java.awt.headless', 'true'
+            def glfwLibrary = providers.gradleProperty('kasugaHeadlessGlfwLibrary')
+            if (glfwLibrary.isPresent()) systemProperty 'org.lwjgl.glfw.libname', file(glfwLibrary.get()).absolutePath
+            def quickPlayWorld = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (quickPlayWorld.isPresent()) programArguments.addAll '--quickPlaySingleplayer', quickPlayWorld.get()
+            def serverAddress = providers.gradleProperty('kasugaHeadlessServer')
+            if (serverAddress.isPresent()) programArguments.addAll '--quickPlayMultiplayer', serverAddress.get()
+        }
+
+        clientProfile {
+            client()
+            gameDirectory = file('run/clientProfile')
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            systemProperty 'kasuga.profileModel', 'true'
+            systemProperty 'kasuga.profileModel.intervalMs', '1000'
+            systemProperty 'kasuga.profileModel.animateTestBone', 'true'
+            systemProperty 'kasuga.profileModel.animateStress', 'true'
+            systemProperty 'kasuga.profileModel.animateSelection', 'small'
+            systemProperty 'kasuga.profileModel.animateBoneCount', '32'
+            systemProperty 'kasuga.profileModel.animateTranslation', '0.2'
+            systemProperty 'kasuga.modelGpuSkinning', 'true'
+            def quickPlayWorld = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (quickPlayWorld.isPresent()) {
+                programArguments.addAll '--quickPlaySingleplayer', quickPlayWorld.get()
+            }
         }
 
         server {
             server()
             programArgument '--nogui'
+            gameDirectory = file('run/server')
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
         gameTestServer {
             type = "gameTestServer"
+            gameDirectory = file('run/gameTestServer')
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
         data {
+            gameDirectory = file('run/data')
+            data()
             data()
             programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
         }
@@ -89,21 +201,126 @@ neoForge {
         configureEach {
             systemProperty 'forge.logging.markers', 'REGISTRIES'
 
+            if (kasugaTestModel.isPresent()) {
+                systemProperty 'kasuga.testModel', kasugaTestModel.get()
+            }
+            if (kasugaTestBbmodel.isPresent()) {
+                systemProperty 'kasuga.testBbmodel', kasugaTestBbmodel.get()
+            }
+            if (kasugaTestFmtModel.isPresent()) {
+                systemProperty 'kasuga.testFmtModel', kasugaTestFmtModel.get()
+            }
+            def frameOutputSmoke = providers.gradleProperty('kasugaTestFrameOutput')
+            if (frameOutputSmoke.isPresent()) {
+                systemProperty 'kasuga.testFrameOutput', frameOutputSmoke.get()
+            }
+            def cameraPerformance = providers.gradleProperty('kasugaTestCameraPerformance')
+            if (cameraPerformance.isPresent()) systemProperty 'kasuga.testCameraPerformance', cameraPerformance.get()
+            def cameraMotion = providers.gradleProperty('kasugaTestCameraMotion')
+            if (cameraMotion.isPresent()) systemProperty 'kasuga.testCameraMotion', cameraMotion.get()
+            def cameraAnimation = providers.gradleProperty('kasugaTestCameraAnimation')
+            if (cameraAnimation.isPresent()) systemProperty 'kasuga.testCameraAnimation', cameraAnimation.get()
+            def cameraTypes = providers.gradleProperty('kasugaTestCameraTypes')
+            if (cameraTypes.isPresent()) systemProperty 'kasuga.testCameraTypes', cameraTypes.get()
+            def anchorEquipment = providers.gradleProperty('kasugaTestAnchorEquipment')
+            if (anchorEquipment.isPresent()) systemProperty 'kasuga.testAnchorEquipment', anchorEquipment.get()
+            def wardrobeDemo = providers.gradleProperty('kasugaWardrobeDemo')
+            if (wardrobeDemo.isPresent()) systemProperty 'kasuga.wardrobeDemo', wardrobeDemo.get()
+            def wardrobeCapture = providers.gradleProperty('kasugaWardrobeCapture')
+            if (wardrobeCapture.isPresent()) systemProperty 'kasuga.wardrobeCapture', wardrobeCapture.get()
+            def wardrobeShaderPack = providers.gradleProperty('kasugaWardrobeShaderPack')
+            if (wardrobeShaderPack.isPresent()) systemProperty 'kasuga.wardrobeShaderPack', rootProject.file(wardrobeShaderPack.get()).absolutePath
+            def wardrobeShaderSmoke = providers.gradleProperty('kasugaWardrobeShaderSmoke')
+            if (wardrobeShaderSmoke.isPresent()) systemProperty 'kasuga.wardrobeShaderSmoke', wardrobeShaderSmoke.get()
+            def wardrobeShaderPreview = providers.gradleProperty('kasugaWardrobeShaderPreview')
+            if (wardrobeShaderPreview.isPresent()) systemProperty 'kasuga.wardrobeShaderPreview', wardrobeShaderPreview.get()
+            def cloudSmoke = providers.gradleProperty('kasugaTestCloud')
+            if (cloudSmoke.isPresent()) systemProperty 'kasuga.testCloud', cloudSmoke.get()
+            def skyCloudSmoke = providers.gradleProperty('kasugaTestSkyCloud')
+            if (skyCloudSmoke.isPresent()) systemProperty 'kasuga.testSkyCloud', skyCloudSmoke.get()
+            def dualCameraDebug = providers.gradleProperty('kasugaDebugDualCamera')
+            if (dualCameraDebug.isPresent()) systemProperty 'kasuga.debugDualCamera', dualCameraDebug.get()
+            def multiWindowDebug = providers.gradleProperty('kasugaDebugMultiWindow')
+            if (multiWindowDebug.isPresent()) systemProperty 'kasuga.debugMultiWindow', multiWindowDebug.get()
+            def windowSmoke = providers.gradleProperty('kasugaTestFrameWindows')
+            if (windowSmoke.isPresent()) systemProperty 'kasuga.testFrameWindows', windowSmoke.get()
+            def headlessSmoke = providers.gradleProperty('kasugaTestHeadless')
+            if (headlessSmoke.isPresent()) systemProperty 'kasuga.testHeadless', headlessSmoke.get()
+            def dualCameraCapture = providers.gradleProperty('kasugaDebugDualCameraCaptureFrames')
+            if (dualCameraCapture.isPresent()) systemProperty 'kasuga.debugDualCamera.captureFrames', dualCameraCapture.get()
+            def cameraIrisSmoke = providers.gradleProperty('kasugaTestCameraIris')
+            if (cameraIrisSmoke.isPresent()) systemProperty 'kasuga.testCameraIris', cameraIrisSmoke.get()
+            def worldViewSmoke = providers.gradleProperty('kasugaTestWorldViews')
+            if (worldViewSmoke.isPresent()) {
+                systemProperty 'kasuga.testWorldViews', worldViewSmoke.get()
+            }
+            def transparencyProfile = providers.gradleProperty('kasugaProfileTransparency')
+            if (transparencyProfile.isPresent()) {
+                systemProperty 'kasuga.profileTransparency', transparencyProfile.get()
+            }
+            def transparencyDebug = providers.gradleProperty('kasugaDebugTransparency')
+            if (transparencyDebug.isPresent()) {
+                systemProperty 'kasuga.debugTransparency', transparencyDebug.get()
+            }
+            def stopAfterCapture = providers.gradleProperty('kasugaStopAfterCapture')
+            if (stopAfterCapture.isPresent()) {
+                systemProperty 'kasuga.debugTransparency.stopAfterCapture', stopAfterCapture.get()
+            }
+            def captureFrame = providers.gradleProperty('kasugaCaptureFrame')
+            if (captureFrame.isPresent()) {
+                systemProperty 'kasuga.debugTransparency.frame', captureFrame.get()
+            }
+            def cloudCapture = providers.gradleProperty('kasugaCloudCapture')
+            if (cloudCapture.isPresent()) {
+                systemProperty 'kasuga.debugCloudCapture', cloudCapture.get()
+            }
+            def modelCaptureFrame = providers.gradleProperty('kasugaModelCaptureFrame')
+            if (modelCaptureFrame.isPresent()) {
+                systemProperty 'kasuga.captureModelFrame', modelCaptureFrame.get()
+            }
+
             logLevel = org.slf4j.event.Level.DEBUG
         }
     }
 
     mods {
         "${mod_id}" {
-            // Inlcude the core subproject as a dependency.
             sourceSet(sourceSets.main)
             sourceSet(sourceSets.contentTesting)
+            sourceSet(sourceSets.gameTest)
+            // Mirror: data-driven is on this module's classpath (see the dependencies block) and must
+            // therefore also be part of the mod layer. NeoForge loads mod classes through a union layer;
+            // anything present on the plain classpath but absent from mods{} is loaded a second time by
+            // the classpath loader. That gives one class two Class identities, and Micronaut's DI then
+            // fails to satisfy an injected core type because the bean it finds was defined against the
+            // other identity (NoSuchBeanDefinitionException / no qualifying bean). Registering data-driven's
+            // main source set here keeps its @Context beans (e.g. JsonTreeIntegration) in the same layer as
+            // the core types they inject.
+            sourceSet(project(':modules:data-driven').sourceSets.main)
         }
     }
 
     unitTest {
         enable()
+        testedMod = mods.named(mod_id)
     }
+}
+
+// NeoForge's splash window starts before game mixins. Disable it before launching, not after GLFW initialization.
+tasks.register('prepareHeadlessClient') {
+    def headlessDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/headless-client'))
+    doLast {
+        def config = new File(headlessDirectory, 'config/fml.toml')
+        config.parentFile.mkdirs()
+        def text = config.exists() ? config.getText('UTF-8') : ''
+        if (text =~ /(?m)^\s*earlyWindowControl\s*=/) {
+            text = text.replaceAll(/(?m)^\s*earlyWindowControl\s*=.*$/, 'earlyWindowControl = false')
+        } else text += '\nearlyWindowControl = false\n'
+        config.setText(text, 'UTF-8')
+    }
+}
+tasks.matching { it.name == 'runClientHeadless' || it.name == 'prepareClientHeadlessRun' }.configureEach {
+    dependsOn 'prepareHeadlessClient'
 }
 
 configurations {
@@ -111,6 +328,11 @@ configurations {
 }
 
 dependencies {
+    api project(":modules:shader")
+    api project(':modules:render-core')
+    api project(':modules:render-opengl')
+    additionalRuntimeClasspath project(":modules:shader")
+
     implementation ("io.micronaut:micronaut-inject:4.9.10") {
         exclude group : 'org.slf4j', module: 'slf4j-api'
     }
@@ -125,24 +347,86 @@ dependencies {
 
     implementation project(":modules:inject")
 
+    // Forward dependency for the reload orchestrator (lands in a follow-up): it will link data-driven's
+    // index reader (JsonTreeBuilder) at class level. data-driven's main source set only depends on
+    // core + inject, so modelling -> data-driven is a one-way edge and creates no cycle. Because this is
+    // a real runtime dependency, every module that mirrors modelling into its own mod layer must mirror
+    // data-driven as well -- scripting does, next to its useModProject(modelling) call.
+    implementation project(":modules:data-driven")
+
+    implementation project(":modules:formula")
+    additionalRuntimeClasspath project(":modules:formula")
+
     implementation project(":modules:utils")
 
     implementation project(":modules:annotations")
 
+    // Source: https://mvnrepository.com/artifact/com.twelvemonkeys/twelvemonkeys
+    implementation("com.twelvemonkeys:twelvemonkeys:3.13.1")
+
     annotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
+
+    gameTestAnnotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
 
     contentTestingAnnotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
 
+    additionalRuntimeClasspath 'org.jgrapht:jgrapht-core:1.5.2'
+    additionalRuntimeClasspath 'com.google.zxing:core:3.5.3'
+
     implementation("com.google.guava:guava:32.1.2-jre")
+
+    // glTF 2.0 / GLB parser. These are embedded in the modelling jar because
+    // Minecraft does not provide jgltf at runtime.
+    shadowLibrary("de.javagl:jgltf-model:2.0.4")
+    shadowLibrary("de.javagl:jgltf-impl-v2:2.0.4")
+    shadowLibrary files(project(':modules:render-core').file('libs/caliko-1.3.8.jar'))
+    // ModDev run configurations do not consume the shaded output. Their legacy
+    // classpath is assembled from additionalRuntimeClasspath instead.
+    additionalRuntimeClasspath("de.javagl:jgltf-model:2.0.4")
+    additionalRuntimeClasspath("de.javagl:jgltf-impl-v2:2.0.4")
+    additionalRuntimeClasspath files(project(':modules:render-core').file('libs/caliko-1.3.8.jar'))
+
+    // Core's development-only runtime dependencies are not propagated through
+    // useModProject. The modelling client still executes core's QR model baking
+    // hooks, so ZXing must be present on this run configuration's classpath.
+    additionalRuntimeClasspath 'com.google.zxing:core:3.5.3'
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.7.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // test source set needs core's ScopedResourceManager/ResourceSystem types for loader tests
+    testImplementation project(":modules:core")
+
+    jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
+    jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+
+    // Match Minecraft 1.21.1's LWJGL version; the harness starts a plain JVM, not a ModDev run.
+    renderHarnessImplementation 'org.lwjgl:lwjgl:3.3.3'
+    renderHarnessImplementation project(':modules:core')
+    renderHarnessImplementation 'org.lwjgl:lwjgl-glfw:3.3.3'
+    renderHarnessImplementation 'org.lwjgl:lwjgl-opengl:3.3.3'
 
     compileOnly("org.projectlombok:lombok:1.18.42")
     annotationProcessor("org.projectlombok:lombok:1.18.42")
 
     testCompileOnly("org.projectlombok:lombok:1.18.42")
     testAnnotationProcessor("org.projectlombok:lombok:1.18.42")
+
+    compileOnly("libs:iris:neoforge-mc1.21.1-1.8.12")
+    compileOnly("libs:sodium:neoforge-mc1.21.1-0.6.13")
+    // Optional renderer integrations belong to development runs only. Keeping
+    // them on localRuntime preserves the client test setup without publishing
+    // the non-resolvable flatDir coordinates to downstream consumers.
+    if (providers.gradleProperty('kasugaRendererMods').getOrElse('true').toBoolean()) {
+        localRuntime("libs:iris:neoforge-mc1.21.1-1.8.12")
+        localRuntime("libs:sodium:neoforge-mc1.21.1-0.6.13")
+    }
+}
+
+// The gameTest source set re-declares its resource dir (srcDir 'src/gameTest/resources') on top of Gradle's
+// default convention for that source set, so the first gameTest resource trips a duplicate-entry error. Take
+// both copies (last wins) — there is only ever one real source file per path.
+tasks.named('processGameTestResources', ProcessResources) {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
@@ -171,6 +455,183 @@ sourceSets.main.resources.srcDir generateModMetadata
 // To avoid having to run "generateModMetadata" manually, make it run on every project reload
 neoForge.ideSyncTask generateModMetadata
 
+// Box3D is C17 and is linked statically into a small JNI bridge. The resulting
+// platform library is placed in the jar under native/<os>-<arch>/.
+def box3dOs = {
+    def value = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+    if (value.contains('win')) return 'windows'
+    if (value.contains('mac') || value.contains('darwin')) return 'macos'
+    if (value.contains('linux')) return 'linux'
+    return value.replaceAll('[^a-z0-9_-]', '_')
+}.call()
+def box3dArch = {
+    def value = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
+    if (value == 'amd64' || value == 'x86_64') return 'x86_64'
+    if (value == 'aarch64' || value == 'arm64') return 'aarch64'
+    return value.replaceAll('[^a-z0-9_-]', '_')
+}.call()
+def box3dClassifier = "${box3dOs}-${box3dArch}"
+def renderHarnessNatives = 'natives-' + (box3dOs == 'macos' ? 'macos' : box3dOs == 'windows' ? 'windows' : 'linux')
+if (box3dArch == 'aarch64') renderHarnessNatives += '-arm64'
+dependencies {
+    ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl'].each { library ->
+        renderHarnessRuntimeOnly "org.lwjgl:${library}:3.3.3:${renderHarnessNatives}"
+    }
+}
+
+['renderGlTest': 'test', 'renderPreview': 'preview', 'renderBench': 'bench'].each { taskName, mode ->
+    tasks.register(taskName, JavaExec) {
+        group = mode == 'preview' ? 'application' : 'verification'
+        description = "Runs standalone ${mode} rendering with the shared production GL core, without Minecraft."
+        mainClass = 'lib.kasuga.rendering.models.mc.backend.StandaloneRenderHarness'
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+        classpath = sourceSets.renderHarness.runtimeClasspath
+        systemProperty 'kasuga.render.commit', providers.exec {
+            workingDir rootProject.projectDir
+            commandLine 'git', 'rev-parse', 'HEAD'
+        }.standardOutput.asText.map { it.trim() }.get()
+        systemProperty 'kasuga.render.dirty', providers.exec {
+            workingDir rootProject.projectDir
+            commandLine 'git', 'status', '--porcelain'
+        }.standardOutput.asText.map { !it.trim().isEmpty() }.get()
+        systemProperty 'kasuga.render.scene', providers.gradleProperty('kasugaRenderScene').getOrElse('model')
+        def assemblyFixtures = providers.gradleProperty('kasugaAssemblyFixtures')
+        if (assemblyFixtures.isPresent()) systemProperty 'kasuga.assembly.fixtures', rootProject.file(assemblyFixtures.get()).absolutePath
+        if (box3dOs == 'macos') jvmArgs '-XstartOnFirstThread'
+        args '--mode', mode,
+                '--report', layout.buildDirectory.file("reports/renderHarness/${mode}/report.json").get().asFile.absolutePath,
+                '--width', providers.gradleProperty('kasugaRenderWidth').getOrElse(mode == 'test' ? '64' : '1280'),
+                '--height', providers.gradleProperty('kasugaRenderHeight').getOrElse(mode == 'test' ? '64' : '720'),
+                '--frames', providers.gradleProperty('kasugaRenderFrames').getOrElse(mode == 'preview' ? '0' : '120'),
+                '--warmup', providers.gradleProperty('kasugaRenderWarmup').getOrElse('30')
+        // GPU execution must never be considered up-to-date based only on source files.
+        outputs.upToDateWhen { false }
+    }
+}
+
+tasks.register('modelBench', JavaExec) {
+    group = 'verification'
+    description = 'Runs modelling CPU microbenchmarks in forked JMH JVMs without Minecraft startup.'
+    mainClass = 'org.openjdk.jmh.Main'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    classpath = sourceSets.jmh.runtimeClasspath
+    def resultFile = layout.buildDirectory.file('reports/jmh/results.json').get().asFile
+    args providers.gradleProperty('kasugaBenchmark').getOrElse('.*(StateMachine|Multiplexer|RenderPreparation)Benchmark.*'),
+            '-rf', 'json', '-rff', resultFile.absolutePath,
+            '-wi', providers.gradleProperty('kasugaBenchmarkWarmup').getOrElse('3'),
+            '-i', providers.gradleProperty('kasugaBenchmarkIterations').getOrElse('5'),
+            '-w', '1s', '-r', '1s', '-f', '1', '-prof', 'gc', '-foe', 'true'
+    doFirst { resultFile.parentFile.mkdirs() }
+}
+
+tasks.register('modelAssemblyProbe', JavaExec) {
+    group = 'verification'
+    description = 'Loads optional local PMX clothing fixtures and measures common model assembly; writes a geometry-only report.'
+    mainClass = 'lib.kasuga.rendering.models.uml.loaders.assembly.ModelAssemblyProbe'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    classpath = sourceSets.renderHarness.runtimeClasspath
+    maxHeapSize = '4g'
+    args rootProject.file(providers.gradleProperty('kasugaAssemblyFixtures').getOrElse('missing-local-fixtures')).absolutePath,
+            providers.gradleProperty('kasugaAssemblyReport').map { rootProject.file(it).absolutePath }
+                    .getOrElse(layout.buildDirectory.file('reports/modelAssemblyProbe/report.json').get().asFile.absolutePath),
+            providers.gradleProperty('kasugaAssemblyOrder').getOrElse('uncached-first')
+}
+def box3dSourceDirectory = layout.projectDirectory.dir('src/main/native')
+def box3dBuildDirectory = layout.buildDirectory.dir('native/box3d')
+def box3dResourceDirectory = box3dBuildDirectory.map { it.dir('resources') }
+def box3dResourceOverlay = providers.gradleProperty('kasugaBox3DNativeResources')
+def box3dCmakeExecutable = {
+    def path = System.getenv('PATH')
+    if (path == null || path.isBlank()) return null
+    def suffixes = box3dOs == 'windows' ? ['.exe', '.cmd', '.bat', ''] : ['']
+    return path.split(java.util.regex.Pattern.quote(File.pathSeparator)).findResult { directory ->
+        suffixes.collect { suffix -> new File(directory, "cmake${suffix}") }
+                .find { candidate -> candidate.isFile() && (box3dOs == 'windows' || candidate.canExecute()) }
+                ?.absolutePath
+    }
+}.call()
+def box3dCanBuild = box3dCmakeExecutable != null
+def box3dJavaHome = javaToolchains.launcherFor {
+    languageVersion = JavaLanguageVersion.of(21)
+}.map { it.metadata.installationPath.asFile.absolutePath.replace('\\', '/') }
+
+if (!box3dCanBuild) {
+    logger.warn('CMake was not found on PATH. Box3D native support and its tests will be omitted; Java-only modelling features will still be built.')
+}
+
+tasks.register('configureBox3D', Exec) {
+    description = 'Configures the vendored Box3D JNI library for the current platform.'
+    group = 'build'
+    onlyIf('CMake is available') { box3dCanBuild }
+    inputs.files(fileTree(box3dSourceDirectory) {
+        include '**/*.c', '**/*.h', '**/CMakeLists.txt', 'BOX3D_VERSION'
+    })
+    outputs.file(box3dBuildDirectory.map { it.file('CMakeCache.txt') })
+    doFirst {
+        commandLine box3dCmakeExecutable,
+                '-S', box3dSourceDirectory.asFile.absolutePath,
+                '-B', box3dBuildDirectory.get().asFile.absolutePath,
+                '-DCMAKE_BUILD_TYPE=Release',
+                "-DKASUGA_NATIVE_CLASSIFIER=${box3dClassifier}",
+                "-DJAVA_HOME=${box3dJavaHome.get()}"
+    }
+}
+
+tasks.register('buildBox3D', Exec) {
+    description = 'Builds the Box3D JNI library for the current platform.'
+    group = 'build'
+    dependsOn tasks.named('configureBox3D')
+    onlyIf('CMake is available') { box3dCanBuild }
+    inputs.files(fileTree(box3dSourceDirectory) {
+        include '**/*.c', '**/*.h', '**/CMakeLists.txt', 'BOX3D_VERSION'
+    })
+    outputs.dir(box3dResourceDirectory)
+    doFirst {
+        // CMake writes the JNI library to a path relative to the build directory
+        // (resources/native/<classifier>/), and that directory is only created as a
+        // configure-time side effect of file(MAKE_DIRECTORY). When Gradle treats
+        // configureBox3D as up-to-date (cached CMakeCache.txt) that side effect never
+        // runs, so guarantee the output directory exists here before the linker runs.
+        def outputDir = box3dResourceDirectory.get().file("native/${box3dClassifier}").asFile
+        outputDir.mkdirs()
+        commandLine box3dCmakeExecutable, '--build', box3dBuildDirectory.get().asFile.absolutePath,
+                '--config', 'Release', '--target', 'kasuga_box3d'
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn tasks.named('buildBox3D')
+    if (box3dCanBuild) {
+        from(box3dResourceDirectory)
+    }
+    if (box3dResourceOverlay.isPresent()) {
+        from(file(box3dResourceOverlay.get()))
+    }
+    from('THIRD_PARTY_NOTICES.md') {
+        into 'META-INF'
+    }
+    from('src/main/native/box3d/LICENSE') {
+        into 'META-INF/licenses'
+        rename { 'box3d-LICENSE.txt' }
+    }
+    from(project(':modules:render-core').file('libs/caliko-LICENSE.txt')) {
+        into 'META-INF/licenses'
+    }
+}
+
+tasks.withType(Test).configureEach {
+    dependsOn tasks.named('buildBox3D')
+    if (box3dCanBuild) {
+        def mappedName = System.mapLibraryName('kasuga_box3d')
+        def library = box3dResourceDirectory.get().file("native/${box3dClassifier}/${mappedName}").asFile
+        jvmArgumentProviders.add({ ["-Dkasuga.box3d.library=${library.absolutePath}"] } as CommandLineArgumentProvider)
+    } else {
+        useJUnitPlatform {
+            excludeTags 'box3d'
+        }
+    }
+}
+
 // Example configuration to allow publishing using the maven-publish plugin
 publishing {
     publications {
@@ -182,6 +643,17 @@ publishing {
         maven {
             url "file://${project.projectDir}/repo"
         }
+    }
+}
+
+shadowJar {
+    zip64 = true
+    // Only libraries explicitly selected for embedding belong in the published
+    // modelling jar. Optional renderer mods stay compile/runtime integrations.
+    configurations = [project.configurations.shadowLibrary]
+    dependencies {
+        exclude(dependency('libs:iris:.*'))
+        exclude(dependency('libs:sodium:.*'))
     }
 }
 

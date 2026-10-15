@@ -24,9 +24,6 @@ repositories {
 
 useModProject(project(':modules:core'))
 
-base {
-    archivesName = mod_id
-}
 
 
 sourceSets {

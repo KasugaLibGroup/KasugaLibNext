@@ -15,6 +15,13 @@ dependencies {
     implementation localGroovy()
     implementation gradleApi()
     implementation("com.gradleup.shadow:com.gradleup.shadow.gradle.plugin:9.0.2")
+    testImplementation gradleTestKit()
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 gradlePlugin {
@@ -30,6 +37,10 @@ gradlePlugin {
         kasugaResourceCompiler {
             id = 'builder.kasuga.resource-compiler'
             implementationClass = 'builder.kasuga.KasugaResourceCompilerPlugin'
+        }
+        kasugaShader {
+            id = 'builder.kasuga.shader'
+            implementationClass = 'builder.kasuga.KasugaShaderPlugin'
         }
     }
 }

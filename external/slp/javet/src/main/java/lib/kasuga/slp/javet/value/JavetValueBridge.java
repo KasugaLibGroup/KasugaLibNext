@@ -6,6 +6,7 @@ import com.caoccao.javet.values.IV8ValuePrimitiveObject;
 import com.caoccao.javet.values.primitive.V8ValueNull;
 import com.caoccao.javet.values.primitive.V8ValuePrimitive;
 import com.caoccao.javet.values.primitive.V8ValueUndefined;
+import com.caoccao.javet.values.reference.V8ValueArray;
 import com.caoccao.javet.values.reference.V8ValueFunction;
 import com.caoccao.javet.values.reference.V8ValueObject;
 import com.caoccao.javet.values.reference.V8ValuePromise;
@@ -23,6 +24,13 @@ public class JavetValueBridge {
 
         if(value instanceof V8ValueFunction function) {
             return new JavetValueFunction(function);
+        }
+
+        // V8ValueArray extends V8ValueObject in Javet, so this must be checked BEFORE the plain-object
+        // branch — otherwise JS arrays are wrapped as ScriptObject and array indices surface as "0"/"1"/...
+        // string keys, which breaks any walker that treats arrays as ordered lists.
+        if(value instanceof V8ValueArray array) {
+            return new JavetValueArray(array);
         }
 
         if(value instanceof V8ValueObject object) {

@@ -18,6 +18,7 @@ import java.util.Iterator;
 import java.util.List;
 
 public class ScopedResourceManager implements ResourceManagerReloadListener {
+    private ResourceManager resourceManager;
     private List<ScopedPackResources> packResources = new ArrayList<>();
     private List<ScopedResourcePackListener> listeners = new ArrayList<>();
 
@@ -26,6 +27,7 @@ public class ScopedResourceManager implements ResourceManagerReloadListener {
     }
 
     public void reload(ResourceManager rm) {
+        this.resourceManager = rm;
         packResources.clear();
         Iterator<PackResources> vanillaPacks  = rm.listPacks().iterator();
         while(vanillaPacks.hasNext()) {
@@ -34,6 +36,11 @@ public class ScopedResourceManager implements ResourceManagerReloadListener {
         for (ScopedResourcePackListener listener : listeners) {
             listener.onReloaded(this);
         }
+    }
+
+    /** The vanilla resource manager this scoped manager wraps. */
+    public ResourceManager getResourceManager() {
+        return resourceManager;
     }
 
     @Override

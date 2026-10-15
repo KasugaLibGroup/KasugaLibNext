@@ -1,0 +1,31 @@
+{
+  "state_machines": [
+    {
+      "id": "kasuga_lib:fan_machine_data_driven",
+      "state_vars": [
+        { "name": "cycle", "type": "bool", "default": false, "ephemeral": true, "reference": "kasuga_lib:fan/cycle" },
+        { "name": "kasuga_lib:fan/current_speed", "reference": "kasuga_lib:fan/current_speed" },
+        { "name": "kasuga_lib:fan/angle", "reference": "kasuga_lib:fan/angle" }
+      ],
+      "layers": [
+        {
+          "id": "gear",
+          "mode": "base",
+          "initial_state": "off",
+          "states": [
+            { "id": "off", "clip": { "id": "kasuga_lib:fan_fsm_data_driven", "loop": true } },
+            { "id": "g1", "clip": { "id": "kasuga_lib:fan_fsm_data_driven", "loop": true } },
+            { "id": "g2", "clip": { "id": "kasuga_lib:fan_fsm_data_driven", "loop": true } },
+            { "id": "g3", "clip": { "id": "kasuga_lib:fan_fsm_data_driven", "loop": true } }
+          ],
+          "transitions": [
+            { "id": "off_to_g1", "from": "off", "to": "g1", "trigger_on": "cycle", "cross_fade_seconds": 0.25 },
+            { "id": "g1_to_g2", "from": "g1", "to": "g2", "trigger_on": "cycle", "cross_fade_seconds": 0.25 },
+            { "id": "g2_to_g3", "from": "g2", "to": "g3", "trigger_on": "cycle", "cross_fade_seconds": 0.25 },
+            { "id": "g3_to_off", "from": "g3", "to": "off", "trigger_on": "cycle", "cross_fade_seconds": 0.25 }
+          ]
+        }
+      ]
+    }
+  ]
+}

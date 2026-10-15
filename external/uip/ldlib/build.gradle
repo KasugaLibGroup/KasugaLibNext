@@ -14,9 +14,6 @@ repositories {
     maven { url = "https://maven.firstdark.dev/snapshots" }
 }
 
-base {
-    archivesName = mod_id
-}
 
 configurations {
     shadowLibrary

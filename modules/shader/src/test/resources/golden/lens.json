@@ -1,0 +1,11 @@
+{
+  "vertex": "example:lens",
+  "fragment": "example:lens",
+  "samplers": [
+    { "name": "SceneSampler" }
+  ],
+  "uniforms": [
+    { "name": "Center", "type": "float", "count": 2, "values": [ 0.5, 0.5 ] },
+    { "name": "Strength", "type": "float", "count": 1, "values": [ 0.1 ] }
+  ]
+}

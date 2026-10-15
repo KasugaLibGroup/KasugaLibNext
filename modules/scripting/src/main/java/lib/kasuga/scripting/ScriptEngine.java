@@ -3,6 +3,7 @@ package lib.kasuga.scripting;
 import jakarta.annotation.Nullable;
 import lib.kasuga.scripting.feature.EngineFeature;
 import lib.kasuga.scripting.feature.EngineFeatureType;
+import lib.kasuga.scripting.module.ResolvedPackage;
 import lib.kasuga.scripting.module.ResolvedScript;
 import lib.kasuga.scripting.module.ScriptModuleHandle;
 import lib.kasuga.scripting.value.ScriptValue;
@@ -28,6 +29,16 @@ public interface ScriptEngine {
     ScriptModuleHandle getLoadedModule(String sourcePath);
 
     void executeEntry(String entryName, InputStream source) throws ScriptException;
+
+    /**
+     * Execute an entry script with its owning {@link ResolvedPackage} known, so a package-aware require
+     * resolver can resolve in-package relative requires ({@code ./utils}) from the entry's first frame.
+     * The default delegates to {@link #executeEntry(String, InputStream)} for engines that don't track
+     * ownership.
+     */
+    default void executeEntry(String entryName, InputStream source, @Nullable ResolvedPackage owner) throws ScriptException {
+        executeEntry(entryName, source);
+    }
 
     void tick();
 

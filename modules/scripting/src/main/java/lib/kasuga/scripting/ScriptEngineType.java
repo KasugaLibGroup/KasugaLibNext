@@ -5,6 +5,7 @@ import lib.kasuga.scripting.feature.EngineFeatureType;
 import lib.kasuga.scripting.module.ModuleResolver;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 public class ScriptEngineType<T extends ScriptEngine> {
@@ -17,7 +18,13 @@ public class ScriptEngineType<T extends ScriptEngine> {
     public final ModuleResolver resolver;
     public final List<GlobalApiEntry> globalApis;
 
-    public record GlobalApiEntry(String name, Supplier<Object> supplier) {}
+    /**
+     * The supplier receives the fully-initialized {@link ScriptEngine} so an API object can capture a
+     * back-reference (e.g. to wrap Java objects into {@link lib.kasuga.scripting.value.ScriptValue}s when
+     * invoking JS callbacks). APIs that don't need the back-reference can use the {@code Supplier} overload
+     * of {@link Builder#addGlobalApi(String, Supplier)}.
+     */
+    public record GlobalApiEntry(String name, Function<ScriptEngine, Object> supplier) {}
 
     public ScriptEngineType(
             String scriptType,
@@ -59,7 +66,7 @@ public class ScriptEngineType<T extends ScriptEngine> {
         engine.setFeatures(features);
         engine.init(console);
         for (GlobalApiEntry entry : globalApis) {
-            engine.registerGlobal(entry.name(), entry.supplier().get());
+            engine.registerGlobal(entry.name(), entry.supplier().apply(engine));
         }
         return engine;
     }
@@ -104,8 +111,14 @@ public class ScriptEngineType<T extends ScriptEngine> {
             return this;
         }
 
-        public Builder<T> addGlobalApi(String name, Supplier<Object> supplier) {
+        public Builder<T> addGlobalApi(String name, Function<ScriptEngine, Object> supplier) {
             this.globalApis.add(new GlobalApiEntry(name, supplier));
+            return this;
+        }
+
+        /** Convenience for APIs that don't need an engine back-reference (wrapped to ignore the engine). */
+        public Builder<T> addGlobalApi(String name, Supplier<Object> supplier) {
+            this.globalApis.add(new GlobalApiEntry(name, engine -> supplier.get()));
             return this;
         }
 

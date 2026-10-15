@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "kasuga_lib:be/test_fan_be"
+  }
+}

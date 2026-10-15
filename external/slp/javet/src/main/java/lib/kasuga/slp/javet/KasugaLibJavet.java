@@ -7,6 +7,8 @@ import lib.kasuga.KasugaLib;
 import lib.kasuga.KasugaLibStartupEvent;
 import lib.kasuga.scripting.ScriptEngineRegistry;
 import lib.kasuga.scripting.ScriptEngineType;
+import lib.kasuga.scripting.fsm.FsmApiRegistration;
+import lib.kasuga.scripting.fsm.FsmAutoTickModule;
 import lib.kasuga.scripting.module.BuiltinModuleRegistry;
 import lib.kasuga.scripting.security.SecurityEngineFeatureType;
 import lib.kasuga.scripting.timer.TimerModule;
@@ -69,14 +71,16 @@ public class KasugaLibJavet {
         isRegistered = true;
 
         KasugaLib.getBean(BuiltinModuleRegistry.class).registerFactory(TimerModule.FACTORY);
+        KasugaLib.getBean(BuiltinModuleRegistry.class).registerFactory(FsmAutoTickModule.FACTORY);
 
-        ENGINE_TYPE = ScriptEngineType.<JavetScriptEngine>builder(
-                        JavetScriptEngine::new
-        ).scriptType("javascript")
-         .resolver(new JsModuleResolver())
-         .addFeature(SecurityEngineFeatureType.INSTANCE)
-         .addGlobalApi("ScriptingTestApi", ScriptingTestApi::new)
-         .build();
+        ENGINE_TYPE = FsmApiRegistration.install(
+                ScriptEngineType.<JavetScriptEngine>builder(
+                                JavetScriptEngine::new
+                        ).scriptType("javascript")
+                        .resolver(new JsModuleResolver())
+                        .addFeature(SecurityEngineFeatureType.INSTANCE)
+                        .addGlobalApi("ScriptingTestApi", ScriptingTestApi::new))
+                .build();
 
         ENGINE_TYPE.loadingIssues.addAll(ENGINE_RUNTIME_ISSUES);
 

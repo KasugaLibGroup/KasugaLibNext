@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": {"model": "kasuga_lib:block/fsm_test_block"}
+  }
+}
