@@ -24,21 +24,21 @@ public class DefaultRegisterContextDispatchers {
         registry.register(RegisterContextRegistry.Side.COMMON, (registry, modEventBus)->{
 
             modEventBus.addListener(EventPriority.HIGHEST, RegisterEvent.class, (event)->{
-                registry.dispatchRegister(new RegisterContext<>(
+                this.registry.dispatch(RegisterContextRegistry.Side.COMMON, registry, new RegisterContext<>(
                         RegistrationStage.REGISTER_EVENT,
                         new RegisterStageContext(event)
                 ));
             });
 
             modEventBus.addListener(RegisterPayloadHandlersEvent.class, (event)->{
-                registry.dispatchRegister(new RegisterContext<>(
+                this.registry.dispatch(RegisterContextRegistry.Side.COMMON, registry, new RegisterContext<>(
                         RegistrationStage.PAYLOAD_REGISTRATION,
                         new PayloadRegistrationStage(event::registrar)
                 ));
             });
 
             modEventBus.addListener(RegisterCapabilitiesEvent.class, (event)->{
-                registry.dispatchRegister(new RegisterContext<CapabilityRegistration>(
+                this.registry.dispatch(RegisterContextRegistry.Side.COMMON, registry, new RegisterContext<CapabilityRegistration>(
                         RegistrationStage.REGISTER_CAPABILITIES,
                         new CapabilityRegistration(event)
                 ));
@@ -46,14 +46,15 @@ public class DefaultRegisterContextDispatchers {
 
 
             modEventBus.addListener(BuildCreativeModeTabContentsEvent.class, (event)->{
-                registry.dispatchRegister(new RegisterContext<>(
+                this.registry.dispatch(RegisterContextRegistry.Side.COMMON, registry, new RegisterContext<>(
                         RegistrationStage.CREATIVE_TAB_CONTENT_REGISTRATION,
                         new CreativeTabContentRegistration(event.getTabKey(), event.getTab(), event)
                 ));
             });
 
             modEventBus.addListener(NewRegistryEvent.class,
-                    s->registry.dispatchRegister(new RegisterContext<>(RegistrationStage.NEW_REGISTRY, s))
+                    s->this.registry.dispatch(RegisterContextRegistry.Side.COMMON, registry,
+                            new RegisterContext<>(RegistrationStage.NEW_REGISTRY, s))
             );
         });
     }

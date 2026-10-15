@@ -16,9 +16,15 @@ import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.registries.RegisterEvent;
 
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
+
 public final class Registry extends RegistryGroup {
 
     private final String modId;
+    private final Map<Class<?>, Object> attachments = new ConcurrentHashMap<>();
 
     public Registry(String modId){
         this.modId = modId;
@@ -27,6 +33,22 @@ public final class Registry extends RegistryGroup {
 
     public String getModId() {
         return modId;
+    }
+
+    public <T> T getOrCreateAttachment(Class<T> type, Supplier<? extends T> factory) {
+        return type.cast(attachments.computeIfAbsent(type, ignored -> factory.get()));
+    }
+
+    public <T> Optional<T> getAttachment(Class<T> type) {
+        return Optional.ofNullable(type.cast(attachments.get(type)));
+    }
+
+    public <T> void setAttachment(Class<T> type, T value) {
+        attachments.put(type, type.cast(value));
+    }
+
+    public void removeAttachment(Class<?> type) {
+        attachments.remove(type);
     }
 
     public void register(IEventBus modEventBus) {

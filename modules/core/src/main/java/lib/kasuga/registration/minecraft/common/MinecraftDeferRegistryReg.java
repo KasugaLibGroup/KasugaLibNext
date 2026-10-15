@@ -12,6 +12,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
+
 public abstract class MinecraftDeferRegistryReg<S extends Reg<S, T>, R, T extends R> extends Reg<S, T> {
     private static Logger LOGGER = LogUtils.getLogger();
     private final String name;
@@ -20,6 +24,7 @@ public abstract class MinecraftDeferRegistryReg<S extends Reg<S, T>, R, T extend
 
     protected Holder<R> holder = new DeferredFillHolder<>();
     private ResourceLocation resourceLocation;
+    private final List<Consumer<? super T>> registeredCallbacks = new ArrayList<>();
 
     protected MinecraftDeferRegistryReg(String name, ResourceKey<Registry<R>> entryKey) {
         this.name = name;
@@ -31,11 +36,7 @@ public abstract class MinecraftDeferRegistryReg<S extends Reg<S, T>, R, T extend
         context.onStage(RegistrationStage.REGISTER_EVENT, (ctx)-> {
             if (ctx.getRegistryKey() != entryKey) return;
 
-            ResourceLocation id = transform(
-                    ResourceLocationModifiers.ID,
-                    ResourceLocation.fromNamespaceAndPath("minecraft", name)
-            );
-            id = applyProperties(ResourceLocation.class, id);
+            ResourceLocation id = resolveId();
 
             this.resourceLocation = id;
 
@@ -47,7 +48,13 @@ public abstract class MinecraftDeferRegistryReg<S extends Reg<S, T>, R, T extend
             }
             this.holder = localHolder;
             ctx.register(entryKey, id, ()->value);
+            registeredCallbacks.forEach(callback -> callback.accept(value));
         });
+    }
+
+    public S onRegistered(Consumer<? super T> callback) {
+        registeredCallbacks.add(callback);
+        return self();
     }
 
     protected abstract T createObject(ResourceLocation id);
@@ -70,5 +77,13 @@ public abstract class MinecraftDeferRegistryReg<S extends Reg<S, T>, R, T extend
 
     public ResourceLocation getResourceLocation() {
         return resourceLocation;
+    }
+
+    public ResourceLocation resolveId() {
+        ResourceLocation id = transform(
+                ResourceLocationModifiers.ID,
+                ResourceLocation.fromNamespaceAndPath("minecraft", name)
+        );
+        return applyProperties(ResourceLocation.class, id);
     }
 }

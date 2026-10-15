@@ -21,4 +21,8 @@ public class RegisterContext<L> {
             consumer.accept((T) value);
         }
     }
+
+    public RegistrationStage<?> getStage() {
+        return stage;
+    }
 }
