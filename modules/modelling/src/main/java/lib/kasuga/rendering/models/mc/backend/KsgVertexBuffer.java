@@ -164,7 +164,7 @@ public class KsgVertexBuffer implements AutoCloseable, VersionedBackendRenderabl
     }
 
     public KsgVertexBuffer(int numVertices, int vertexSize, VertexFormat format, Builder modifier, ExecutorService executor) {
-        this.buffer = ByteBuffer.allocateDirect(numVertices * vertexSize);
+        this.buffer = MemoryUtil.memCalloc(numVertices * vertexSize);
         buffer.order(ByteOrder.nativeOrder());
         this.building = true;
         this.vertexSize = vertexSize;
