@@ -167,4 +167,16 @@ class ClipSamplerFormulaTest {
         assertEquals(1f, scale.z, 1e-5f, "blank z axis must stay at the identity scale");
         assertEquals(1.5f, scale.y, 1e-5f, "y axis must carry the formula value");
     }
+
+    @Test
+    void scaleFormulaCanCrossZeroWithoutNonFiniteNormals() {
+        Namespace ns = new Namespace(Code.ROOT_NAMESPACE);
+        ClipSampler.INSTANCE.sample(scaleClip(), 0, ns);
+        for (float value : new float[]{1.5f, 0f, -1.5f}) {
+            ns.assign("query.scale", value);
+            Transform transform = ClipSampler.INSTANCE.sample(scaleClip(), 0, ns).bones().get("piston").transform();
+            assertTrue(transform.normal().isFinite(), "formula scale " + value);
+            assertEquals(value, transform.transform().m11(), 1e-5);
+        }
+    }
 }

@@ -27,6 +27,7 @@ public final class Blender {
         public float additiveSum;
         public float overrideValue;
         public boolean hasOverride;
+        public boolean unbounded;
 
         void applyBase(float value, float factor) {
             this.baseValue = value;
@@ -44,11 +45,12 @@ public final class Blender {
         }
 
         public float value() {
-            return hasOverride ? clamp01(overrideValue) : clamp01(baseValue * baseFactor + additiveSum);
+            float result = hasOverride ? overrideValue : baseValue * baseFactor + additiveSum;
+            return unbounded ? result : clamp01(result);
         }
 
         public float factor() {
-            return hasOverride ? 1f : (hasBase ? baseFactor : 1f);
+            return unbounded || hasOverride ? 1f : (hasBase ? baseFactor : 1f);
         }
     }
 
@@ -185,10 +187,11 @@ public final class Blender {
     private void applyMorphs(BlendMode mode, Pose pose, float weight) {
         pose.morphs().forEach((id, m) -> {
             MorphAccum accum = morphs.computeIfAbsent(id, k -> new MorphAccum());
+            accum.unbounded |= m.unbounded();
             switch (mode) {
                 case BASE -> accum.applyBase(m.value(), m.factor() * weight);
                 case ADDITIVE -> accum.applyAdditive(m.value(), m.factor() * weight);
-                case OVERRIDE -> accum.applyOverride(m.value());
+                case OVERRIDE -> accum.applyOverride(m.unbounded() ? m.value() * m.factor() : m.value());
             }
         });
     }

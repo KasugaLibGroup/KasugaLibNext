@@ -94,7 +94,8 @@ public final class ModelInstancePoseSink implements PoseSink {
         }
         for (Map.Entry<Object, Blender.MorphAccum> entry : blender.morphs().entrySet()) {
             Blender.MorphAccum accum = entry.getValue();
-            morph.activateMorph(entry.getKey(), accum.value(), accum.factor());
+            if (accum.unbounded) morph.activateWeight(entry.getKey(), accum.value());
+            else morph.activateMorph(entry.getKey(), accum.value(), accum.factor());
         }
 
         Set<String> bonesNow = blender.bones().keySet();

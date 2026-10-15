@@ -52,7 +52,7 @@ public final class FencedVertexBuffer implements AutoCloseable {
                         int length = snapshot.remaining();
                         long target = builder.reserve(length);
                         MemoryUtil.memCopy(MemoryUtil.memAddress(snapshot), target, length);
-                        ((AccessorByteBufferBuilder) builder).setWriteOffset(length);
+                        ((AccessorByteBufferBuilder) builder).kasuga$setWriteOffset(length);
                         MeshData mesh = new MeshData(Objects.requireNonNull(builder.build()), new MeshData.DrawState(
                                 format, vertices, mode.indexCount(vertices), mode, VertexFormat.IndexType.least(vertices)));
                         BufferUploader.reset();

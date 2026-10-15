@@ -73,6 +73,7 @@ public final class StandaloneRenderHarness {
             run(results, "production-program-links", suite::productionPrograms);
             run(results, "production-alpha-passes", suite::alphaPasses);
             run(results, "target-resize-and-failure", suite::targetLifecycle);
+            run(results, "gpu-buffer-lifecycle", GpuBufferLifecycleRegression::run);
             run(results, "production-transform-feedback", SkinningRegression::run);
             run(results, "assembled-garment-skinning", AssemblySkinningRegression::run);
             run(results, "fenced-upload-ring", UploadRingRegression::run);

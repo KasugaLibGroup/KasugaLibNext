@@ -17,7 +17,9 @@ public record Pose(
         Map<String, Boolean> ikEnabled
 ) {
 
-    public record Morph(float value, float factor) {}
+    public record Morph(float value, float factor, boolean unbounded) {
+        public Morph(float value, float factor) { this(value, factor, false); }
+    }
 
     public record Bone(Transform transform, ApplyMode mode) {
         public Bone {
@@ -87,6 +89,18 @@ public record Pose(
 
         public Builder morph(Object id, float value, float factor) {
             morphs.put(id, new Morph(value, factor));
+            return this;
+        }
+
+        /** Linear displacement weight, including negative values and values above one (e.g. glTF). */
+        public Builder morphWeight(Object id, float weight) {
+            if (!Float.isFinite(weight)) throw new IllegalArgumentException("Morph weight must be finite");
+            morphs.put(id, new Morph(weight, 1f, true));
+            return this;
+        }
+
+        public Builder morph(Object id, Morph value) {
+            morphs.put(id, Objects.requireNonNull(value));
             return this;
         }
 

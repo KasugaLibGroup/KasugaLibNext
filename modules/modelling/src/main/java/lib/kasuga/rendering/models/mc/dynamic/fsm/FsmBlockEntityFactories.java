@@ -62,7 +62,8 @@ public final class FsmBlockEntityFactories {
             LOGGER.warn("[fsm_be] '{}' has no valid 'state_machine' param; its block entity will not run a machine", id);
         }
         ResourceLocation modelLoc = readResourceLocation(params, "model");
-        if (modelLoc == null) {
+        // Logic-only machines intentionally omit a model. A supplied but invalid id is still a warning.
+        if (modelLoc == null && params != null && params.has("model")) {
             LOGGER.warn("[fsm_be] '{}' has no valid 'model' param; its block entity will not load a model", id);
         }
         String modelName = readString(params, "model_name");

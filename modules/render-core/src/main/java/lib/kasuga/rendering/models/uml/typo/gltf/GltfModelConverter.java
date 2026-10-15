@@ -2,6 +2,9 @@ package lib.kasuga.rendering.models.uml.typo.gltf;
 
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.uml.math.binding.BoneBindingFunc;
+import lib.kasuga.rendering.models.uml.dynamic.morph.types.MorphType;
+import lib.kasuga.rendering.models.uml.dynamic.morph.types.VertexPosMorph;
+import lib.kasuga.rendering.models.uml.dynamic.morph.types.VertexNormalMorph;
 import lib.kasuga.rendering.models.uml.structure.Model;
 import lib.kasuga.rendering.models.uml.structure.basic.BoneBinding;
 import lib.kasuga.rendering.models.uml.structure.basic.Mesh;
@@ -103,6 +106,7 @@ public final class GltfModelConverter {
         Map<GltfAsset.Material, Material> materialCache = new HashMap<>();
         List<Vertex> allVertices = new ArrayList<>();
         List<Mesh> allMeshes = new ArrayList<>();
+        List<MorphType<?, ?, GltfAsset.MorphId>> morphs = new ArrayList<>();
 
         for (GltfAsset.Primitive primitive : asset.primitives()) {
             Material material = materialCache.computeIfAbsent(primitive.material(), definition ->
@@ -110,13 +114,11 @@ public final class GltfModelConverter {
             Vertex[] vertices = new Vertex[primitive.vertexCount()];
             Vector3f[] normals = new Vector3f[primitive.vertexCount()];
             Matrix4f world = new Matrix4f().scaling(modelScale).mul(primitive.nodeWorld());
-            Matrix3f normalMatrix = new Matrix3f(world).invert().transpose();
+            Matrix3f normalMatrix = new Transform().set(world).normal();
             for (int vertexIndex = 0; vertexIndex < vertices.length; vertexIndex++) {
-                int p = vertexIndex * 3;
-                Vector3f position = world.transformPosition(new Vector3f(
-                        primitive.positions()[p], primitive.positions()[p + 1], primitive.positions()[p + 2]));
-                normals[vertexIndex] = normalMatrix.transform(new Vector3f(
-                        primitive.normals()[p], primitive.normals()[p + 1], primitive.normals()[p + 2])).normalize();
+                Vector3f position = world.transformPosition(defaultVector(primitive, vertexIndex, true));
+                // Normalize after the morph sum and skinning, so default weights can be subtracted exactly.
+                normals[vertexIndex] = normalMatrix.transform(defaultVector(primitive, vertexIndex, false));
                 Vertex vertex = new Vertex(position, null);
                 vertex.setBinding(binding(asset, primitive, vertexIndex, nodeBones, root));
                 vertices[vertexIndex] = vertex;
@@ -139,11 +141,50 @@ public final class GltfModelConverter {
                 addCorner(vertices[ic], mesh, material, primitive.texCoords(), ic, normals[ic]);
                 allMeshes.add(mesh);
             }
+            for (int targetIndex = 0; targetIndex < primitive.morphTargets().size(); targetIndex++) {
+                var target = primitive.morphTargets().get(targetIndex);
+                var id = new GltfAsset.MorphId(primitive.nodeIndex(), targetIndex);
+                for (int index = 0; index < vertices.length; index++) {
+                    Vertex vertex = vertices[index];
+                    if (hasDelta(target.positions(), index)) {
+                        Vector3f delta = world.transformDirection(vector(target.positions(), index));
+                        morphs.add(new VertexPosMorph<>(vertex, id, new Vector3f(vertex.getPosition()).add(delta)));
+                    }
+                    if (hasDelta(target.normals(), index)) {
+                        Vector3f delta = normalMatrix.transform(vector(target.normals(), index));
+                        vertex.getNormals().forEach((mesh, normal) -> morphs.add(
+                                new VertexNormalMorph<>(vertex, id, mesh, new Vector3f(normal).add(delta))));
+                    }
+                }
+            }
         }
         MaterialSet materialSet = new MaterialSet(textures, materialCache.values());
-        return new Model(allVertices.toArray(Vertex[]::new), allMeshes.toArray(Mesh[]::new),
+        Model model = new Model(allVertices.toArray(Vertex[]::new), allMeshes.toArray(Mesh[]::new),
                 bones, skeleton, materialSet, MeshMode.TRIANGLES,
                 new GltfModelData(asset, boneByNode, modelScale), null);
+        for (var morph : morphs) model.getMorph().addMorph(morph.getIdentifier(), morph);
+        return model;
+    }
+
+    private static Vector3f vector(float[] values, int vertex) {
+        int offset = vertex * 3;
+        return new Vector3f(values[offset], values[offset + 1], values[offset + 2]);
+    }
+
+    private static boolean hasDelta(float[] values, int vertex) {
+        int offset = vertex * 3;
+        return values.length != 0 && (values[offset] != 0f || values[offset + 1] != 0f || values[offset + 2] != 0f);
+    }
+
+    private static Vector3f defaultVector(GltfAsset.Primitive primitive, int vertex, boolean position) {
+        Vector3f result = vector(position ? primitive.positions() : primitive.normals(), vertex);
+        for (int target = 0; target < primitive.morphTargets().size(); target++) {
+            var definition = primitive.morphTargets().get(target);
+            float[] delta = position ? definition.positions() : definition.normals();
+            float weight = primitive.morphWeights()[target];
+            if (weight != 0f && delta.length != 0) result.fma(weight, vector(delta, vertex));
+        }
+        return result;
     }
 
     private static Material createMaterial(GltfAsset.Material definition, List<Texture> textures) {

@@ -6,13 +6,14 @@ import org.lwjgl.opengl.GL30;
 
 public class FrameBufferContext implements GpuContext<FrameBuffer> {
 
-    private int savedFbo = -1;
+    private int savedDrawFbo = -1, savedReadFbo = -1;
 
     public void enter(FrameBuffer buffer) {
-        if (!isEmpty() && savedFbo != buffer.getFboId()) {
+        if (!isEmpty()) {
             throw new IllegalStateException("Already in a framebuffer context");
         }
-        savedFbo = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
+        savedDrawFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        savedReadFbo = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
 
     }
 
@@ -20,12 +21,13 @@ public class FrameBufferContext implements GpuContext<FrameBuffer> {
         if (isEmpty()) {
             throw new IllegalStateException("Not currently in a framebuffer context");
         }
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, savedFbo);
-        savedFbo = -1;
+        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, savedDrawFbo);
+        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, savedReadFbo);
+        savedDrawFbo = savedReadFbo = -1;
     }
 
     @Override
     public boolean isEmpty() {
-        return savedFbo < 0;
+        return savedDrawFbo < 0;
     }
 }

@@ -9,7 +9,7 @@ public class VBOContext implements GpuContext<VBOBuffer> {
 
     @Override
     public void enter(VBOBuffer buffer) {
-        if (!isEmpty() && savedBinding != buffer.getId()) {
+        if (!isEmpty()) {
             throw new IllegalStateException("A different buffer is already entered in the context.");
         }
         savedBinding = GL15.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
@@ -21,6 +21,7 @@ public class VBOContext implements GpuContext<VBOBuffer> {
             throw new IllegalStateException("No buffer was entered in the context.");
         }
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, savedBinding);
+        savedBinding = -1;
     }
 
     @Override

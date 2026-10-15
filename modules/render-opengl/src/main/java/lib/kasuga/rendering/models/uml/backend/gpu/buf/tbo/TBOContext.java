@@ -9,11 +9,13 @@ public class TBOContext implements GpuContext<TBOBuffer> {
 
     @Override
     public void enter(TBOBuffer buffer) {
-        if (!isEmpty() && (savedBinding != buffer.getBufferId() || savedTextureBinding != buffer.getTextureId())) {
+        if (!isEmpty()) {
             throw new IllegalStateException("A different buffer is already entered in the context.");
         }
-        savedBinding = GL15.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);
+        // GL_TEXTURE_BUFFER_BINDING aliases GL_TEXTURE_BUFFER in the core API.
+        savedBinding = GL15.glGetInteger(GL31.GL_TEXTURE_BUFFER);
         savedActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + buffer.getTextureUnitId());
         savedTextureBinding = GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);
     }
 
@@ -22,8 +24,9 @@ public class TBOContext implements GpuContext<TBOBuffer> {
         if (isEmpty()) {
             throw new IllegalStateException("No buffer was entered in the context.");
         }
-        GL13.glActiveTexture(savedActiveTexture);
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + buffer.getTextureUnitId());
         GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER, savedTextureBinding);
+        GL13.glActiveTexture(savedActiveTexture);
         GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER, savedBinding);
         savedBinding = -1;
         savedTextureBinding = -1;

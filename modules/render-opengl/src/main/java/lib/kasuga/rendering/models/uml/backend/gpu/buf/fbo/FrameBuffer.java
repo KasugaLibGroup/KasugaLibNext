@@ -34,6 +34,7 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
 
     public FrameBuffer(int width, int height, int numColorAttach, int[] formats, int[] internalFormats, int[] type, boolean hasDepth) {
         super(0, 0, TYPE, new FrameBufferContext());
+        if (width <= 0 || height <= 0) throw new IllegalArgumentException("Framebuffer dimensions must be positive.");
         this.width = width;
         this.height = height;
         if (formats.length != numColorAttach || internalFormats.length != numColorAttach || type.length != numColorAttach) {
@@ -49,75 +50,98 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
         bind(0);
 
         colorAttachments = new int[numColorAttach];
-        for (int i = 0; i < numColorAttach; i++) {
-            colorAttachments[i] = createColorTexture(width, height, i);
-            GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,
-                    GL30.GL_COLOR_ATTACHMENT0 + i,
-                    GL11.GL_TEXTURE_2D,
-                    colorAttachments[i], 0);
+        try {
+            for (int i = 0; i < numColorAttach; i++) {
+                colorAttachments[i] = createColorTexture(width, height, i);
+                GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,
+                        GL30.GL_COLOR_ATTACHMENT0 + i,
+                        GL11.GL_TEXTURE_2D,
+                        colorAttachments[i], 0);
+            }
+
+            if (hasDepth) {
+                depthAttachment = createDepthRendererBuffer(width, height);
+                GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER,
+                        GL30.GL_DEPTH_ATTACHMENT,
+                        GL30.GL_RENDERBUFFER,
+                        depthAttachment);
+            }
+
+            setDrawBuffers();
+            checkComplete();
+
+        } catch (RuntimeException | Error failure) {
+            try { close(); } catch (Exception cleanup) { failure.addSuppressed(cleanup); }
+            throw failure;
+        } finally {
+            if (!context.isEmpty()) unbind();
         }
-
-        if (hasDepth) {
-            depthAttachment = createDepthRendererBuffer(width, height);
-            GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER,
-                    GL30.GL_DEPTH_ATTACHMENT,
-                    GL30.GL_RENDERBUFFER,
-                    depthAttachment);
-        }
-
-        setDrawBuffers();
-        checkComplete();
-
-        unbind();
     }
 
     public void resize(int newWidth, int newHeight) {
+        checkOpen(CLOSE_MSG);
+        if (newWidth <= 0 || newHeight <= 0) throw new IllegalArgumentException("Framebuffer dimensions must be positive.");
         if (newWidth == width && newHeight == height) return;
         this.width = newWidth;
         this.height = newHeight;
 
         bind(0);
-        for (int i = 0; i < colorAttachments.length; i++) {
-            if (colorAttachments[i] != 0) GL11.glDeleteTextures(colorAttachments[i]);
-            colorAttachments[i] = createColorTexture(newWidth, newHeight, i);
-            GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,
-                    GL30.GL_COLOR_ATTACHMENT0 + i,
-                    GL11.GL_TEXTURE_2D,
-                    colorAttachments[i], 0);
-        }
+        try {
+            for (int i = 0; i < colorAttachments.length; i++) {
+                if (colorAttachments[i] != 0) GL11.glDeleteTextures(colorAttachments[i]);
+                colorAttachments[i] = createColorTexture(newWidth, newHeight, i);
+                GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,
+                        GL30.GL_COLOR_ATTACHMENT0 + i,
+                        GL11.GL_TEXTURE_2D,
+                        colorAttachments[i], 0);
+            }
 
-        if (hasDepth && depthAttachment >= 0) {
-            GL30.glDeleteRenderbuffers(depthAttachment);
-        }
-        depthAttachment = createDepthRendererBuffer(newWidth, newHeight);
-        GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER,
-                GL30.GL_DEPTH_ATTACHMENT,
-                GL30.GL_RENDERBUFFER,
-                depthAttachment);
+            if (hasDepth) {
+                if (depthAttachment >= 0) GL30.glDeleteRenderbuffers(depthAttachment);
+                depthAttachment = createDepthRendererBuffer(newWidth, newHeight);
+                GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER,
+                        GL30.GL_DEPTH_ATTACHMENT,
+                        GL30.GL_RENDERBUFFER,
+                        depthAttachment);
+            }
 
-        setDrawBuffers();
-        checkComplete();
-        unbind();
+            setDrawBuffers();
+            checkComplete();
+        } finally {
+            unbind();
+        }
     }
 
     protected int createColorTexture(int w, int h, int index) {
+        int previous = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
         int texId = GL11.glGenTextures();
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, texId);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, internalFormats[index], w, h, 0, formats[index], types[index], (ByteBuffer) null);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-        return texId;
+        try {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, texId);
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, internalFormats[index], w, h, 0, formats[index], types[index], (ByteBuffer) null);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+            return texId;
+        } finally {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, previous);
+        }
     }
 
     protected int createDepthRendererBuffer(int w, int h) {
+        int previous = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
         int rboId = GL30.glGenRenderbuffers();
-        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, rboId);
-        GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL30.GL_DEPTH_COMPONENT24, w, h);
-        return rboId;
+        try {
+            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, rboId);
+            GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL30.GL_DEPTH_COMPONENT24, w, h);
+            return rboId;
+        } finally {
+            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, previous);
+        }
     }
 
     protected void setDrawBuffers() {
-        GL30.glDrawBuffers(colorAttachments);
+        int[] attachments = new int[colorAttachments.length];
+        for (int i = 0; i < attachments.length; i++) attachments[i] = GL30.GL_COLOR_ATTACHMENT0 + i;
+        GL30.glDrawBuffers(attachments);
     }
 
     protected void checkComplete() {
@@ -178,6 +202,16 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
     @Override
     public void resize(long newSize, boolean copyDataToNewBuffer) {
         throw new UnsupportedOperationException("FrameBuffer does not support resizing by size. Use resize(int newWidth, int newHeight) instead.");
+    }
+
+    @Override
+    public void close() throws Exception {
+        if (isClosed) return;
+        if (!context.isEmpty()) context.exit(this);
+        for (int texture : colorAttachments) if (texture != 0) GL11.glDeleteTextures(texture);
+        if (depthAttachment >= 0) GL30.glDeleteRenderbuffers(depthAttachment);
+        GL30.glDeleteFramebuffers(fboId);
+        super.close();
     }
 
     public static class Builder {

@@ -52,7 +52,7 @@ public class VertexArrayObject extends GpuBuffer<VertexArrayObject> {
     public void close() throws Exception {
         if (isClosed) return;
         if (!context.isEmpty()) context.exit(this);
-        GL30.glDeleteRenderbuffers(vaoId);
+        GL30.glDeleteVertexArrays(vaoId);
         super.close();
     }
 }
