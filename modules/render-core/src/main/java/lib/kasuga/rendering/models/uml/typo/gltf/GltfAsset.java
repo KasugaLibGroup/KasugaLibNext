@@ -26,7 +26,8 @@ public record GltfAsset(List<Primitive> primitives, List<Texture> textures,
     public record Primitive(String name, int nodeIndex, int skinIndex,
                             float[] positions, float[] normals, float[] texCoords,
                             int[] indices, int[] joints, float[] weights,
-                            Matrix4f nodeWorld, Material material) {
+                            Matrix4f nodeWorld, Material material,
+                            List<MorphTarget> morphTargets, float[] morphWeights) {
         public Primitive {
             positions = positions.clone();
             normals = normals.clone();
@@ -35,11 +36,32 @@ public record GltfAsset(List<Primitive> primitives, List<Texture> textures,
             joints = joints.clone();
             weights = weights.clone();
             nodeWorld = new Matrix4f(nodeWorld);
+            morphTargets = List.copyOf(morphTargets);
+            morphWeights = morphWeights.clone();
+            if (morphWeights.length != morphTargets.size()) {
+                throw new IllegalArgumentException("Morph weights must match the target count");
+            }
+        }
+
+        public Primitive(String name, int nodeIndex, int skinIndex,
+                         float[] positions, float[] normals, float[] texCoords,
+                         int[] indices, int[] joints, float[] weights,
+                         Matrix4f nodeWorld, Material material) {
+            this(name, nodeIndex, skinIndex, positions, normals, texCoords, indices, joints, weights,
+                    nodeWorld, material, List.of(), new float[0]);
         }
 
         public int vertexCount() { return positions.length / 3; }
         public boolean skinned() { return skinIndex >= 0 && joints.length != 0 && weights.length != 0; }
     }
+
+    /** Node-local displacements. Missing attributes are represented by empty arrays. */
+    public record MorphTarget(float[] positions, float[] normals) {
+        public MorphTarget { positions = positions.clone(); normals = normals.clone(); }
+    }
+
+    /** A target belongs to a node instance, even when several nodes share the same mesh. */
+    public record MorphId(int nodeIndex, int targetIndex) {}
 
     public record Material(int textureIndex, AlphaMode alphaMode, Vector4f baseColor,
                            float metallic, float roughness, float alphaCutoff,
@@ -93,10 +115,16 @@ public record GltfAsset(List<Primitive> primitives, List<Texture> textures,
             times = times.clone();
             values = values.clone();
         }
+
+        public int components() {
+            if (path != AnimationPath.WEIGHTS) return path.components();
+            int frames = times.length * (interpolation == Interpolation.CUBIC_SPLINE ? 3 : 1);
+            return frames == 0 ? 0 : values.length / frames;
+        }
     }
 
     public enum AnimationPath {
-        TRANSLATION(3), ROTATION(4), SCALE(3);
+        TRANSLATION(3), ROTATION(4), SCALE(3), WEIGHTS(1);
         private final int components;
         AnimationPath(int components) { this.components = components; }
         public int components() { return components; }

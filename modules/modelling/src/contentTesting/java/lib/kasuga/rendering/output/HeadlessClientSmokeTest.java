@@ -1,6 +1,8 @@
 package lib.kasuga.rendering.output;
 
 import com.mojang.logging.LogUtils;
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
+import lib.kasuga.mixins.client.AccessorByteBufferBuilder;
 import lib.kasuga.KasugaLib;
 import lib.kasuga.rendering.output.camera.CameraHandle;
 import lib.kasuga.rendering.output.camera.CameraRenderSettings;
@@ -36,6 +38,7 @@ public final class HeadlessClientSmokeTest {
         try {
             if (!HeadlessClient.enabled()) throw new IllegalStateException("Smoke requires the headless launcher");
             verifyWindow();
+            verifyBufferAccessor();
             mc.setScreen(null);
             MinecraftFrameOutputs.open(FrameOutputMode.OFFSCREEN_ONLY, frame -> capture(0, frame));
             var settings = new CameraRenderSettings(4, CameraRenderSettings.Quality.FANCY, CameraRenderSettings.Shader.disabled());
@@ -69,6 +72,18 @@ public final class HeadlessClientSmokeTest {
         if (HeadlessClient.egl() && (GLFW.glfwGetPlatform() != GLFW.GLFW_PLATFORM_NULL
                 || System.getenv("DISPLAY") != null || System.getenv("WAYLAND_DISPLAY") != null))
             throw new IllegalStateException("EGL test must use Null platform and no display service");
+    }
+    private static void verifyBufferAccessor() {
+        try (var builder = new ByteBufferBuilder(32)) {
+            var accessor = (AccessorByteBufferBuilder) builder;
+            long pointer = accessor.kasuga$getPointer();
+            if (pointer == 0 || accessor.kasuga$getCapacity() < 32 || builder.reserve(4) != pointer) {
+                throw new IllegalStateException("ByteBufferBuilder accessor returned invalid storage");
+            }
+            accessor.kasuga$setWriteOffset(0);
+            if (builder.reserve(4) != pointer) throw new IllegalStateException("ByteBufferBuilder write offset was not reset");
+        }
+        LogUtils.getLogger().info("BYTE_BUFFER_ACCESSOR_SMOKE_PASS");
     }
     private static void capture(int index, OutputFrame<FrameTexture> frame) {
         if (++CAPTURED[index] != 60) return;

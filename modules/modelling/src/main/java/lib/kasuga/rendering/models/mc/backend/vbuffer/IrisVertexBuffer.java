@@ -102,7 +102,7 @@ public class IrisVertexBuffer implements IVertexBuffer {
                     }, executor));
                 }
                 byteBufferBuilder = new ByteBufferBuilder(vertexCount * vertexSize);
-                long pointer = ((AccessorByteBufferBuilder) byteBufferBuilder).getPointer();
+                long pointer = ((AccessorByteBufferBuilder) byteBufferBuilder).kasuga$getPointer();
                 CompletableFuture.allOf(futures).join();
 
                 for (int i = 0; i < taskCount; i++) {
@@ -110,14 +110,14 @@ public class IrisVertexBuffer implements IVertexBuffer {
                     int taskStart = i * multiThreadedThreshold;
                     int taskVertices = Math.min(multiThreadedThreshold, vertexCount - taskStart);
                     int byteCount = taskVertices * vertexSize;
-                    long p = ((AccessorByteBufferBuilder) bbb).getPointer();
+                    long p = ((AccessorByteBufferBuilder) bbb).kasuga$getPointer();
                     MemoryUtil.memCopy(p, pointer, byteCount);
                     bbb.close();
                     pointer += byteCount;
                     multiBufferBuilders[i] = null;
                 }
 
-                ((AccessorByteBufferBuilder) byteBufferBuilder).setWriteOffset(vertexCount * vertexSize);
+                ((AccessorByteBufferBuilder) byteBufferBuilder).kasuga$setWriteOffset(vertexCount * vertexSize);
             }
             try (ByteBufferBuilder.Result result = Objects.requireNonNull(byteBufferBuilder.build())) {
                 ByteBuffer data = result.byteBuffer();
@@ -195,7 +195,7 @@ public class IrisVertexBuffer implements IVertexBuffer {
             bbb = new ByteBufferBuilder(numVertices * vSize);
         } else {
             bbb = byteBufferBuilder;
-            ((AccessorByteBufferBuilder) bbb).setWriteOffset(0);
+            ((AccessorByteBufferBuilder) bbb).kasuga$setWriteOffset(0);
         }
         // Iris' automatic extension depends on render-thread shader state. Workers and
         // partial dirty ranges must write the complete, already-extended format themselves.

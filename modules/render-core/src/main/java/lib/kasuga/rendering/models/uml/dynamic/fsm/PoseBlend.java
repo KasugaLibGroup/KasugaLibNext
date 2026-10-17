@@ -43,6 +43,10 @@ public final class PoseBlend {
             float valueTo = mt != null ? mt.value() : 0f;
             float factorFrom = mf != null ? mf.factor() : 1f;
             float factorTo = mt != null ? mt.factor() : 1f;
+            if ((mf != null && mf.unbounded()) || (mt != null && mt.unbounded())) {
+                builder.morphWeight(key, lerp(valueFrom * factorFrom, valueTo * factorTo, alpha));
+                continue;
+            }
             builder.morph(key, lerp(valueFrom, valueTo, alpha), lerp(factorFrom, factorTo, alpha));
         }
 

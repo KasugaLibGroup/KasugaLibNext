@@ -3,6 +3,8 @@ package lib.kasuga.rendering.models.uml.backend.gpu.buf;
 import lib.kasuga.rendering.models.uml.backend.gpu.GpuContext;
 import lib.kasuga.rendering.models.uml.backend.gpu.GpuObject;
 import lombok.Getter;
+import org.lwjgl.opengl.GL15;
+import org.lwjgl.system.MemoryUtil;
 
 import java.nio.*;
 
@@ -51,6 +53,25 @@ public abstract class GpuBuffer<T extends GpuBuffer<T>> implements GpuObject<T> 
         if (isClosed) {
             throw new IllegalStateException(operation);
         }
+    }
+
+    /** Resizes bound storage, retaining only the surviving prefix with a matching native allocator/free. */
+    protected void resizeStorage(int target, int id, long newSize, boolean preserve) {
+        GL15.glBindBuffer(target, id);
+        if (!preserve || size == 0) {
+            GL15.glBufferData(target, newSize, usage);
+        } else {
+            ByteBuffer temporary = MemoryUtil.memAlloc(Math.toIntExact(Math.min(size, newSize)));
+            try {
+                // LWJGL readback does not advance the buffer's position; no flip is needed.
+                GL15.glGetBufferSubData(target, 0, temporary);
+                GL15.glBufferData(target, newSize, usage);
+                GL15.glBufferSubData(target, 0, temporary);
+            } finally {
+                MemoryUtil.memFree(temporary);
+            }
+        }
+        size = newSize;
     }
 
     @Override

@@ -164,6 +164,14 @@ public final class GltfLoader {
             Node node = raw.getNodes().get(nodeIndex);
             if (node.getMesh() == null || node.getMesh() < 0 || node.getMesh() >= raw.getMeshes().size()) continue;
             var mesh = raw.getMeshes().get(node.getMesh());
+            int targetCount = morphTargetCount(raw, nodeIndex);
+            List<Float> defaults = node.getWeights() != null ? node.getWeights() : mesh.getWeights();
+            float[] morphWeights = new float[targetCount];
+            if (defaults != null) {
+                if (defaults.size() != targetCount) throw new IllegalArgumentException("Invalid default morph weight count");
+                for (int i = 0; i < targetCount; i++) morphWeights[i] = defaults.get(i);
+            }
+            requireFinite(morphWeights, "default morph weights");
             String baseName = node.getName() == null || node.getName().isBlank()
                     ? mesh.getName() == null || mesh.getName().isBlank() ? "mesh_" + node.getMesh() : mesh.getName()
                     : node.getName();
@@ -198,13 +206,51 @@ public final class GltfLoader {
                         model.getAccessorModels().get(attributes.get("WEIGHTS_0")).isNormalized(), 4)
                         : new float[0];
                 String name = mesh.getPrimitives().size() > 1 ? baseName + ":" + primitiveIndex : baseName;
+                List<GltfAsset.MorphTarget> targets = new ArrayList<>();
+                if (primitive.getTargets() != null) {
+                    for (Map<String, Integer> target : primitive.getTargets()) {
+                        targets.add(new GltfAsset.MorphTarget(morphAttribute(model, target, "POSITION", vertexCount),
+                                morphAttribute(model, target, "NORMAL", vertexCount)));
+                    }
+                }
                 result.add(new GltfAsset.Primitive(name, nodeIndex,
                         node.getSkin() == null ? -1 : node.getSkin(), positionValues, normalValues,
                         uvValues, indices, joints, weights, hierarchy.bindWorlds()[nodeIndex],
-                        material(raw, primitive.getMaterial())));
+                        material(raw, primitive.getMaterial()), targets, morphWeights));
             }
         }
         return result;
+    }
+
+    private static float[] morphAttribute(GltfModel model, Map<String, Integer> target,
+                                         String semantic, int vertexCount) {
+        Integer accessor = target.get(semantic);
+        if (accessor == null) return new float[0];
+        AccessorFloatData data = AccessorDatas.createFloat(model.getAccessorModels().get(accessor));
+        if (data.getNumElements() != vertexCount || data.getNumComponentsPerElement() != 3) {
+            throw new IllegalArgumentException("Invalid morph target " + semantic + " accessor");
+        }
+        float[] values = floatValues(data, 3);
+        requireFinite(values, "morph target " + semantic);
+        return values;
+    }
+
+    private static int morphTargetCount(GlTF raw, int nodeIndex) {
+        if (raw.getNodes() == null || nodeIndex < 0 || nodeIndex >= raw.getNodes().size()) return 0;
+        Node node = raw.getNodes().get(nodeIndex);
+        if (node.getMesh() == null || raw.getMeshes() == null) return 0;
+        var mesh = raw.getMeshes().get(node.getMesh());
+        int count = -1;
+        for (var primitive : mesh.getPrimitives()) {
+            int size = primitive.getTargets() == null ? 0 : primitive.getTargets().size();
+            if (count >= 0 && size != count) throw new IllegalArgumentException("Inconsistent morph target counts in mesh");
+            count = size;
+        }
+        return Math.max(count, 0);
+    }
+
+    private static void requireFinite(float[] values, String label) {
+        for (float value : values) if (!Float.isFinite(value)) throw new IllegalArgumentException("Non-finite " + label);
     }
 
     private static GltfAsset.Material material(GlTF raw, Integer materialIndex) {
@@ -285,6 +331,7 @@ public final class GltfLoader {
                     case "translation" -> GltfAsset.AnimationPath.TRANSLATION;
                     case "rotation" -> GltfAsset.AnimationPath.ROTATION;
                     case "scale" -> GltfAsset.AnimationPath.SCALE;
+                    case "weights" -> GltfAsset.AnimationPath.WEIGHTS;
                     default -> null;
                 };
                 if (path == null || channel.getSampler() == null
@@ -294,8 +341,13 @@ public final class GltfLoader {
                 float[] times = inputCache.computeIfAbsent(sampler.getInput(), index ->
                         floatValues(AccessorDatas.createFloat(model.getAccessorModels().get(index)), 1));
                 if (times.length == 0) continue;
-                AccessorFloatData output = AccessorDatas.createFloat(model.getAccessorModels().get(sampler.getOutput()));
-                float[] values = floatValues(output, path.components());
+                var outputModel = model.getAccessorModels().get(sampler.getOutput());
+                AccessorData output = AccessorDatas.create(outputModel);
+                if (output.getNumComponentsPerElement() != path.components()) {
+                    throw new IllegalArgumentException("Invalid animation output type in " + name);
+                }
+                float[] values = numberValues(output, outputModel.isNormalized(), path.components());
+                requireFinite(values, "animation output");
                 GltfAsset.Interpolation interpolation = switch (sampler.getInterpolation() == null
                         ? "LINEAR" : sampler.getInterpolation()) {
                     case "STEP" -> GltfAsset.Interpolation.STEP;
@@ -303,7 +355,9 @@ public final class GltfLoader {
                     default -> GltfAsset.Interpolation.LINEAR;
                 };
                 int multiplier = interpolation == GltfAsset.Interpolation.CUBIC_SPLINE ? 3 : 1;
-                if (output.getNumElements() != times.length * multiplier) {
+                int targets = path == GltfAsset.AnimationPath.WEIGHTS
+                        ? morphTargetCount(raw, channel.getTarget().getNode()) : 1;
+                if (targets == 0 || output.getNumElements() != (long) times.length * multiplier * targets) {
                     throw new IllegalArgumentException("Invalid animation output count in " + name);
                 }
                 tracks.add(new GltfAsset.AnimationTrack(channel.getTarget().getNode(), path,

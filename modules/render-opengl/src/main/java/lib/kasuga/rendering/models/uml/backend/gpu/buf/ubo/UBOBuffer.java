@@ -4,7 +4,6 @@ import lib.kasuga.rendering.models.uml.backend.gpu.buf.GpuBuffer;
 import lombok.Getter;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL31;
-import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
 
@@ -49,35 +48,11 @@ public class UBOBuffer extends GpuBuffer<UBOBuffer> {
             throw new IllegalArgumentException("Buffer size must be greater than zero.");
         }
 
-        final long oldSize = size;
-
-        if (!copyDataToNewBuffer || oldSize == 0) {
-            context.enter(this);
-            try {
-                GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, id);
-                GL15.glBufferData(GL31.GL_UNIFORM_BUFFER, newSize, usage);
-            } finally {
-                context.exit(this);
-            }
-        } else {
-            // Create a temporary buffer to hold the existing data
-            ByteBuffer tempBuffer = ByteBuffer.allocateDirect((int) oldSize);
-            context.enter(this);
-            try {
-                GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, id);
-                GL15.glGetBufferSubData(GL31.GL_UNIFORM_BUFFER, 0, tempBuffer);
-                tempBuffer.flip();
-
-                // Resize the buffer
-                GL15.glBufferData(GL31.GL_UNIFORM_BUFFER, newSize, usage);
-
-                // Restore the data to the resized buffer
-                GL15.glBufferSubData(GL31.GL_UNIFORM_BUFFER, 0, tempBuffer);
-
-                MemoryUtil.memFree(tempBuffer);
-            } finally {
-                context.exit(this);
-            }
+        context.enter(this);
+        try {
+            resizeStorage(GL31.GL_UNIFORM_BUFFER, id, newSize, copyDataToNewBuffer);
+        } finally {
+            context.exit(this);
         }
     }
 
@@ -85,7 +60,7 @@ public class UBOBuffer extends GpuBuffer<UBOBuffer> {
     public void bind(int index) {
         checkOpen(CLOSE_MSG);
         if (index < 0) return;
-        context.enter(this);
+        ((UBOContext) context).enter(this, index);
         GL31.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, index, id);
     }
 
@@ -104,7 +79,7 @@ public class UBOBuffer extends GpuBuffer<UBOBuffer> {
         context.enter(this);
         try {
             GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, id);
-            GL15.glBufferData(GL31.GL_UNIFORM_BUFFER, data, usage);
+            GL15.glBufferSubData(GL31.GL_UNIFORM_BUFFER, 0, data);
         } finally {
             context.exit(this);
         }

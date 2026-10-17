@@ -128,6 +128,15 @@ public class MorphInstance<IdType> {
 
     public boolean activateMorph(IdType id, float value) { return activateMorph(id, value, 1F); }
 
+    /** Applies a finite signed displacement weight without the normalized activation clamp. */
+    public boolean activateWeight(IdType id, float weight) {
+        if (!Float.isFinite(weight)) throw new IllegalArgumentException("Morph weight must be finite");
+        List<MorphType<?, ?, IdType>> definitions = morph.getMorphs(id);
+        if (definitions.isEmpty()) return false;
+        for (MorphType<?, ?, IdType> definition : definitions) applySingle(definition, 1f, weight);
+        return true;
+    }
+
     @SuppressWarnings("unchecked")
     public boolean activateMorph(IdType id, float value, float factor) {
         GroupMorph<IdType> group = morph.getGroup(id);

@@ -3,7 +3,6 @@ package lib.kasuga.rendering.models.uml.backend.gpu.buf.tbo;
 import lib.kasuga.rendering.models.uml.backend.gpu.buf.GpuBuffer;
 import lombok.Getter;
 import org.lwjgl.opengl.*;
-import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
 import java.util.function.Supplier;
@@ -63,42 +62,12 @@ public class TBOBuffer extends GpuBuffer<TBOBuffer> {
         if (newSize <= 0) {
             throw new IllegalArgumentException("New size must be greater than zero.");
         }
-        final long oldSize = size;
-        if (!copyDataToNewBuffer || oldSize == 0) {
-            bind(-1);
-            try {
-                GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, bufferId);
-                GL15.glBufferData(GL31.GL_UNIFORM_BUFFER, newSize, usage);
-
-                GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER, textureId);
-                GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER, GL30.GL_RGBA32F, bufferId);
-            } finally {
-                unbind();
-            }
-        } else {
-            int bytesToRead = (int) Math.min(oldSize, Integer.MAX_VALUE);
-            ByteBuffer data = ByteBuffer.allocateDirect(bytesToRead);
-            bind(-1);
-            try {
-                GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER, bufferId);
-                GL15.glGetBufferSubData(GL31.GL_TEXTURE_BUFFER, 0, data);
-                data.flip();
-
-                GL15.glBufferData(GL31.GL_TEXTURE_BUFFER, newSize, usage);
-
-                int copySize = (int) Math.min(oldSize, newSize);
-                data.limit(copySize);
-
-                GL15.glBufferSubData(GL31.GL_TEXTURE_BUFFER, 0, data);
-                GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER, textureId);
-                GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER, GL30.GL_RGBA32F, bufferId);
-
-                MemoryUtil.memFree(data);
-            } finally {
-                unbind();
-            }
+        context.enter(this);
+        try {
+            resizeStorage(GL31.GL_TEXTURE_BUFFER, bufferId, newSize, copyDataToNewBuffer);
+        } finally {
+            context.exit(this);
         }
-        this.size = newSize;
     }
 
     @Override
@@ -124,7 +93,7 @@ public class TBOBuffer extends GpuBuffer<TBOBuffer> {
         context.enter(this);
         try {
             GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER, bufferId);
-            GL15.glBufferData(GL31.GL_TEXTURE_BUFFER, data, usage);
+            GL15.glBufferSubData(GL31.GL_TEXTURE_BUFFER, 0, data);
         } finally {
             context.exit(this);
         }

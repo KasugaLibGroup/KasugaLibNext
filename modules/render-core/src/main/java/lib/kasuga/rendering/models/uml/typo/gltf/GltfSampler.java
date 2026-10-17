@@ -13,11 +13,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/** Pure glTF TRS interpolation: evaluates an {@link GltfAsset.AnimationClip} into a bone {@link Pose}. */
+/** glTF TRS and morph-weight interpolation into the common animation pose pipeline. */
 public final class GltfSampler implements AnimationSampler<GltfAsset.AnimationClip> {
 
     private final GltfAsset.NodeHierarchy nodes;
     private final Map<Integer, String> nodeBoneNames;
+    private final Map<Integer, float[]> defaultWeights;
 
     public GltfSampler(GltfModelData data) {
         Objects.requireNonNull(data, "data");
@@ -27,6 +28,11 @@ public final class GltfSampler implements AnimationSampler<GltfAsset.AnimationCl
             names.put(entry.getKey(), entry.getValue().getName());
         }
         this.nodeBoneNames = Map.copyOf(names);
+        Map<Integer, float[]> weights = new HashMap<>();
+        for (var primitive : data.asset().primitives()) {
+            if (!primitive.morphTargets().isEmpty()) weights.putIfAbsent(primitive.nodeIndex(), primitive.morphWeights());
+        }
+        this.defaultWeights = Map.copyOf(weights);
     }
 
     @Override
@@ -43,6 +49,13 @@ public final class GltfSampler implements AnimationSampler<GltfAsset.AnimationCl
                 .map(Quaternionf::new).toArray(Quaternionf[]::new);
         Vector3f[] scales = java.util.Arrays.stream(nodes.scales())
                 .map(Vector3f::new).toArray(Vector3f[]::new);
+        Pose.Builder builder = new Pose.Builder();
+        // Static defaults are baked into the converted geometry. Pose weights are offsets from those defaults.
+        defaultWeights.forEach((node, weights) -> {
+            for (int target = 0; target < weights.length; target++) {
+                builder.morphWeight(new GltfAsset.MorphId(node, target), 0f);
+            }
+        });
         for (GltfAsset.AnimationTrack track : data.tracks()) {
             if (track.nodeIndex() < 0 || track.nodeIndex() >= nodes.size() || track.times().length == 0) continue;
             int key = segment(track.times(), absoluteTime);
@@ -54,9 +67,16 @@ public final class GltfSampler implements AnimationSampler<GltfAsset.AnimationCl
                 case TRANSLATION -> sampleVector(track, key, next, amount, translations[track.nodeIndex()]);
                 case SCALE -> sampleVector(track, key, next, amount, scales[track.nodeIndex()]);
                 case ROTATION -> sampleRotation(track, key, next, amount, rotations[track.nodeIndex()]);
+                case WEIGHTS -> {
+                    float[] defaults = defaultWeights.get(track.nodeIndex());
+                    if (defaults == null) continue;
+                    for (int target = 0; target < track.components(); target++) {
+                        builder.morphWeight(new GltfAsset.MorphId(track.nodeIndex(), target),
+                                sampleComponent(track, key, next, amount, target) - defaults[target]);
+                    }
+                }
             }
         }
-        Pose.Builder builder = new Pose.Builder();
         for (int node = 0; node < nodes.size(); node++) {
             String boneName = boneName(node);
             if (boneName == null) continue;
@@ -118,7 +138,7 @@ public final class GltfSampler implements AnimationSampler<GltfAsset.AnimationCl
 
     private static float cubic(GltfAsset.AnimationTrack track, int key, int next,
                                float amount, int component) {
-        int components = track.path().components();
+        int components = track.components();
         int value0 = (key * 3 + 1) * components + component;
         if (key == next) return track.values()[value0];
         int tangent0 = (key * 3 + 2) * components + component;
@@ -130,6 +150,16 @@ public final class GltfSampler implements AnimationSampler<GltfAsset.AnimationCl
                 + (t3 - 2f * t2 + amount) * duration * track.values()[tangent0]
                 + (-2f * t3 + 3f * t2) * track.values()[value1]
                 + (t3 - t2) * duration * track.values()[tangent1];
+    }
+
+    private static float sampleComponent(GltfAsset.AnimationTrack track, int key, int next,
+                                         float amount, int component) {
+        if (track.interpolation() == GltfAsset.Interpolation.CUBIC_SPLINE) {
+            return cubic(track, key, next, amount, component);
+        }
+        int width = track.components();
+        float t = track.interpolation() == GltfAsset.Interpolation.STEP ? 0f : amount;
+        return mix(track.values()[key * width + component], track.values()[next * width + component], t);
     }
 
     private static float mix(float a, float b, float t) { return Math.fma(b - a, t, a); }
