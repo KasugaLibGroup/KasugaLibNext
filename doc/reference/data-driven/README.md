@@ -14,6 +14,16 @@
 | [api-diagnostics.md](api-diagnostics.md) | Reference | `Diagnostics` 门面、`/kasuga_data` 命令与错误分类 |
 | [api-reload.md](api-reload.md) | Reference | reload API、可断言的纯函数面与调用示例 |
 
+> **章节编号对照**：本目录四篇 `api-*.md` 曾是同一页 `api.md`，按读者任务拆开后**保留了原章节号**，
+> 以免全树已经写好的 `§N` 交叉引用失效 —— 因此各页内部编号不连续：
+>
+> | 页 | 原章节号 |
+> | --- | --- |
+> | [api-registration.md](api-registration.md) | §1 模块与包结构、§2 JsonTreeBuilder、§3 索引 API、§4 内容分派与 apply、§5 冲突解决 |
+> | [api-extension.md](api-extension.md) | §8 TypeHandler 体系、§9 BuildContext / RegBuildContext、§10 FactoryRegistry、§11 属性解析器 |
+> | [api-diagnostics.md](api-diagnostics.md) | §6 Diagnostics 门面、§7 `/kasuga_data errors` 命令、§12 错误分类 |
+> | [api-reload.md](api-reload.md) | §13 重载 API、§14 测试可断言的纯函数面、§15 调用示例 |
+
 入门与教程（`guides/` 节）：
 
 | 文档 | 类型 | 内容 |
