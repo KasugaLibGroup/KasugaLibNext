@@ -561,7 +561,7 @@ JsonTreeBuilder.getLoadingErrorsByMod()     // 按 mod 分桶
 
 ## 9. 生产规模参考：KuaYue 车厢的组织方式
 
-> 本节只读观察 `/Users/lingshi/coding/minecraft/Kuayue/KuaYue/modules/train-parts/resources/carriages/`，不修改。
+> 本节只读观察 KuaYue 仓库的 `modules/train-parts/resources/carriages/`，不修改。
 
 KuaYue 的 11 节车厢（`22`/`25`/`25b`/`25g`/`25k`/`25t`/`25z`/`cr200j`/`freight`/`jy30`/`m1`）展示了「按功能切、每功能自带清单片段」在真实项目里的样子。每节车厢是一个**独立的资源编译模块**，源目录顶层是 `blockstates/`、`data/`、`lang/`、`loots/`、`models/`、`recipes/`、`tags/`、`textures/` 与 `module.toml` —— **没有 `assets/`**；要经资源编译才并入产物里的 `assets/`/`data/` 布局。模型资源、本地化、战利品表和数据驱动内容放在同一个车厢目录里一起交付。
 

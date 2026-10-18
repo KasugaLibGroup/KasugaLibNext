@@ -440,8 +440,7 @@ var camera = MinecraftCameras.create("export:camera", () ->
 context/share group 有意义。即使只读，CPU 编码器仍需回读。若后续帧或异步
 消费者还需要它，必须在回调里复制到自有 FBO，并在 GL/render 线程管理复制目标和 fence，不能
 把借用的 ID 直接放入后台队列。DEBUG 预览的 `OutputFramebuffer.capture`
-加 `glBlitFramebuffer` 是一份实际的 GPU 复制示例，见
-[`DualCameraDebug`](../modules/modelling/src/main/java/lib/kasuga/rendering/output/mc/DualCameraDebug.java)。
+加 `glBlitFramebuffer` 是一份实际的 GPU 复制示例，见 `modelling` 模块的 `DualCameraDebug`。
 
 ### CPU 字节流：最小可用录制示例
 

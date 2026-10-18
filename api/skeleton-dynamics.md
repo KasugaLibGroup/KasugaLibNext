@@ -441,12 +441,14 @@ glTF profile 的外部索引继续对应 node 顺序；MMD profile 对应原刚�
 | `void refresh(Bone driver, Bone endpoint)` | 修正后同步重建受影响层级，后续读取必须看到最新姿态 |
 
 宿主负责动画/物理求值次序、修正清理和线程归属。求解器有可变状态，不能并发求解同一实例。
-当前库是官方 Caliko 1.3.8 core；来源和许可证见 [依赖说明](../modules/render-core/libs/README.md)。
+当前库是官方 Caliko 1.3.8 core；`modules/render-core/libs` 下附有依赖说明与许可证。
 
 ## 源码入口
 
-- [SkeletonDynamics](../modules/render-core/src/main/java/lib/kasuga/rendering/models/uml/structure/skeleton/SkeletonDynamics.java)
-- [SkeletonDynamicsBuilder](../modules/render-core/src/main/java/lib/kasuga/rendering/models/uml/loaders/SkeletonDynamicsBuilder.java)
-- [SkeletonDynamicsReader](../modules/render-core/src/main/java/lib/kasuga/rendering/models/uml/loaders/SkeletonDynamicsReader.java)
-- [SkeletonInstance](../modules/render-core/src/main/java/lib/kasuga/rendering/models/uml/dynamic/SkeletonInstance.java)
-- [CalikoIkSolver](../modules/render-core/src/main/java/lib/kasuga/rendering/models/uml/dynamic/ik/CalikoIkSolver.java)
+本页对应的类都在 `render-core` 模块中，包路径见「类型与包」表：
+
+- `SkeletonDynamics`
+- `SkeletonDynamicsBuilder`
+- `SkeletonDynamicsReader`
+- `SkeletonInstance`
+- `CalikoIkSolver`

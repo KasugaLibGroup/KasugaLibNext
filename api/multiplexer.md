@@ -1,4 +1,4 @@
-# Multiplexer
+# 模型变体选择（Multiplexer）参考
 
 接口、配置和调用参考。原理说明见 [multiplexer.md](../doc/multiplexer.md)。
 

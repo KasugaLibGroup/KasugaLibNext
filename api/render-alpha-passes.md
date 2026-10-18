@@ -1,4 +1,4 @@
-# 模型材质 Alpha 渲染
+# 模型材质 Alpha 渲染参考
 
 接口、配置和调用参考。原理说明见 [render-alpha-passes.md](../doc/render-alpha-passes.md)。
 
