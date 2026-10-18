@@ -12,11 +12,11 @@ Data-driven has two extension surfaces: JSON content, and capabilities JSON cann
 
 ```mermaid
 flowchart TD
-    A["想加什么？"] -->|"已有顶层类型里换一种方块/物品/实体"| B["注册工厂<br/>FactoryRegistry"]
-    A -->|"给 properties / item_properties 加新键"| C["注册属性编译器<br/>JsonPropertyParser / JsonItemParser"]
-    A -->|"内容文件里出现全新的顶层字段"| D["新增 TypeHandler<br/>TypeHandlerRegistry"]
-    A -->|"reload 期多一种内容类型"| E["实现并注册 ReloadHandler"]
-    A -->|"以上都不沾，只是想多写几个方块"| F["不用写 Java<br/>见 guide-content.md"]
+    A["What do you want to add?"] -->|"A different block/item/entity under an existing top-level type"| B["Register a factory<br/>FactoryRegistry"]
+    A -->|"A new key for properties / item_properties"| C["Register a property compiler<br/>JsonPropertyParser / JsonItemParser"]
+    A -->|"A brand-new top-level field in a content file"| D["Add a TypeHandler<br/>TypeHandlerRegistry"]
+    A -->|"One more content type at reload time"| E["Implement and register a ReloadHandler"]
+    A -->|"None of the above, you just want to write more blocks"| F["No Java needed<br/>see guide-content.md"]
 ```
 
 | Your goal | Extension point | Does the result need to go into a Minecraft registry | Where in this page |
@@ -60,14 +60,14 @@ import lib.kasuga.registration.factory.FactoryRegistry;
 
 public final class EffectTypeHandler extends RegTypeHandler<EffectTypeHandler.EffectDef> {
 
-    /** parse 的产物：一个不可变的定义对象。字段来自 JSON，不含任何副作用。 */
+    /** The product of parse: an immutable definition object. Fields come from JSON, no side effects. */
     public record EffectDef(String id, String type, JsonObject params) {}
 
     @Override
-    public String getTypeName() { return "effects"; }   // 认领的顶层字段名
+    public String getTypeName() { return "effects"; }   // the top-level field name this handler claims
 
     @Override
-    public int getPhase() { return PHASE_CONTENT; }     // 见 1.5
+    public int getPhase() { return PHASE_CONTENT; }     // see 1.5
 
     @Override
     public EffectDef parse(JsonObject json) {
@@ -80,14 +80,14 @@ public final class EffectTypeHandler extends RegTypeHandler<EffectTypeHandler.Ef
     @Override
     protected String resolveRawId(EffectDef definition) { return definition.id(); }
 
-    /** 诊断里显示的是 JSON 的 type 值（如 my_effect），不是顶层字段名 effects。 */
+    /** Diagnostics show the JSON `type` value (such as my_effect), not the top-level field name effects. */
     @Override
     protected String resolveType(EffectDef definition) { return definition.type(); }
 
     @Override
     protected Reg<?, ?> createRegistration(EffectDef definition, String path) {
         FactoryRegistry.GenericFactory factory = FactoryRegistry.getGeneric(definition.type());
-        if (factory == null) return null;    // 返回 null 即「没有工厂」，框架会 warn 并跳过（见 §3.4）
+        if (factory == null) return null;    // returning null means "no factory"; the framework warns and skips (see §3.4)
         return factory.create(path, definition.params());
     }
 }
@@ -101,7 +101,7 @@ The pure-data shape can be shorter. It stores the definition in the `BuildContex
 public final class MyDefinitionHandler implements TypeHandler<MyDefinition> {
 
     @Override public String getTypeName() { return "my_definitions"; }
-    @Override public int getPhase() { return PHASE_GROUPS; }   // 被别的内容引用，所以先应用
+    @Override public int getPhase() { return PHASE_GROUPS; }   // referenced by other content, so apply it first
 
     @Override public MyDefinition parse(JsonObject json) {
         return new MyDefinition(json.get("id").getAsString());
@@ -111,7 +111,7 @@ public final class MyDefinitionHandler implements TypeHandler<MyDefinition> {
         context.putMeta(getTypeName(), definition.id(), definition);
     }
 
-    /** 非 null 才参与重复 id 去重；默认返回 null 表示退出去重。 */
+    /** Only a non-null result takes part in duplicate-id deduplication; the default null opts out. */
     @Override public String resolveIdentity(String modId, MyDefinition definition) {
         return definition.id();
     }
@@ -147,7 +147,7 @@ Within the same phase the order is registration order (a stable `Comparator` sor
 `TypeHandlerRegistry` is a global static table, written with `register` and indexed by `getTypeName()` (`TypeHandlerRegistry.java:11-17`). The four built-in handlers are lazily registered once by `JsonTreeBuilder.ensureHandlersRegistered()` (`JsonTreeBuilder:49-56`); your handler must register itself, and it has to do so **before** the index is read:
 
 ```java
-@Context                                        // Micronaut 即刻初始化
+@Context                                        // Micronaut eagerly initializes this
 public class MyModDataDriven {
 
     @PostConstruct
@@ -206,14 +206,14 @@ public final class AttachmentTypeHandler implements TypeHandler<AttachmentTypeHa
 
     public record AttachmentDef(String type, String parentBlockId) {}
 
-    @Override public String getTypeName() { return "attachments"; }  // 仅用于注册表索引
-    @Override public int getPhase() { return PHASE_EMBEDDED; }       // 父对象之后应用
-    @Override public String getParentTypeName() { return "blocks"; } // 寄居在 blocks 条目里
-    @Override public String getEmbeddedKeyName() { return "attachment"; } // 父条目里的键名
+    @Override public String getTypeName() { return "attachments"; }  // for the registry index only
+    @Override public int getPhase() { return PHASE_EMBEDDED; }       // apply after the parent object
+    @Override public String getParentTypeName() { return "blocks"; } // lives inside blocks entries
+    @Override public String getEmbeddedKeyName() { return "attachment"; } // the key name inside the parent entry
 
     @Override
     public List<JsonObject> extractEmbedded(JsonObject blockJson) {
-        if (!blockJson.has("attachment")) return null;      // 没有内嵌数据
+        if (!blockJson.has("attachment")) return null;      // no embedded data
         JsonObject attachment = blockJson.getAsJsonObject("attachment").deepCopy();
         attachment.addProperty("_parent_block", blockJson.get("id").getAsString());
         return List.of(attachment);
@@ -230,8 +230,8 @@ public final class AttachmentTypeHandler implements TypeHandler<AttachmentTypeHa
     public void apply(AttachmentDef definition, BuildContext baseContext) {
         RegBuildContext context = (RegBuildContext) baseContext;
         Reg<?, Block> blockReg = context.getBlockReg(definition.parentBlockId());
-        if (blockReg == null) return;                        // 父方块不存在，跳过（可加 warn）
-        // ... 用 blockReg 构造并挂上你的内嵌对象
+        if (blockReg == null) return;                        // parent block does not exist; skip (a warn is optional)
+        // ... build your embedded object from blockReg and attach it
     }
 }
 ```
@@ -278,20 +278,20 @@ public class MyModFactories {
 
     @PostConstruct
     public void init() {
-        // 方块工厂：id 只含 path，namespace 已被 handler 剥掉
+        // block factory: id holds the path only; the handler has already stripped the namespace
         FactoryRegistry.register("my_door", (id, params) -> blockWithItem(id, MyDoorBlock::new));
 
-        // 同一工厂读 params 做变体
+        // the same factory reads params to make variants
         FactoryRegistry.register("my_window", (id, params) -> {
             int height = params != null && params.has("height")
                     ? params.get("height").getAsInt() : 1;
             return blockWithItem(id, () -> new MyWindowBlock(height));
         });
 
-        // 物品工厂
+        // item factory
         FactoryRegistry.registerItem("my_material", (id, params) -> ItemReg.of(id, Item::new));
 
-        // 方块实体工厂：validBlocks 是惰性 Supplier，存起来别当场 get()
+        // block entity factory: validBlocks is a lazy Supplier; store it, do not call get() now
         FactoryRegistry.registerBlockEntity("my_be", MyModFactories::createBeReg);
     }
 
@@ -350,16 +350,16 @@ Let custom keys appear in `properties` (blocks/groups) or `item_properties` (ite
 `JsonPropertyParser` is a singleton (`INSTANCE:23` or `getInstance():217`). Two ways to register:
 
 ```java
-// 方式一：按 key 精确匹配（推荐）
+// Option 1: exact key match (recommended)
 JsonPropertyParser.getInstance().registerCompiler("mymod:hardness_per_axis", (key, value) -> {
     float hardness = value.getAsFloat();
     return props -> { props.strength(hardness); return props; };
 });
 
-// 方式二：自定义匹配逻辑
+// Option 2: custom matching logic
 JsonPropertyParser.getInstance().registerCompiler(new PropertyCompiler(
-        (key, value) -> key.startsWith("mymod:"),          // BiPredicate：这个键归我管吗？
-        (key, value) -> props -> { props.strength(1.0F); return props; } // 编译为修改函数
+        (key, value) -> key.startsWith("mymod:"),          // BiPredicate: is this key mine to handle?
+        (key, value) -> props -> { props.strength(1.0F); return props; } // compile into a mutation function
 ));
 ```
 
@@ -397,7 +397,7 @@ Once a property is compiled into a `Function<Properties, Properties>`, the `Reg`
 
 ### 5.1 Two dimensions, and what each one covers
 
-`Diagnostics` (`diagnostics/Diagnostics.java`) is the single outlet, and error addresses come in two dimensions that never mix:
+`Diagnostics` (`diagnostics/Diagnostics.java`) is the single facade, and error addresses come in two dimensions that never mix:
 
 | Dimension | Write | Read | Who uses it |
 |---|---|---|---|
@@ -466,26 +466,26 @@ public final class MyThingsReloadHandler implements ReloadHandler<MyThing> {
     public MyThingsReloadHandler(MyBucket bucket) { this.bucket = bucket; }
 
     @Override
-    public String typeName() { return "my_things"; }        // 认领的顶层键，兼作去重碰撞空间
+    public String typeName() { return "my_things"; }        // the top-level key claimed, also the dedup collision space
 
     @Override
-    public String describeFile() { return "my thing file"; } // decode 诊断里的名词（默认 "reload-domain file"）
+    public String describeFile() { return "my thing file"; } // the noun used in decode diagnostics (default "reload-domain file")
 
     @Override
     public void clearBucket() {
-        bucket.clearResource();   // 只丢 reload 来源；脚本/代码注册的条目跨 reload 存活
+        bucket.clearResource();   // drops reload-sourced entries only; script/code registrations survive reload
     }
 
     @Override
     public Decoded<MyThing> decode(JsonObject root) {
-        // 纯解码：不读文件（编排器负责 I/O），畸形内容作为 errors 返回而非抛异常。
-        // 转调你自己的纯解码器，把条目包成 Decoded.Entry(id, payload)。
+        // Pure decode: reads no file (the orchestrator owns I/O); malformed content comes back as errors, not an exception.
+        // Delegate to your own pure decoder, wrapping each entry as Decoded.Entry(id, payload).
         return MyThingCodec.decode(root);
     }
 
     @Override
     public void register(MyThing payload) {
-        bucket.registerResource(payload.id(), payload);  // last-wins 胜者在此落地
+        bucket.registerResource(payload.id(), payload);  // the last-wins winner lands here
     }
 }
 ```
@@ -549,7 +549,7 @@ Map<String, List<Object>> collected = JsonTreeBuilder.parseContentBody(
         MOD, "test:my.json", JsonParser.parseString(CONTENT).getAsJsonObject());
 
 assertEquals(1, collected.getOrDefault("effects", List.of()).size());
-assertEquals(List.of(), JsonTreeBuilder.getLoadingErrors(MOD));   // 干净加载
+assertEquals(List.of(), JsonTreeBuilder.getLoadingErrors(MOD));   // clean load
 ```
 
 Note: `parseContentBody` only parses, it does not apply. So it verifies "claiming the field, parsing, diagnostics" and not the registration side effects.
@@ -565,14 +565,14 @@ private static JsonObject capturedParams;
 static void registerRecordingFactory() {
     FactoryRegistry.registerBlockEntity("my_be", (id, validBlocks, params) -> {
         capturedParams = params;
-        return new FakeBlockEntityReg();     // 最小 Reg，getEntry 返回自身
+        return new FakeBlockEntityReg();     // a minimal Reg whose getEntry returns itself
     });
 }
 
 RegBuildContext context = new RegBuildContext("mymod", new JsonRegistryGroup("mymod:json_root"));
 context.putReg("blocks", parentBlockId, new FakeBlockReg());
 handler.apply(def, context);
-assertSame(expectedParams, capturedParams);   // apply 传给工厂的对象不被重建
+assertSame(expectedParams, capturedParams);   // the object apply passes to the factory is not rebuilt
 ```
 
 This makes the "factory parameter contract" assertable in a pure JVM, with no real modelling factory on the classpath.

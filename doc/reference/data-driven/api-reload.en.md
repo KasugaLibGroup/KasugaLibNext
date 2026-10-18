@@ -10,13 +10,13 @@ The reload domain is orchestrated by data-driven's `ReloadOrchestrator`, and the
 
 ```java
 public interface ReloadHandler<T> {
-    String typeName();                                    // :50 顶层键，兼作去重碰撞空间
-    default String describeFile() { return "reload-domain file"; }  // :60 decode 诊断里的名词
-    default Set<String> globDirectories() { return Set.of(); }      // :72 默认空 = 仅索引
-    void clearBucket();                                   // :85 每周期一次，register 前
-    Decoded<T> decode(JsonObject root);                   // :97 纯解码，转调现有 decodeFile
-    void register(T payload);                             // :107 last-wins 胜者注册
-    default void afterReload(List<Reloaded<T>> registered) {}  // :117 跨类型校验
+    String typeName();                                    // :50 top-level key, also the dedup collision space
+    default String describeFile() { return "reload-domain file"; }  // :60 the noun used in decode diagnostics
+    default Set<String> globDirectories() { return Set.of(); }      // :72 default empty = index only
+    void clearBucket();                                   // :85 once per cycle, before register
+    Decoded<T> decode(JsonObject root);                   // :97 pure decode; delegates to the existing decodeFile
+    void register(T payload);                             // :107 registers the last-wins winner
+    default void afterReload(List<Reloaded<T>> registered) {}  // :117 cross-type validation
 }
 ```
 
@@ -37,8 +37,8 @@ public interface ReloadHandler<T> {
 ```java
 public static void register(ReloadHandler<?> handler);       // :37
 public static ReloadHandler<?> get(String typeName);         // :45
-public static Collection<ReloadHandler<?>> all();            // :50 不可变视图，保注册顺序
-public static void clearForTest();                           // :58 仅测试，生产不调
+public static Collection<ReloadHandler<?>> all();            // :50 immutable view, keeps registration order
+public static void clearForTest();                           // :58 test only, never called in production
 ```
 
 - **Order carries weight**: the orchestrator walks `all()` to decide the dispatch order and the register order, and together they decide cross-type last-wins. If you need a specific order (for example state machines before clips), register in that order.
@@ -72,8 +72,8 @@ public record Reloaded<T>(String modId, T payload) {}
 `reload/ReloadOrchestrator.java:121`. It implements `ScopedResourceManagerConsumer` and `ScopedResourcePackListener` and is the only orchestrator in the reload domain. The DI entry point `ReloadOrchestrator()` (`:133`) registers into `ResourceSystem` through `init()` (`:155`); the host entry point `ReloadOrchestrator(ReloadHandler<?>...)` (`:145`) first registers the handlers passed in, then runs cycles — tests, or a host that brings its own buckets, use it to bypass the modelling-side registrar bean.
 
 ```java
-public ReloadOrchestrator()                                      // :133 DI 入口
-public ReloadOrchestrator(ReloadHandler<?>... handlers)          // :145 登记后运行
+public ReloadOrchestrator()                                      // :133 DI entry point
+public ReloadOrchestrator(ReloadHandler<?>... handlers)          // :145 registers, then runs
 public void reload(ResourceManager resourceManager)              // :186
 public static String indexResourcePath(String modId)             // :290
 ```
@@ -155,7 +155,7 @@ These three classes live in modelling's `lib.kasuga.rendering.models.mc.dynamic.
 
 ### 13.10 FsmDefinitions and FsmAnimationClips
 
-Both bucketed stores live in `render-core`. Each bucket splits by source into RESOURCE (the reload path, which `clearResource` can drop) and SCRIPT (the runtime/script path, which survives reloads).
+Both bucketed storage classes live in `render-core`. Each bucket splits by source into RESOURCE (the reload path, which `clearResource` can drop) and SCRIPT (the runtime/script path, which survives reloads).
 
 `FsmAnimationClips` (`FsmAnimationClips.java:30`):
 
@@ -191,7 +191,7 @@ The APIs below have no NeoForge dependency or can be called on a plain JVM; they
 | `JsonTreeBuilder.validateSourcePath` | Content path rules |
 | `JsonTreeBuilder.parseIndexManifest` | Index schema D1 through D5 |
 | `JsonTreeBuilder.resolveIndexManifests` | Aggregation D4 and the dual-listing fail-closed D6 |
-| `JsonTreeBuilder.parseContentBody` | Content dispatch, embedded types, half-apply, the D9 hint |
+| `JsonTreeBuilder.parseContentBody` | Content dispatch, embedded types, partial apply, the D9 hint |
 | `JsonTreeBuilder.listIndexFiles` | The failure branches and the ordering of the directory scan |
 | `JsonTreeBuilder.applyUnchecked` | A failed apply landing in the bucket |
 | `DuplicateIdResolver.resolve` / `describe` / `toLoadingError` | last-wins and the conflict messages |
@@ -218,7 +218,7 @@ import lib.kasuga.registration.data_driven.context.JsonRegistryGroup;
 
 JsonTreeBuilder.clearLoadingErrors("kasuga_lib");
 JsonRegistryGroup root = JsonTreeBuilder.buildForMod("kasuga_lib");
-// root 为 null 表示没有声明任何 on_register 内容；非 null 时是挂在 mod 注册树上的根组
+// a null root means no on_register content was declared; when non-null it is the root group hanging off the mod's registration tree
 List<Throwable> errors = JsonTreeBuilder.getLoadingErrors("kasuga_lib");
 ```
 
@@ -238,7 +238,7 @@ IndexManifest manifest = JsonTreeBuilder.parseIndexManifest("kuayue", "index.jso
 ResolvedIndex index = JsonTreeBuilder.resolveIndexManifests("kuayue", List.of(manifest));
 if (!index.nothingDeclared()) {
     for (String path : index.onRegisterPaths()) {
-        // path 相对 data/kuayue/，已通过双列 fail-closed 检查
+        // path is relative to data/kuayue/ and has passed the dual-listing fail-closed check
     }
 }
 ```
@@ -251,10 +251,10 @@ import java.util.Map;
 import com.google.gson.JsonObject;
 import lib.kasuga.registration.data_driven.builder.JsonTreeBuilder;
 
-JsonObject body = /* 已解析的内容文件 */ new JsonObject();
+JsonObject body = /* an already-parsed content file */ new JsonObject();
 Map<String, List<Object>> collected =
         JsonTreeBuilder.parseContentBody("kuayue", "carriages/m1/blocks.json", body);
-// collected 的 key 是 handler 的 typeName；解析错误进 JsonTreeBuilder.getLoadingErrors("kuayue")
+// the keys of collected are the handlers' typeName; parse errors go to JsonTreeBuilder.getLoadingErrors("kuayue")
 ```
 
 Write to and read the diagnostics bucket (imitating `DiagnosticsTest.modDimensionIsTheExistingBucket` and `summarizePrintsOneLinePerNonEmptyBucketDeterministically`):
@@ -266,8 +266,8 @@ import lib.kasuga.registration.data_driven.diagnostics.Diagnostics;
 
 Diagnostics.report("kuayue", new IllegalStateException("boom"));
 List<Throwable> perMod = Diagnostics.errors("kuayue");
-// perMod 与 JsonTreeBuilder.getLoadingErrors("kuayue") 是同一个桶
-List<String> lines = Diagnostics.summarize();   // 每行 "<mod>: N error(s)"（mod 维）或 "<DOMAIN>[<key>]: N error(s)"（源维）
+// perMod is the same bucket as JsonTreeBuilder.getLoadingErrors("kuayue")
+List<String> lines = Diagnostics.summarize();   // one line each: "<mod>: N error(s)" (mod dimension) or "<DOMAIN>[<key>]: N error(s)" (source dimension)
 Diagnostics.clear("kuayue");
 ```
 
@@ -283,7 +283,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
 DataDiagnosticsCommands.onRegisterCommands(
         new RegisterCommandsEvent(dispatcher, Commands.CommandSelection.ALL, null));
-dispatcher.execute("kasuga_data errors kuayue", source);   // source 权限需 >= 2
+dispatcher.execute("kasuga_data errors kuayue", source);   // source needs permission >= 2
 ```
 
 Run one reload cycle (imitating `ReloadOrchestratorTest.loadsValidDefinitionsIntoInjectedBucket`):
@@ -298,10 +298,10 @@ import net.minecraft.server.packs.resources.ResourceManager;
 
 FsmDefinitions definitions = new FsmDefinitions();
 FsmAnimationClips clips = new FsmAnimationClips();
-// varargs 构造器把这两个 handler 登记进 ReloadHandlerRegistry，顺序即 dispatch/注册顺序
+// the varargs constructor registers these two handlers into ReloadHandlerRegistry; that order is the dispatch/register order
 ReloadOrchestrator orchestrator = new ReloadOrchestrator(
         new FsmReloadHandler(definitions, clips), new FsmClipsReloadHandler(clips));
-orchestrator.reload(resourceManager);   // 一个周期：清桶、双入口发现、去重注册、收尾校验
+orchestrator.reload(resourceManager);   // one cycle: clear buckets, dual-entry discovery, deduplicated registration, wrap-up validation
 ```
 
 > The orchestrator has moved to `lib.kasuga.registration.data_driven.reload` (data-driven), while the two handlers stay in modelling's `lib.kasuga.rendering.models.mc.dynamic.fsm`, so this example imports both packages. In tests the varargs constructor brings its own buckets; in production the handlers are registered by `FsmReloadHandlerRegistrar` and the DI constructor runs with no arguments.
@@ -318,7 +318,7 @@ FsmAnimationClips clips = new FsmAnimationClips();
 AnimationClipLoader.DecodedFile decoded =
         AnimationClipLoader.decodeFile(JsonParser.parseString(json));
 for (AnimationClip clip : decoded.clips()) {
-    AnimationClipLoader.register(clips, clip);   // 写 RESOURCE 半区，SCRIPT 同 id 条目不被覆盖
+    AnimationClipLoader.register(clips, clip);   // writes the RESOURCE half; a SCRIPT entry with the same id is not overwritten
 }
 ```
 

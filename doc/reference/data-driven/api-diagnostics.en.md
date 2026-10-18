@@ -2,7 +2,7 @@
 
 ## 6. The Diagnostics Facade
 
-`diagnostics/Diagnostics.java` is the unified diagnostics outlet. Errors are addressed along two dimensions that never mix.
+`diagnostics/Diagnostics.java` is the unified diagnostics facade. Errors are addressed along two dimensions that never mix.
 
 ### 6.1 Dimensions
 

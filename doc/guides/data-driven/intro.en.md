@@ -63,9 +63,9 @@ When `type` finds no factory, the entry gets a WARN and is skipped (it does not 
 Assume your namespace is `mymod`:
 
 ```
-src/main/resources/data/mymod/kasuga_lib/data_driven/content.json   ← 索引
-src/main/resources/data/mymod/kasuga_lib_content/groups.json        ← 内容：分组
-src/main/resources/data/mymod/kasuga_lib_content/blocks.json        ← 内容：方块
+src/main/resources/data/mymod/kasuga_lib/data_driven/content.json   ← index
+src/main/resources/data/mymod/kasuga_lib_content/groups.json        ← content: groups
+src/main/resources/data/mymod/kasuga_lib_content/blocks.json        ← content: blocks
 ```
 
 `kasuga_lib_content/` is only a conventional directory name inside the library and is not mandatory; content files at any relative path under `data/mymod/` are legal.

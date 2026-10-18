@@ -98,11 +98,11 @@ public final class ContentStructure {
     public record Field(List<Element> elements, List<Issue> issues) {}             // :65
     public record Element(int fileIndex, JsonObject body) {}                       // :76
 
-    public static Issue body(JsonElement raw);                        // :84 非对象 body → 一个 issue，否则 null
-    public static List<Issue> unknownKeys(JsonElement body, Set<String> knownKeys);  // :98 每个未认领键一个 issue
-    public static Field field(JsonElement body, String typeKey);      // :123 单字段结构拆分：有效元素 + issues
-    public static String joinWithOr(List<String> items);              // :162 用 " or " 连接，供两处提示复用
-    public static String describe(JsonElement json);                  // :177 JSON 类型的人类可读描述
+    public static Issue body(JsonElement raw);                        // :84 a non-object body → one issue, otherwise null
+    public static List<Issue> unknownKeys(JsonElement body, Set<String> knownKeys);  // :98 one issue per unclaimed key
+    public static Field field(JsonElement body, String typeKey);      // :123 single-field structural split: valid elements + issues
+    public static String joinWithOr(List<String> items);              // :162 joins with " or ", reused by two hints
+    public static String describe(JsonElement json);                  // :177 human-readable description of a JSON type
 }
 ```
 
@@ -118,13 +118,13 @@ public final class ContentStructure {
 ## 9. BuildContext / RegBuildContext
 
 ```java
-// BuildContext（基类）
+// BuildContext (base class)
 String getModId();                                            // BuildContext.java:17
 JsonRegistryGroup getRootGroup();                             // :19
 <T> void putMeta(String typeName, String id, T value);        // :22
 <T> T getMeta(String typeName, String id);                    // :27
 
-// RegBuildContext（注册场景子类）
+// RegBuildContext (registration-scenario subclass)
 void putRegistryGroup(String id, JsonRegistryGroup group);    // RegBuildContext.java:22
 JsonRegistryGroup getRegistryGroup(String id);                // :26
 void setRegistryGroupCreativeTab(String groupId, ResourceLocation tab);  // :30

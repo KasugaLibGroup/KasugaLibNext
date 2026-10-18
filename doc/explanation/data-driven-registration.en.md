@@ -10,11 +10,11 @@ Data content reuses the existing registration event dispatch, and no second para
 
 ```mermaid
 flowchart TD
-    Resources[模组内容描述] --> Parse[解析与原始内容树]
-    Parse --> Properties[方块与物品属性转换]
-    Properties --> Factory[类型工厂]
-    Factory --> Tree[虚拟注册组]
-    Tree --> Dispatch[现有注册事件链]
+    Resources[Mod content descriptions] --> Parse[Parse into a raw content tree]
+    Parse --> Properties[Block and item property transforms]
+    Properties --> Factory[Type factories]
+    Factory --> Tree[Virtual registry group]
+    Tree --> Dispatch[Existing registration event chain]
 ```
 
 Parsing, property extension, and object construction are kept apart, so custom content can reuse the default property handling and Java registration can coexist with data registration.

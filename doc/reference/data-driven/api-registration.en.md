@@ -11,38 +11,38 @@ Code root: `modules/data-driven/src/main/java/lib/kasuga/registration/data_drive
 
 ```text
 data_driven/
-├── TypeHandler.java                 # 处理器接口：顶层/内嵌类型、phase、identity
-├── TypeHandlerRegistry.java         # 全局静态处理器表（LinkedHashMap 保序）
-├── JsonTreeIntegration.java         # 与 RegisterContextRegistry 的接线点
+├── TypeHandler.java                 # handler interface: top-level/embedded types, phase, identity
+├── TypeHandlerRegistry.java         # global static handler table (LinkedHashMap, order-preserving)
+├── JsonTreeIntegration.java         # the wiring point with RegisterContextRegistry
 ├── builder/
-│   └── JsonTreeBuilder.java         # 注册期入口：索引解析、内容分派、去重、apply、错误桶
+│   └── JsonTreeBuilder.java         # registration-phase entry: index parsing, content dispatch, dedup, apply, error bucket
 ├── context/
-│   ├── BuildContext.java            # 构建上下文基类（modId / rootGroup / meta 存取）
-│   ├── RegBuildContext.java         # 注册场景上下文（group / reg 存取）
-│   └── JsonRegistryGroup.java       # JSON 创建的分组（RegistryGroup 子类）
+│   ├── BuildContext.java            # build context base class (modId / rootGroup / meta access)
+│   ├── RegBuildContext.java         # registration-scenario context (group / reg access)
+│   └── JsonRegistryGroup.java       # a group created from JSON (a RegistryGroup subclass)
 ├── handler/
-│   ├── MetaTypeHandler.java         # 标记基类，无附加行为
-│   ├── RegistryGroupHandler.java    # registry_groups，PHASE_GROUPS
-│   ├── RegTypeHandler.java          # 注册类 handler 抽象基类（blocks/items 共用）
-│   ├── BlockTypeHandler.java        # blocks，PHASE_CONTENT
-│   ├── ItemTypeHandler.java         # items，PHASE_CONTENT
-│   └── BlockEntityTypeHandler.java  # block_entities（内嵌于 blocks），PHASE_EMBEDDED
+│   ├── MetaTypeHandler.java         # marker base class, no extra behavior
+│   ├── RegistryGroupHandler.java    # registry_groups, PHASE_GROUPS
+│   ├── RegTypeHandler.java          # abstract base class for registration-type handlers (shared by blocks/items)
+│   ├── BlockTypeHandler.java        # blocks, PHASE_CONTENT
+│   ├── ItemTypeHandler.java         # items, PHASE_CONTENT
+│   └── BlockEntityTypeHandler.java  # block_entities (embedded in blocks), PHASE_EMBEDDED
 ├── dedup/
-│   ├── DuplicateIdResolver.java     # 纯函数 last-wins 去重
-│   └── EffectiveId.java             # id 归一化
-├── reload/                          # 重载域：扩展点 + 编排器
-│   ├── ReloadHandler.java           # 扩展接口：一种 reload 类型的 decode/register
-│   ├── ReloadHandlerRegistry.java   # 全局静态 handler 表（LinkedHashMap 保序）
-│   ├── ReloadOrchestrator.java      # 重载周期编排器：清桶/发现/去重/注册/收尾
-│   ├── Decoded.java                 # 一次 decode 的结果（entries + errors）
-│   └── Reloaded.java                # 注册落地条目 + 来源命名空间
+│   ├── DuplicateIdResolver.java     # pure-function last-wins deduplication
+│   └── EffectiveId.java             # id normalization
+├── reload/                          # reload domain: extension points + orchestrator
+│   ├── ReloadHandler.java           # extension interface: decode/register for one reload type
+│   ├── ReloadHandlerRegistry.java   # global static handler table (LinkedHashMap, order-preserving)
+│   ├── ReloadOrchestrator.java      # reload-cycle orchestrator: clear buckets / discover / dedup / register / wrap-up
+│   ├── Decoded.java                 # the result of one decode (entries + errors)
+│   └── Reloaded.java                # a landed registration entry + the namespace it came from
 ├── diagnostics/
-│   ├── Diagnostics.java             # 诊断门面（mod 维 + 域/源键维）
+│   ├── Diagnostics.java             # the diagnostic facade (mod dimension + domain/source-key dimension)
 │   └── DataDiagnosticsCommands.java # /kasuga_data errors [mod]
 └── property/
-    ├── JsonPropertyParser.java      # 方块属性解析
-    ├── JsonItemParser.java          # 物品属性解析
-    └── compiler/                    # 自定义属性匹配器
+    ├── JsonPropertyParser.java      # block property parsing
+    ├── JsonItemParser.java          # item property parsing
+    └── compiler/                    # custom property matchers
 ```
 
 The orchestration and decoding of the reload domain live in two places:

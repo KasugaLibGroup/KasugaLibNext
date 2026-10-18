@@ -22,10 +22,10 @@ How the three relate:
 
 ```mermaid
 flowchart LR
-    IDX["索引清单<br>kasuga_lib/data_driven/*.json<br>{ on_register: [...], on_reload: [...] }"]
-    IDX -->|on_register| REG["注册期内容文件<br>{ blocks, items, registry_groups }"]
-    IDX -->|on_reload| REL["reload 期内容文件<br>{ state_machines, animation_clips }"]
-    GLOB["目录 glob<br>data/&lt;ns&gt;/state_machines/*.json"]
+    IDX["index manifest<br>kasuga_lib/data_driven/*.json<br>{ on_register: [...], on_reload: [...] }"]
+    IDX -->|on_register| REG["registration-phase content file<br>{ blocks, items, registry_groups }"]
+    IDX -->|on_reload| REL["reload-phase content file<br>{ state_machines, animation_clips }"]
+    GLOB["directory glob<br>data/&lt;ns&gt;/state_machines/*.json"]
     GLOB --> REL
 ```
 
@@ -42,7 +42,7 @@ The authoritative table of field names, types, requiredness, defaults, and rule 
 Put the manifest into this four-segment path; the spelling must match exactly:
 
 ```
-data/<你的 mod id>/kasuga_lib/data_driven/
+data/<your mod id>/kasuga_lib/data_driven/
 ```
 
 The path is locked down by `JsonTreeBuilder.indexDirectorySegments(modId)` to `{"data", modId, "kasuga_lib", "data_driven"}` (`JsonTreeBuilder.java:745-747`).
@@ -118,9 +118,9 @@ Both hold up; the choice depends on whether the question you need to answer is "
 
 ```text
 data/mymod/kasuga_lib/data_driven/index.json
-data/mymod/content/groups.json        # 所有 registry_groups
-data/mymod/content/blocks.json        # 所有 blocks
-data/mymod/content/items.json         # 所有独立 items
+data/mymod/content/groups.json        # all registry_groups
+data/mymod/content/blocks.json        # all blocks
+data/mymod/content/items.json         # all standalone items
 ```
 
 **Split by feature** (each feature directory carries its own type files):
@@ -327,7 +327,7 @@ A block entity (BE) does not get a top-level field of its own; it is written in 
 after the host block is registered, the system creates the BE automatically and attaches it as its child node, and the BE id is automatically `<block path>_be`.
 So **a block can embed at most one BE** (`BlockEntityTypeHandler.apply`, `:88-95`).
 
-Fsm blocks have a common pattern: `state_machine` is written at the **top level of the block entry**, and the system forwards it into the BE's `params`:
+FSM blocks have a common pattern: `state_machine` is written at the **top level of the block entry**, and the system forwards it into the BE's `params`:
 
 ```json
 {
@@ -370,7 +370,7 @@ The following form is **illegal**:
 ```
 
 The result: the top-level `block_entities` is reported as an "unsupported top-level field", with the hint "it should be written in the `block_entity` key of a `blocks` entry";
-the key point is that **`blocks` in the same file still dispatches as usual** (partial application), so this one mistake does not throw away the whole file (`JsonTreeBuilderEmbeddedTypeDispatchTest.topLevelEmbeddedTypeIsReportedAndTheRestOfTheFileStillDispatches`, `JsonTreeBuilder.java:475-490`).
+the key point is that **`blocks` in the same file still dispatches as usual** (partial-apply), so this one mistake does not throw away the whole file (`JsonTreeBuilderEmbeddedTypeDispatchTest.topLevelEmbeddedTypeIsReportedAndTheRestOfTheFileStillDispatches`, `JsonTreeBuilder.java:475-490`).
 
 Likewise, a single BE failing in the apply phase (a missing BE factory, for example) only emits a WARN and is skipped, leaving the other blocks in the same file alone (`BlockEntityTypeHandler.apply`, `:81-100`).
 
@@ -511,7 +511,7 @@ Data-driven registers the **block / item / block entity** itself only (`blocks` 
 After startup the log should contain this line (INFO):
 
 ```
-Loaded N JSON entries across M types for mod '<你的 mod id>'
+Loaded N JSON entries across M types for mod '<your mod id>'
 ```
 
 `JsonTreeBuilder.java:114`. `N` is the total number of entries parsed, and `M` is the number of distinct top-level types with content.
@@ -524,7 +524,7 @@ In game (permission level 2 required):
 
 ```
 /kasuga_data errors
-/kasuga_data errors <你的 mod id>
+/kasuga_data errors <your mod id>
 ```
 
 With no argument it prints a one-line summary for every non-empty bucket (**both dimensions included**: the mod dimension and the reload `RELOAD_DATA[<namespace>]` source dimension); with a mod id it prints that mod's per-entry failures in both dimensions
@@ -535,8 +535,8 @@ With no argument it prints a one-line summary for every non-empty bucket (**both
 An integration test or a debugging tool can assert directly:
 
 ```java
-JsonTreeBuilder.getLoadingErrors("mymod")   // 该 mod 的错误列表
-JsonTreeBuilder.getLoadingErrorsByMod()     // 按 mod 分桶
+JsonTreeBuilder.getLoadingErrors("mymod")   // this mod's list of errors
+JsonTreeBuilder.getLoadingErrorsByMod()     // bucketed by mod
 ```
 
 Turning "silent errors" into a red light is the least-effort approach. Error buckets are isolated per mod, and one mod's `buildForMod` clears only its own bucket (`JsonTreeBuilderLoadingErrorTest.errorsAreIsolatedPerMod`).
@@ -566,12 +566,12 @@ For the data-driven part there are three files per carriage (exception: `jy30` h
 
 ```text
 carriages/22/
-├── module.toml                                              # 模块根标记
+├── module.toml                                              # module root marker
 └── data/kuayue/
-    ├── kasuga_lib/data_driven/c22.json                      # 索引清单（每车厢一份）
+    ├── kasuga_lib/data_driven/c22.json                      # index manifest (one per carriage)
     └── carriages/c22/
-        ├── groups.json                                      # 该车厢的分组
-        └── blocks.json                                      # 该车厢的方块
+        ├── groups.json                                      # this carriage's groups
+        └── blocks.json                                      # this carriage's blocks
 ```
 
 The manifest content is "groups first, blocks after":
@@ -641,4 +641,4 @@ Transferring this to your own project: even with the manifest written correctly,
 | complete signatures of Java classes and methods, load timing, and the pure-function test surface | [the data-driven API reference](../../reference/data-driven/README.md) |
 | getting the first path working from scratch | [intro.md](intro.md) |
 | registering your own `type` factory, property compiler, and TypeHandler | [guide-extension.md](guide-extension.md) |
-| a dedicated explanation of the Fsm state machine | [`../../reference/fsm.md`](../../reference/fsm.md) |
+| a dedicated explanation of the FSM state machine | [`../../reference/fsm.md`](../../reference/fsm.md) |

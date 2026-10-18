@@ -20,7 +20,7 @@ video encoder, so a caller can send frames to its own compositing, encoding and 
 ```sh
 ./gradlew :modules:modelling:runClient -PkasugaDebugDualCamera=true
 
-# 可选：进入指定的已有单人世界；省略则从菜单正常进入。
+# Optional: enter an existing singleplayer world; omit it to enter normally from the menu.
 ./gradlew :modules:modelling:runClient \
   -PkasugaDebugDualCamera=true \
   -PkasugaQuickPlayWorld=world-view-test \
@@ -65,7 +65,7 @@ restores the previous setting afterwards; an ordinary API caller can set `mc.opt
 import lib.kasuga.rendering.output.gl.FramePreviewWindow;
 import lib.kasuga.rendering.output.mc.MinecraftFrameWindows;
 
-// 同时拥有相机和窗口：关闭任一该机位的原生窗口会释放这个 camera。
+// Owns both the camera and the window: closing either this view's native window releases the camera.
 var windowCamera = MinecraftFrameWindows.createCamera("monitor:wide", () ->
         new WorldCameraView(100, 80, 100, 0, 20, 0, 70, 640, 360), settings,
         new FramePreviewWindow.Options("Wide camera", 640, 360));
@@ -74,7 +74,7 @@ windowCamera.resume();
 windowCamera.resize(1280, 720);
 windowCamera.close();
 
-// 只拥有窗口和订阅：关闭这个窗口不会关闭现有相机。
+// Owns only the window and a subscription: closing this window does not close the existing camera.
 var mirror = MinecraftFrameWindows.open("capture:wide",
         new FramePreviewWindow.Options("Existing camera", 640, 360));
 var mainMonitor = MinecraftFrameWindows.open(MinecraftFrameOutputs.MAIN_VIEW,
@@ -111,10 +111,10 @@ A single-player Quick Play world must already exist under that directory's `save
   -PkasugaQuickPlayWorld=world-view-test \
   -PkasugaHeadlessFps=60
 
-# 或直接连接服务器，需符合该客户端会话的认证条件。
+# Or connect straight to a server; the client session's authentication requirements still apply.
 ./scripts/run-headless-client.sh -PkasugaHeadlessServer=localhost:25565
 
-# 桌面机器的 Gradle 直接入口。
+# Gradle direct entry point for a desktop machine.
 ./gradlew :modules:modelling:runClientHeadless -PkasugaHeadlessBackend=hidden \
   -PkasugaQuickPlayWorld=world-view-test
 ```
@@ -142,15 +142,15 @@ compiles a shared library with X11/Wayland disabled. The build output lands in
 `modules/modelling/build/headless-glfw/cmake/src/libglfw.so` and is reused on later launches.
 
 ```sh
-# Linux：脚本会 unset DISPLAY / WAYLAND_DISPLAY，并默认 EGL_PLATFORM=surfaceless。
+# Linux: the script unsets DISPLAY / WAYLAND_DISPLAY and defaults EGL_PLATFORM=surfaceless.
 ./scripts/run-headless-client.sh -PkasugaQuickPlayWorld=world-view-test
 
-# 预先单独构建，或部署预编译的同架构库。
+# Pre-build separately, or deploy a precompiled library for the same architecture.
 ./scripts/build-headless-glfw.sh
 KASUGA_HEADLESS_GLFW_LIBRARY=/opt/kasuga/libglfw.so \
   ./scripts/run-headless-client.sh -PkasugaHeadlessServer=localhost:25565
 
-# 显式使用软件渲染，仅用于无 GPU 环境的功能验证。
+# Force software rendering; only for functional verification on a machine with no GPU.
 LIBGL_ALWAYS_SOFTWARE=1 ALSOFT_DRIVERS=null \
   ./scripts/run-headless-client.sh -PkasugaQuickPlayWorld=world-view-test
 ```
@@ -178,7 +178,7 @@ fog and state restoration, resize, pause/resume, callback closure and failure re
   -PkasugaQuickPlayWorld=world-view-test \
   -PkasugaClientDirectory=/absolute/path/to/test-client
 
-# 不安装 Iris/Sodium 的路径。
+# The path with Iris/Sodium not installed.
 ./gradlew :modules:modelling:runClient \
   -PkasugaRendererMods=false -PkasugaTestWorldViews=true \
   -PkasugaQuickPlayWorld=world-view-test \

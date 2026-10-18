@@ -17,7 +17,7 @@ The reload phase (the resource re-read triggered by `/reload`) has exactly **one
 | `state_machines` | `FsmReloadHandler` | `StateMachineDefinitionLoader.decodeFile` | State machine definitions |
 | `animation_clips` | `FsmClipsReloadHandler` | `AnimationClipLoader.decodeFile` | Animation clip elements |
 
-Both decoders (`StateMachineDefinitionLoader` / `AnimationClipLoader`) are **pure file-layer components** and stay in modelling; neither of them holds a reload listener or bucket-clearing logic of its own anymore. The two `ReloadHandler`s are one layer wrapped around them: they claim the top-level keys, declare the glob directories, write to buckets, and run the closing validation, and `FsmReloadHandlerRegistrar` registers them into `ReloadHandlerRegistry` at context startup in **fsm → clips** order. The whole reload cycle (clear buckets / discover / register / re-check) is owned by `ReloadOrchestrator`; the orchestrator itself does not know either name, `state_machines` or `animation_clips`.
+Both decoders (`StateMachineDefinitionLoader` / `AnimationClipLoader`) are **pure file-layer components** and stay in modelling; neither of them holds a reload listener or bucket-clearing logic of its own anymore. The two `ReloadHandler`s are one layer wrapped around them: they claim the top-level keys, declare the glob directories, write to buckets, and run the wrap-up validation, and `FsmReloadHandlerRegistrar` registers them into `ReloadHandlerRegistry` at context startup in **fsm → clips** order. The whole reload cycle (clear buckets / discover / register / re-check) is owned by `ReloadOrchestrator`; the orchestrator itself does not know either name, `state_machines` or `animation_clips`.
 
 ## 1. File Locations and Discovery
 
@@ -139,7 +139,7 @@ Both decoders share the same failure isolation, whose boundary is **file** and *
 | Level | Violation | Consequence |
 |------|------|------|
 | File level | Non-object body / missing top-level key / non-array value | **The whole file is rejected**, one error, 0 registrations |
-| File level | A genuinely unknown top-level key (claimed by no handler) | **One `unsupported top-level field` report**; known keys still contribute as usual (half-applied) |
+| File level | A genuinely unknown top-level key (claimed by no handler) | **One `unsupported top-level field` report**; known keys still contribute as usual (partial-apply) |
 | Element level | An array element is not an object | **Only that element is skipped**, reporting `key[i] must be an object ...; element skipped` |
 | Element level | The element is an object but codec decoding fails (missing required field / wrong type / unknown enum token) | **Only that element is skipped**, reporting `key[i] failed to decode ...; element skipped`; siblings carry on as usual |
 | Element level | The element object has a key the codec **does not name** | **No error; ignored** |
@@ -356,11 +356,11 @@ Source: `FsmReloadHandler.globDirectories()` (`FsmReloadHandler.java:69-71`) dec
 `reload(ResourceManager)` (`:186-193`) wraps the private `runCycle` (`:198-248`); the order within one cycle is fixed and type-agnostic (it walks the registry rather than hard-coding the two types):
 
 1. **Build the cycle**: create one `HandlerCycle` per handler in `ReloadHandlerRegistry.all()` (`:199-201`).
-2. **Clear the buckets**: call `runClear(entry)` → `clearBucket()` for each handler, **exactly once per cycle** (`runClear`, `:250-261`; call sites `:213-215`). An exception thrown by `clearBucket()` is caught in place by `runClear` and recorded as a `Domain.RELOAD_DATA` diagnostic, while the other handlers clear their buckets as usual (a per-handler guard, the same kind as in the closing phase). `FsmReloadHandler` clears only the RESOURCE half of `FsmDefinitions`, and `FsmClipsReloadHandler` clears only the RESOURCE half of `FsmAnimationClips` (script wins, see §10).
+2. **Clear the buckets**: call `runClear(entry)` → `clearBucket()` for each handler, **exactly once per cycle** (`runClear`, `:250-261`; call sites `:213-215`). An exception thrown by `clearBucket()` is caught in place by `runClear` and recorded as a `Domain.RELOAD_DATA` diagnostic, while the other handlers clear their buckets as usual (a per-handler guard, the same kind as in the wrap-up stage). `FsmReloadHandler` clears only the RESOURCE half of `FsmDefinitions`, and `FsmClipsReloadHandler` clears only the RESOURCE half of `FsmAnimationClips` (script wins, see §10).
 3. **Aggregate the glob directories**: collect each handler's `globDirectories()` (`:222-225`); `state_machines` contributes `state_machines/`, clips contributes nothing.
 4. **List the namespaces** and sort them, with **dual-path discovery per namespace** (`collectNamespace`, `:266-288`): first `readReloadPaths` (`:307`) reads the index manifest's `on_reload`, then `collectGlob` (`:348-367`) scans the aggregated glob directories (skipping paths already listed), and finally `collectIndex` (`:369`) reads the files that `on_reload` points to.
 5. **Register**: call `register(entry)` for each handler (`:507-526`); glob candidates come first and index candidates after (`HandlerCycle.candidates()`, `:595-599`) → deduplicate and write to the bucket.
-6. **Closing re-check**: call `runAfterReload(entry)` for each handler (`:530-538`), only for entries registered this cycle, and after all the registers. `FsmReloadHandler.afterReload` runs the dangling clip check here.
+6. **Wrap-up re-check**: call `runAfterReload(entry)` for each handler (`:530-538`), only for entries registered this cycle, and after all the registers. `FsmReloadHandler.afterReload` runs the dangling clip check here.
 
 The index side reuses the registration domain's `JsonTreeBuilder.parseIndexManifest` / `resolveIndexManifests`, so D6's "the same path listed in both → neither domain consumes it" also holds on the reload side (`readReloadPaths`, `:307`).
 
@@ -384,7 +384,7 @@ Across the two entry points, the last same-id candidate in the load sequence win
 | Per file (read / decode) | `readAndDispatch` `:405-415` | The namespace the file lives in |
 | Per namespace (discovery mechanism) | `collectNamespace` `:266-288` | That namespace |
 | Per entry (registration) | `register` `:507-526` | The namespace the entry lives in |
-| Per handler (closing re-check) | `runAfterReload` `:530-538` | The library mod (when no finer attribution exists) |
+| Per handler (wrap-up re-check) | `runAfterReload` `:530-538` | The library mod (when no finer attribution exists) |
 | Fallback (no attribution available) | `reload()` `:186-193` | The library mod (`KasugaLib.MODID`) |
 
 Tests `ReloadOrchestratorExceptionBoundaryTest`: `uppercaseIndexPathIsRejectedAndTheCycleContinues`, `throwingFileIsIsolatedAndTheNextFileStillLoads`, `wholeCycleFailureIsCaughtAndRecordedAgainstTheLibraryMod`. When the whole cycle fails, the buckets stay empty: the empty state is the truthful outcome and the errors stay in the bucket (class Javadoc `:106-114`).
@@ -410,7 +410,7 @@ Tests `ReloadOrchestratorExceptionBoundaryTest`: `uppercaseIndexPathIsRejectedAn
 ## 9. clip References and Dangling References
 
 - **Build time**: `states[].clip` is resolved by id in `FsmAnimationClips`; if it does not exist → WARN, and the state degrades to a static pose (`configureState`, `:184`).
-- **Reload closing**: `FsmReloadHandler.afterReload` (`:95-116`) runs `DefinitionStateMachineFactory.unknownClipReferences` (`:303-323`) over each definition that **did land** this cycle, aggregating the dangling references (layer id + state id + missing clip id) into one WARN + bucket entry.
+- **Reload wrap-up**: `FsmReloadHandler.afterReload` (`:95-116`) runs `DefinitionStateMachineFactory.unknownClipReferences` (`:303-323`) over each definition that **did land** this cycle, aggregating the dangling references (layer id + state id + missing clip id) into one WARN + bucket entry.
 - A dangling reference is **only recorded; it does not block registration**, nor does it change the build-time degradation behavior (`ReloadOrchestrator` class Javadoc `:100-104`; `FsmReloadHandler.afterReload`).
 - A candidate already shadowed by a script definition with the same id skips the re-check; it is no longer a live entry in the bucket (`FsmReloadHandler.java:99-104`).
 - Tests: `AnimationClipReloadTest.missingClipFileIsReportedAfterTheLoad`, `wrongClipIdInTheClipFileIsReported`; the same rule also feeds the build-time aggregate warning (`unknownClipReferences` Javadoc `:289-302`).
