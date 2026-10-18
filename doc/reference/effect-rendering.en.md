@@ -1,6 +1,6 @@
 # Kasuga Custom Rendering Specification
 
-接口、配置和调用参考。原理说明见 [effect-rendering.md](../explanation/effect-rendering.md)。
+Interfaces, configuration, and call reference. For the mechanics see [effect-rendering.md](../explanation/effect-rendering.md).
 
 `RenderPipelineRegistrar` is the common registrar for Kasuga rendering resources. The registrar registers shaders, world pipelines, managed effects, and post-processing resources.
 

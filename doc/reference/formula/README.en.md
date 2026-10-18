@@ -69,8 +69,8 @@ Trigonometric functions take radians. `rad`/`deg` convert between degrees and ra
 ### Variables
 
 - Names start with a lowercase letter: `[a-z][a-z1-9]*`, optionally containing `_`.
-- **Dotted names** namespace variables: `query.anim_time` is a single variable whose codec contains a `.`.
-- A variable used in an expression is **auto-registered** on the instance map with initial value `0`; `namespace.assign("x", v)` re-reads on every `getResult()` call.
+- **Dotted names** separate variable scopes: `query.anim_time` is a single variable whose codec contains a `.`.
+- A variable used in an expression is **auto-registered** on the instance map with initial value `0`; every `getResult()` reads the latest value written by `namespace.assign("x", v)`.
 
 ## Logical Formulas
 

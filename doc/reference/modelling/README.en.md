@@ -2,7 +2,7 @@
 
 `modules/modelling` provides KasugaLib's client-side model loading, model-instance lifecycle, Minecraft renderer backend, texture atlas integration, and related animation/physics features.
 
-This document describes the normal integration path for models that ship with a mod, plus the checks used while developing the module itself. The implementation is client-only: do not access its rendering APIs from a dedicated server.
+This document describes the standard integration path for a mod that ships models with its resource pack, plus the validation and debugging methods to use while developing the module itself. The implementation is client-only: do not access its rendering APIs from a dedicated server.
 
 ## Prerequisites
 
@@ -12,9 +12,9 @@ This document describes the normal integration path for models that ship with a 
 
 ## Loading A Model From Resources
 
-### 1. Add the asset
+### 1. Add the model asset
 
-Place a model below your mod's resources. For example, this bbmodel resides at:
+Place the model in your own mod's resource directory. For example:
 
 ```text
 src/main/resources/assets/examplemod/models/vehicles/engine.bbmodel
@@ -26,7 +26,7 @@ Its model key is therefore:
 examplemod:models/vehicles/engine.bbmodel
 ```
 
-The path includes the `models/` prefix and the file extension. Do not use the vanilla model identifier convention (`examplemod:vehicles/engine`) for this API.
+The path must include the `models/` prefix and the file extension. Do not use the vanilla model identifier convention (`examplemod:vehicles/engine`) for this API.
 
 ### 2. Opt in through `model_proxy.json`
 
