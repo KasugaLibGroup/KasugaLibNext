@@ -16,7 +16,7 @@ References are organized against the current source; historical performance/clie
 | [Skeleton Dynamics](skeleton-dynamics.md) | Generic rigid bodies/joints, Reader/Builder, IK limits and reverse mapping, diamond closure, instance control, and diagnostics |
 | [Physics and tick loop](physics.md) | Native world, compound shapes, joints, force/impulse, environment, drag, active ragdoll, anchors, and block physics |
 | [MMD/glTF configuration and deployment](mmd-ragdoll.md) | model manifest, profile fields, character limits, runtime deployment, and commands |
-| [Model loading and rendering (Chinese)](modelling/README.md) / [English](modelling/README.en.md) | Resource formats, model_proxy, instance creation, Blockbench, and run entry points |
+| [Model loading and rendering](modelling/README.md) | Resource formats, model_proxy, instance creation, Blockbench, and run entry points |
 | [Cameras and animation](camera-animation.md) | Direct control, keyframes, JSON, shared timeline, and model clip binding |
 | [FSM](fsm.md) | State variables, layers/states/transitions, pose schema, and host binding |
 | [Multiplexer](multiplexer.md) | Variant selection DSL, Builder, instance state, and FSM composition |
@@ -41,7 +41,7 @@ References are organized against the current source; historical performance/clie
 | Document | Content |
 | --- | --- |
 | [Data-driven registration](data-driven/README.md) | Content schema, factory and property extension, diagnostics, and reload; getting started and tutorials are in [data-driven/](../guides/data-driven/intro.md) (four reference pages + three guides) |
-| [Formula (Chinese)](formula/README.md) / [English](formula/README.en.md) | Expressions, Namespace, functions/variables, operators, and errors |
+| [Formula](formula/README.md) | Expressions, Namespace, functions/variables, operators, and errors |
 | [Build and verification entry](../guides/verification.md) | Gradle tasks, standalone GL, client acceptance, and evidence boundaries |
 
 ## Documentation Maintenance

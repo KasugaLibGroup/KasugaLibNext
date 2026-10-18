@@ -187,4 +187,4 @@ PipelineRegistration registration = pipelines.world(
 - 资源重载创建的 shader 由 Minecraft 管理；晚到预加载创建的 shader 由注册表管理。在渲染线程上，注册关闭或被替换时注册表释放该 shader。成功安装新一代之后，注册表也会释放旧 shader。
 
 
-> 本主题的其他页面：[Java Shader DSL 参考](shader-dsl.en.md) 与 [托管效果与后处理](effects-and-postfx.en.md)。
+> 本主题的其他页面：[Java Shader DSL 参考](shader-dsl.md) 与 [托管效果与后处理](effects-and-postfx.md)。

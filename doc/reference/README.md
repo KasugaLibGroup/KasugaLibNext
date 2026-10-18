@@ -16,7 +16,7 @@
 | [Skeleton Dynamics](skeleton-dynamics.md) | 通用刚体/关节、Reader/Builder、IK 限位与反向映射、菱形闭环、实例控制和诊断 |
 | [Physics 与 tick loop](physics.md) | 原生 world、复合形状、关节、力/冲量、环境、拖拽、主动布娃娃、锚点和方块物理 |
 | [MMD/glTF 配置与部署](mmd-ragdoll.md) | model manifest、profile 字段、角色限位、运行时部署和命令 |
-| [模型加载与渲染（中文）](modelling/README.md) / [English](modelling/README.en.md) | 资源格式、model_proxy、实例创建、Blockbench 与运行入口 |
+| [模型加载与渲染](modelling/README.md) | 资源格式、model_proxy、实例创建、Blockbench 与运行入口 |
 | [摄像机与动画](camera-animation.md) | 直接控制、关键帧、JSON、共享时间轴与模型片段绑定 |
 | [FSM](fsm.md) | 状态变量、层/状态/转移、姿态 schema 与宿主绑定 |
 | [Multiplexer](multiplexer.md) | 变体选择 DSL、Builder、实例状态及 FSM 组合 |
@@ -41,7 +41,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [数据驱动注册](data-driven/README.md) | 内容 schema、工厂与属性扩展、诊断与 reload；入门与教程在 [data-driven/](../guides/data-driven/intro.md)（四篇参考 + 三篇指南） |
-| [Formula（中文）](formula/README.md) / [English](formula/README.en.md) | 表达式、Namespace、函数/变量、运算符和错误 |
+| [Formula](formula/README.md) | 表达式、Namespace、函数/变量、运算符和错误 |
 | [构建与验证入口](../guides/verification.md) | Gradle 任务、独立 GL、客户端验收与证据边界 |
 
 ## 文档维护

@@ -70,4 +70,4 @@ The atlas identity is decided by the source texture plus the final PBR parameter
 - The CPU fallback runs at most two bakes at once, so it does not occupy every resource loading thread.
 - An in-world resource reload uses generation-based publishing: the new model is built in the background first, and the atlas and sprite mappings are swapped atomically on the game thread once they are all ready; Kasuga model drawing is suspended during the reload, and the old backend instance of a replaced model is cleaned up.
 
-Baking happens during loading and reloading, not every frame. The actual visual effect of the channels depends on the host and the shaderpack; many parameter variants increase atlas area. A change to the algorithm or the channel semantics must invalidate the old cache.
+Baking happens during loading and reloading, not every frame. The actual visual effect of the channels depends on the host and the shader pack; many parameter variants increase atlas area. A change to the algorithm or the channel semantics must invalidate the old cache.

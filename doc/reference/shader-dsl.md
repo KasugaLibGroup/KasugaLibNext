@@ -417,4 +417,4 @@ plugins {
 - 插件把生成目录加入 main 资源，因此最终 JAR 含有生成的内容。
 
 
-> 本主题的其他页面：[自定义渲染规范](effect-rendering.en.md) 与 [托管效果与后处理](effects-and-postfx.en.md)。
+> 本主题的其他页面：[自定义渲染规范](effect-rendering.md) 与 [托管效果与后处理](effects-and-postfx.md)。

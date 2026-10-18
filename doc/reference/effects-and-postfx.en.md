@@ -329,4 +329,4 @@ PostProcessGraphRegistration graphRegistration = pipelines.graph(graph, 100);
 
 - The Pipelines page shows the owner, placement, priority, draw mode, buffer size, and number of cached `RenderType` variants.
 
-> Other pages of this topic: [Custom Rendering Specification](effect-rendering.en.md) and [Java Shader DSL Reference](shader-dsl.en.md).
+> Other pages of this topic: [Custom Rendering Specification](effect-rendering.md) and [Java Shader DSL Reference](shader-dsl.md).

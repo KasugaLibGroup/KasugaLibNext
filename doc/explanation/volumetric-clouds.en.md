@@ -42,7 +42,7 @@ state is restored.
 Long-range views add atmospheric perspective and distance fade. There is currently no long-distance shadowing
 across clouds, no ground cloud shadow, no temporal reprojection, and no full weather simulation; translucent
 objects such as water are composited with the clouds by render stage. The extra gbuffer channels of an Iris
-shaderpack are not verified yet, so acceptance with the shaderpack disabled does not imply compatibility.
+shader pack are not verified yet, so acceptance with the shader pack disabled does not imply compatibility.
 
 ## References
 

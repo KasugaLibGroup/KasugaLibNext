@@ -22,27 +22,27 @@ The non-Iris path for BLEND is weighted-blended OIT (WBOIT) with two geometry su
 `1 - alpha` into an `R16F` revealage. Both passes use the scene depth copied from the main framebuffer and test
 depth without writing it; a final fullscreen resolve computes
 `color = accumulation.rgb / accumulation.a` and `alpha = 1 - revealage`, then composites back into the main
-target with straight-alpha source-over. KasugaLib's BLEND geometry therefore does not depend on back-to-front
+target with straight-alpha source-over. KasugaLib's BLEND geometry therefore does not depend on far-to-near
 submission order on this path.
 
-With an Iris shaderpack enabled the same accumulation/revealage/resolve targets are used, but Iris's
+With an Iris shader pack enabled the same accumulation/revealage/resolve targets are used, but Iris's
 `entities_translucent` shader is kept to produce the straight-alpha color after materials, PBR, lighting, and
-fog. Since Kasuga's depth weights cannot be injected into its fragment shader without changing the shaderpack,
+fog. Since Kasuga's depth weights cannot be injected into its fragment shader without changing the shader pack,
 the Iris path uses constant-weight WBOIT with a weight of 1: RGB accumulates with `SRC_ALPHA, ONE`, A accumulates
 with `ONE, ONE`, and revealage stays `ZERO, ONE_MINUS_SRC_ALPHA`. The translucent entity shader of Iris 1.8.12
 brings its own 0.1 alpha test, below the 0.5 cutoff MASK usually uses.
 
-Iris binds the shaderpack gbuffer in every `ShaderInstance.apply()` and may override blend state,
+Iris binds the shader pack gbuffer in every `ShaderInstance.apply()` and may override blend state,
 so Kasuga rebinds the OIT attachment after apply and before draw, and explicitly restores the blend equation,
 blend factors, and color/depth masks. The scene depth is copied from Iris's after-translucent default framebuffer,
 and the resolve writes back into the same framebuffer; only the dedicated OIT composite shader may bypass the
 Iris unknown-shader guard, and the compatibility policy for other mod shaders is not loosened.
 
 WBOIT is an approximation, not exact arbitrary-layer source-over, and it does not fold vanilla water or
-shaderpack translucent fragments into the same OIT equation; the stage is still `AFTER_TRANSLUCENT_BLOCKS`, so
+shader pack translucent fragments into the same OIT equation; the stage is still `AFTER_TRANSLUCENT_BLOCKS`, so
 its scope is "the KasugaLib BLEND layer on top of an already finished scene". When a floating-point target is
 unavailable, the Iris pipeline has no bindable world framebuffer, or a runtime framebuffer operation fails, it
-falls back safely to the old back-to-front sorting path. Iris OIT resolves only the main color, so a shaderpack
+falls back safely to the old far-to-near sorting path. Iris OIT resolves only the main color, so a shader pack
 that expresses translucent materials through custom extra gbuffer channels may still need pack-specific
 integration.
 

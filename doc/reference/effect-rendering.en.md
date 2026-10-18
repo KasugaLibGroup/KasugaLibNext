@@ -187,4 +187,4 @@ PipelineRegistration registration = pipelines.world(
 - Minecraft manages shaders that a resource reload creates. The registry manages shaders that a late preload creates. On the render thread, the registry releases a shader when the registration closes or is replaced. The registry also releases the old shader after successful installation of a later generation.
 
 
-> Other pages of this topic: [Java Shader DSL Reference](shader-dsl.en.md) and [Managed Effects and Post-Processing](effects-and-postfx.en.md).
+> Other pages of this topic: [Java Shader DSL Reference](shader-dsl.md) and [Managed Effects and Post-Processing](effects-and-postfx.md).

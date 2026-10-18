@@ -417,4 +417,4 @@ plugins {
 - The plugin adds the generated directory to the main resources. Therefore, the final JAR contains the generated content.
 
 
-> Other pages of this topic: [Custom Rendering Specification](effect-rendering.en.md) and [Managed Effects and Post-Processing](effects-and-postfx.en.md).
+> Other pages of this topic: [Custom Rendering Specification](effect-rendering.md) and [Managed Effects and Post-Processing](effects-and-postfx.md).

@@ -329,4 +329,4 @@ PostProcessGraphRegistration graphRegistration = pipelines.graph(graph, 100);
 
 - Pipelines 页显示所有者、执行阶段、优先级、绘制模式、缓冲大小，以及缓存的 `RenderType` 变体数量。
 
-> 本主题的其他页面：[自定义渲染规范](effect-rendering.en.md) 与 [Java Shader DSL 参考](shader-dsl.en.md)。
+> 本主题的其他页面：[自定义渲染规范](effect-rendering.md) 与 [Java Shader DSL 参考](shader-dsl.md)。
