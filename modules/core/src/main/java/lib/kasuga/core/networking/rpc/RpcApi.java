@@ -13,6 +13,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.apache.commons.lang3.NotImplementedException;
 
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 public abstract class RpcApi<T extends CustomPacketPayload, S extends RpcApi<T, S>> {
     PayloadReg<T> requestRegistration;
@@ -102,7 +103,7 @@ public abstract class RpcApi<T extends CustomPacketPayload, S extends RpcApi<T, 
             );
         }
 
-        private long timeout;
+        private Duration timeout = Duration.ofSeconds(30);
 
         IdentifiedRpcPacketType<T> requestSerializer;
         IdentifiedRpcPacketType<R> responseSerializer;
@@ -120,13 +121,30 @@ public abstract class RpcApi<T extends CustomPacketPayload, S extends RpcApi<T, 
 
             responseRegistration = new PayloadReg<>("rpc/" + name + "/response", responseSerializer::getCodec);
             errorRegistration = new PayloadReg<>("rpc/" + name + "/error", errorSerializer::getCodec);
-
-            this.timeout = Long.MAX_VALUE - 1;
         }
 
-        public S setTimeout(long timeout) {
-            this.timeout = timeout;
+        /** Set the session timeout; {@code null} resets to the default of 30 seconds. */
+        public S setTimeout(Duration timeout) {
+            this.timeout = timeout != null ? timeout : Duration.ofSeconds(30);
             return self();
+        }
+
+        public S setTimeoutSeconds(long seconds) {
+            return setTimeout(Duration.ofSeconds(seconds));
+        }
+
+        public S setTimeoutMillis(long millis) {
+            return setTimeout(Duration.ofMillis(millis));
+        }
+
+        /**
+         * Legacy millisecond timeout — kept as a compatible alias for old callers.
+         * @deprecated the unit is ambiguous; use {@link #setTimeoutMillis(long)} or
+         * {@link #setTimeoutSeconds(long)}.
+         */
+        @Deprecated
+        public S setTimeout(long timeout) {
+            return setTimeoutMillis(timeout);
         }
 
         protected abstract StreamCodec<? super FriendlyByteBuf, T> getRequestPayloadCodec();
@@ -143,7 +161,7 @@ public abstract class RpcApi<T extends CustomPacketPayload, S extends RpcApi<T, 
         }
 
         public CompletableFuture<R> run(T request, Player player) {
-            RpcSessionManager.Session<R> session = sessionManager.assign(timeout, player);
+            RpcSessionManager.Session<R> session = sessionManager.assign(timeout.toMillis(), player);
             super.call(session.wrap(requestSerializer, request), player);
             return session.future();
         }
@@ -156,6 +174,11 @@ public abstract class RpcApi<T extends CustomPacketPayload, S extends RpcApi<T, 
             sessionManager.reject(id, new RuntimeException(value.getContent()), player);
         }
 
+        /**
+         * Drive session timeouts: drains every expired session and completes its future exceptionally
+         * (off the internal lock). Call periodically on the network thread — e.g. on a client tick —
+         * to keep abandoned requests from leaking.
+         */
         public void tick() {
             sessionManager.checkTimeout();
         }
@@ -183,11 +206,13 @@ public abstract class RpcApi<T extends CustomPacketPayload, S extends RpcApi<T, 
         public void handle(IdentifiedRpcPacketType<T>.Packet request, IPayloadContext context) {
             CompletableFuture<R> future = handle(request.getValue(), context);
             future.whenComplete((result, exception) -> {
-                if (exception != null) {
-                    context.reply(errorSerializer.wrap(request.getId(), new Error(exception.getMessage())));
-                    return;
-                }
+                // Both the success and the error reply hop to the main thread — replying from the
+                // network thread would race the client's session bookkeeping.
                 context.enqueueWork(() -> {
+                    if (exception != null) {
+                        context.reply(errorSerializer.wrap(request.getId(), new Error(exception.getMessage())));
+                        return;
+                    }
                     context.reply(responseSerializer.wrap(request.getId(), result));
                 });
             });

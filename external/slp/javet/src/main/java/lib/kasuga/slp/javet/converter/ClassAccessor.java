@@ -246,8 +246,13 @@ public class ClassAccessor {
         overrideMap.methods.get(method.getParameterCount()).add(method);
         Class<?>[] parameterTypes = method.getParameterTypes();
 
+        // A parameter typed as ScriptValue — or any of its subtypes (ScriptFunction, ScriptObject,
+        // ScriptArray, ScriptPrimitive) — must take the JavetValueBridge.wrap fast path (which yields a
+        // JavetValueXxx), not provider.toObject (which yields a raw JavetEntity* that no ScriptValue param
+        // is assignable from). Without this, a JS function passed to a ScriptFunction-typed @Api param
+        // arrives as a JavetEntityFunction and matches no overload ("Illegal invocation").
         for (int i = 0; i < parameterTypes.length; i++) {
-            if(parameterTypes[i] == ScriptValue.class){
+            if(ScriptValue.class.isAssignableFrom(parameterTypes[i])){
                 overrideMap.converterMask.get(method.getParameterCount()).set(i, false);
             }
         }

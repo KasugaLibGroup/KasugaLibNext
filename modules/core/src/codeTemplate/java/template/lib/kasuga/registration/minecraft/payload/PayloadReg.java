@@ -103,8 +103,15 @@ public class PayloadReg<T extends CustomPacketPayload> extends Reg<PayloadReg<T>
     }
 
     private synchronized void ensureEntry() {
-        if(this.entry == null)
-            this.entry = new CustomPacketPayload.Type<>(transform(ResourceLocationModifiers.ID, ResourceLocation.fromNamespaceAndPath("minecraft",name)));
+        if(this.entry == null) {
+            ResourceLocation location = transform(ResourceLocationModifiers.ID, ResourceLocation.fromNamespaceAndPath("minecraft",name));
+            if(location.getNamespace().equals("minecraft")) {
+                throw new IllegalStateException(
+                        "Payload '" + name + "' resolved to the reserved 'minecraft' namespace — register it into a "
+                        + "registration tree that supplies a namespace (e.g. registry.register(...) / .setParent(...))");
+            }
+            this.entry = new CustomPacketPayload.Type<>(location);
+        }
     }
 
     public PayloadReg<T> server(Supplier<IPayloadHandler<T>> handler) {

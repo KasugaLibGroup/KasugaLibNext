@@ -9,9 +9,6 @@ plugins {
 version = mod_version
 group = mod_group_id
 
-base {
-    archivesName = 'kasuga-data-driven'
-}
 
 useModProject(project(":modules:core"))
 
@@ -20,6 +17,16 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 test {
     useJUnitPlatform()
 }
+
+// The `test` task runs under NeoForge's FML JUnit launch wrapper. ModDevGradle's `neoForge.unitTest.enable()`
+// (below) is the switch for that gate: `enable()` calls `configureTesting`, which reconfigures this existing
+// `test` workflow — there is no separate `unitTest` Gradle task, so the earlier "the FML tests live in
+// unitTest" reading was mistaken. A `junit-fml-*` classpath filter used to strip the wrapper back out and
+// three JUnit filter exclusions used to hide the tests that need it, which turned the gate off entirely. The
+// cause was a modelling dependency on data-driven's test classpath that was absent from `mods{}`: modelling's
+// eager @Context beans could not inject core's ResourceSystem across the FML classloading layers. Taking that
+// dependency out of data-driven's main, contentTesting and test source sets root-fixes the cause, so the
+// filter and the exclusions are gone and the gate is fully restored.
 
 sourceSets {
     contentTesting {
@@ -45,6 +52,10 @@ sourceSets {
 
 tasks.named('processContentTestingResources', ProcessResources) {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.named('test', Test) {
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.contentTesting.output
 }
 
 neoForge {

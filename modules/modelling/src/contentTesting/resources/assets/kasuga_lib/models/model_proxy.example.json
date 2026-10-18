@@ -1,0 +1,31 @@
+{
+  "kasuga_lib": [
+    "models/be/test_model.geo.json",
+    "models/be/*.geo.json",
+    "models/be/**/*.geo.json"
+  ],
+  
+  "minecraft": [
+    "models/block/*.json",
+    "models/item/*.json"
+  ],
+  
+  "custom_mod": [
+    "models/custom/**/*.json",
+    "!models/custom/exclude_this.json"
+  ],
+  
+  "example_mod": [
+    "models/specific/path/to/model.json",
+    "models/prefix_*.json",
+    "models/**/special_*.geo.json"
+  ],
+  
+  "wildcard_examples": [
+    "*.json",
+    "**/*.geo.json",
+    "models/**",
+    "models/be/???.json",
+    "!models/be/exclude_*.json"
+  ]
+}

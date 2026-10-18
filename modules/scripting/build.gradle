@@ -17,15 +17,41 @@ repositories {
 sourceSets {}
 
 useModProject(project(':modules:core'))
+useModProject(project(':modules:modelling'))
+// NeoForge source-set registration is not transitive. Keep the rendering classes in the
+// same mod class loader as their Minecraft callers in dev runs and integration tests.
+useModProject(project(':modules:render-core'))
+useModProject(project(':modules:render-opengl'))
 
-base {
-    archivesName = mod_id
-}
+// This module mirrors modelling's classes into its own mod layer (useModProject above adds
+// project(':modules:modelling').sourceSets.main to mods{}), and modelling's reload orchestrator (a
+// follow-up) will link data-driven's index reader at class level. data-driven arrives on the classpath
+// through modelling's `implementation` dependency, so registering its source set is enough -- but the
+// cross-project sourceSets lookup below needs data-driven evaluated first; without evaluationDependsOn
+// it silently resolves to the root project's source sets. Without the mirror the ephemeral JUnit server
+// fails with NoClassDefFoundError: lib/kasuga/registration/data_driven/builder/JsonTreeBuilder.
+evaluationDependsOn(':modules:data-driven')
+
 
 configurations {}
 
 test {
     useJUnitPlatform()
+}
+
+tasks.register('scriptUnitTest', Test) {
+    description = 'Runs pure Java scripting tests without the NeoForge dedicated-server test launcher.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath.filter {
+        !it.name.startsWith('junit-fml-')
+    }
+    useJUnitPlatform()
+    // The pre-existing scripting tests resolve a MinecraftServer parameter through the NeoForge
+    // EphemeralTestServerProvider and hang in a plain JVM (they need the dedicated-server launcher).
+    // This pure-JVM task therefore runs only the FSM scripting-API tests; the full suite still runs
+    // through the `test` task in the dev environment.
+    include '**/fsm/**'
 }
 
 
@@ -78,6 +104,10 @@ neoForge {
             // Inlcude the core subproject as a dependency.
             sourceSet(sourceSets.main)
             sourceSet(sourceSets.test)
+            // Mirror of the data-driven module, which modelling's reload orchestrator needs at runtime
+            // (see evaluationDependsOn above). Keeping it in the same mod layer avoids the class-identity
+            // split described in modelling's build script.
+            sourceSet(project(':modules:data-driven').sourceSets.main)
         }
     }
 
@@ -110,6 +140,10 @@ dependencies {
     implementation project(":modules:inject")
     implementation project(":modules:utils")
     testImplementation project(":modules:core")
+    testImplementation(project(":modules:modelling")) {
+        exclude group: 'libs', module: 'iris'
+        exclude group: 'libs', module: 'sodium'
+    }
 
     annotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
 
@@ -156,6 +190,10 @@ publishing {
             url "file://${project.projectDir}/repo"
         }
     }
+}
+
+shadowJar {
+    zip64 = true
 }
 
 tasks.withType(JavaCompile).configureEach {

@@ -4,4 +4,6 @@ version = "1.0.0"
 main = "index"
 
 [entry]
-common = ["index"]
+# Client-only: index.js calls ScriptingTestApi.printText, which touches net.minecraft.client.Minecraft.
+# Running as `common` crashed a dedicated server (client class on DEDICATED_SERVER dist).
+client = ["index"]

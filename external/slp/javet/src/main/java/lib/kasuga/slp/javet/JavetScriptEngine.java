@@ -13,6 +13,8 @@ import lib.kasuga.scripting.ScriptException;
 import lib.kasuga.scripting.feature.EngineFeature;
 import lib.kasuga.scripting.feature.EngineFeatureType;
 import lib.kasuga.scripting.module.BuiltinModuleRegistry;
+import lib.kasuga.scripting.module.PackageRegistry;
+import lib.kasuga.scripting.module.ResolvedPackage;
 import lib.kasuga.scripting.module.ResolvedScript;
 import lib.kasuga.scripting.module.ScriptModule;
 import lib.kasuga.scripting.module.ScriptModuleHandle;
@@ -21,6 +23,8 @@ import lib.kasuga.scripting.security.SecurityEngineFeatureType;
 import lib.kasuga.scripting.value.ScriptValue;
 import lib.kasuga.slp.javet.converter.FastJavetClassConverter;
 import lib.kasuga.slp.javet.module.JavetModuleHandle;
+import lib.kasuga.slp.javet.module.JsModuleResolver;
+import lib.kasuga.slp.javet.module.PackageAwareRequireResolver;
 import lib.kasuga.slp.javet.module.RequireResolver;
 import lib.kasuga.slp.javet.value.JavetValueBridge;
 import lombok.Getter;
@@ -39,6 +43,8 @@ public class JavetScriptEngine implements ScriptEngine {
     @Setter
     private RequireResolver requireResolver;
     private final Map<String, ScriptModuleHandle> loadedModules = new HashMap<>();
+    /** sourcePath (module filePath / entry name) → the owning ResolvedPackage, for relative-require scoping. */
+    private final Map<String, ResolvedPackage> sourcePathToPackage = new HashMap<>();
     private final Map<String, ScriptModule> scriptModules = new HashMap<>();
     private Map<EngineFeatureType<?>, EngineFeature> features = Map.of();
     private int gcTicks = 0;
@@ -85,19 +91,22 @@ public class JavetScriptEngine implements ScriptEngine {
     }
 
     private void setupRequireResolver() {
+        final PackageAwareRequireResolver packageAware = buildPackageAwareResolver();
         this.requireResolver = (moduleName, fromSourcePath) -> {
+            // 1. Builtin ScriptModules (e.g. kasuga:timer).
             ScriptModule module = scriptModules.get(moduleName);
-            if(module != null) {
+            if (module != null) {
                 try {
                     return wrapAsModuleHandle(moduleName, module);
                 } catch (JavetException e) {
                     throw new ScriptException(e);
                 }
             }
+            // 2. Builtin Supplier modules.
             try {
                 BuiltinModuleRegistry builtinRegistry = lib.kasuga.KasugaLib.getBean(BuiltinModuleRegistry.class);
                 Object builtin = builtinRegistry.resolve(moduleName);
-                if(builtin != null) {
+                if (builtin != null) {
                     try {
                         return wrapAsModuleHandle(moduleName, builtin);
                     } catch (JavetException e) {
@@ -106,9 +115,38 @@ public class JavetScriptEngine implements ScriptEngine {
                 }
             } catch (ScriptException e) {
                 throw e;
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // KasugaLib not available (e.g. unit test) — skip builtins.
+            }
+            // 3. Package-by-name and in-package relative require("./...") — the production path that
+            //    was previously only wired in unit tests.
+            if (packageAware != null) {
+                ScriptModuleHandle handle = packageAware.resolve(moduleName, fromSourcePath);
+                if (handle != null) {
+                    return handle;
+                }
+            }
             return null;
         };
+    }
+
+    /**
+     * Build the package-aware resolver if a {@link PackageRegistry} bean and a {@link JsModuleResolver}
+     * are available; otherwise null (unit-test engines without the scripting runtime fall back to builtins).
+     */
+    private PackageAwareRequireResolver buildPackageAwareResolver() {
+        try {
+            PackageRegistry packageRegistry = lib.kasuga.KasugaLib.getBean(PackageRegistry.class);
+            if (packageRegistry == null) {
+                return null;
+            }
+            if (getType().resolver instanceof JsModuleResolver jsResolver) {
+                return new PackageAwareRequireResolver(this, packageRegistry, jsResolver);
+            }
+        } catch (Exception ignored) {
+            // Bean context unavailable — builtins-only resolver.
+        }
+        return null;
     }
 
     private ScriptModuleHandle wrapAsModuleHandle(String name, Object object) throws JavetException {
@@ -152,6 +190,11 @@ public class JavetScriptEngine implements ScriptEngine {
 
         ScriptModuleHandle cached = loadedModules.get(sourcePath);
         if (cached != null) return cached;
+
+        // Track owner so relative requires from this module scope to its own package.
+        if (script.owner() != null) {
+            sourcePathToPackage.put(sourcePath, script.owner());
+        }
 
         // Register partial handle to support circular requires
         // (not yet populated, but present in cache to break cycles)
@@ -215,6 +258,15 @@ public class JavetScriptEngine implements ScriptEngine {
 
     @Override
     public void executeEntry(String entryName, InputStream source) throws ScriptException {
+        executeEntry(entryName, source, null);
+    }
+
+    @Override
+    public void executeEntry(String entryName, InputStream source, ResolvedPackage owner) throws ScriptException {
+        // Seed the owner so the entry's first-frame relative requires scope to its package.
+        if (owner != null) {
+            sourcePathToPackage.put(entryName, owner);
+        }
         String code = readSource(source);
         try {
             V8ValueFunction moduleFunc = runtime.getExecutor(code)
@@ -238,6 +290,11 @@ public class JavetScriptEngine implements ScriptEngine {
         } catch (JavetException e) {
             throw new ScriptException(e);
         }
+    }
+
+    /** The package that owns {@code sourcePath} (a loaded module's filePath or an entry name), or null. */
+    public ResolvedPackage getOwningPackage(String sourcePath) {
+        return sourcePath == null ? null : sourcePathToPackage.get(sourcePath);
     }
 
     @Override

@@ -54,7 +54,7 @@ public class ScriptingServerApplication implements Configurable {
         Set<String> missingEngines = packageSystem.getMissingEngines();
 
         if(!missingEngines.isEmpty()) {
-            String missingEnginePrompt = "Missing scripting engine: " + String.join("," + missingEngines) + ", please install them now!";
+            String missingEnginePrompt = "Missing scripting engine: " + String.join(", ", missingEngines) + ", please install them now!";
 
             if(IGNORE_ERRORS.getAsBoolean()) {
                 logger.warn(missingEnginePrompt);
@@ -67,7 +67,7 @@ public class ScriptingServerApplication implements Configurable {
             for (Map.Entry<String, List<Throwable>> value : packageSystem.getEngineErrors().entrySet()) {
                 logger.error(value.toString());
             }
-            throw new RuntimeException("Script Engine System Error Detected: " + String.join("," + packageSystem.getEngineErrors().values().stream().flatMap(Collection::stream)));
+            throw new RuntimeException("Script Engine System Error Detected: " + String.join(", ", packageSystem.getEngineErrors().values().stream().flatMap(Collection::stream).map(Throwable::toString).toList()));
         }
     }
 }

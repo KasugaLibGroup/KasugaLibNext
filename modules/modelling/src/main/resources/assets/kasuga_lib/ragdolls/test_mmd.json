@@ -1,0 +1,77 @@
+{
+  "simulation": {
+    "hertz": 120,
+    "update_mode": "render_frame",
+    "substeps": 4,
+    "solver_iterations": 16,
+    "constraint_hertz": 60,
+    "constraint_damping_ratio": 2,
+    "max_linear_speed": 100,
+    "max_angular_speed": 50,
+    "max_fixed_steps_per_update": 12,
+    "gravity": [0.0, -9.80665, 0.0]
+  },
+  "sleeping": {
+    "enabled": false,
+    "linear_speed": 0.04,
+    "angular_speed": 0.25,
+    "delay_seconds": 0.75
+  },
+  "collision": {
+    "enabled": true,
+    "self_collision": false,
+    "continuous": true
+  },
+  "environment": {
+    "enabled": true,
+    "refresh_interval_ticks": 1,
+    "padding": 0.25,
+    "friction": 0.8,
+    "restitution": 0.0,
+    "max_scanned_blocks": 4096
+  },
+  "initial_state": {
+    "offset": [0.0, 2.5, 0.0],
+    "root_linear_velocity": [0.0, 0.0, 0.0],
+    "root_angular_velocity": [0.0, 0.0, 0.0]
+  },
+  "dragging": {
+    "enabled": true,
+    "mouse_button": 0,
+    "max_distance": 16.0,
+    "position_slop": 0.002,
+    "position_stiffness": 0.16,
+    "max_position_correction": 0.012,
+    "bias_rate": 7.0,
+    "max_bias_speed": 4.0,
+    "max_target_speed": 6.0,
+    "max_velocity_impulse": 0.65,
+    "relative_linear_damping": 12.643,
+    "relative_angular_damping": 4.899
+  },
+  "bodies": [
+    { "rigid_body": 7, "role": "pelvis" },
+    { "rigid_body": 0, "parent": 7, "role": "spine" },
+    { "rigid_body": 1, "parent": 0, "role": "chest" },
+    { "rigid_body": 6, "parent": 1, "role": "neck" },
+    { "rigid_body": 27, "parent": 6, "role": "head" },
+
+    { "rigid_body": 9, "parent": 1, "role": "shoulder" },
+    { "rigid_body": 10, "parent": 9, "role": "upper_arm" },
+    { "rigid_body": 11, "parent": 10, "role": "lower_arm" },
+    { "rigid_body": 12, "parent": 11, "role": "hand" },
+
+    { "rigid_body": 13, "parent": 1, "role": "shoulder" },
+    { "rigid_body": 14, "parent": 13, "role": "upper_arm" },
+    { "rigid_body": 15, "parent": 14, "role": "lower_arm" },
+    { "rigid_body": 16, "parent": 15, "role": "hand" },
+
+    { "rigid_body": 17, "parent": 7, "role": "upper_leg" },
+    { "rigid_body": 19, "parent": 17, "role": "lower_leg" },
+    { "rigid_body": 20, "parent": 19, "role": "foot" },
+
+    { "rigid_body": 21, "parent": 7, "role": "upper_leg" },
+    { "rigid_body": 23, "parent": 21, "role": "lower_leg" },
+    { "rigid_body": 24, "parent": 23, "role": "foot" }
+  ]
+}

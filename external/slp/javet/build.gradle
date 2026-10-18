@@ -12,9 +12,6 @@ group = mod_group_id
 repositories {
 }
 
-base {
-    archivesName = mod_id
-}
 
 configurations {
     shadowLibrary
@@ -37,6 +34,18 @@ sourceSets {
         compileClasspath += sourceSets.main.output
         runtimeClasspath += sourceSets.main.output
 
+        compileClasspath += sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+    }
+    gameTest {
+        java {
+            srcDir 'src/gameTest/java'
+        }
+        resources {
+            srcDir 'src/gameTest/resources'
+        }
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
         compileClasspath += sourceSets.main.compileClasspath
         runtimeClasspath += sourceSets.main.runtimeClasspath
     }
@@ -91,6 +100,7 @@ neoForge {
         "${mod_id}" {
             sourceSet(sourceSets.main)
             sourceSet(sourceSets.contentTesting)
+            sourceSet(sourceSets.gameTest)
         }
     }
 
@@ -138,6 +148,9 @@ dependencies {
     implementation 'com.caoccao.javet:javet:5.0.1'
     additionalRuntimeClasspath 'com.caoccao.javet:javet:5.0.1'
     additionalRuntimeClasspath 'com.caoccao.javet:javet-v8-windows-x86_64:5.0.1'
+    // JavetDownloader (the V8-native fetcher, eagerly new'd in KasugaLibJavet's @Mod) uses Apache HttpClient
+    // 4.x (org.apache.http.*). It's a class-load requirement even when the native is already cached.
+    additionalRuntimeClasspath 'org.apache.httpcomponents:httpclient:4.5.13'
     testRuntimeOnly 'com.caoccao.javet:javet-v8-windows-x86_64:5.0.1'
 
     annotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
@@ -149,6 +162,10 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.7.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     // Here IS NO NEED for including the any package because the library are already imported
+    // The in-game scripting gametest compiles against scripting/modelling/core via the compileOnly deps above
+    // (the gameTest source set inherits main's compileClasspath); at runtime the library shadow "all" jar
+    // (runtimeOnly above) provides the whole kasuga_lib as a SINGLE module — no separate module jars that
+    // would split packages on the JPMS layer.
 
     compileOnly("org.projectlombok:lombok:1.18.42")
     annotationProcessor("org.projectlombok:lombok:1.18.42")
@@ -157,6 +174,11 @@ dependencies {
     testAnnotationProcessor("org.projectlombok:lombok:1.18.42")
 }
 
+
+// gameTest source set re-declares its resource dir on top of Gradle's default convention (same as modelling).
+tasks.named('processGameTestResources', ProcessResources) {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
 
 // This block of code expands all declared replace properties in the specified resource targets.
 // A missing property will result in an error. Properties are expanded using ${} Groovy notation.

@@ -1,0 +1,8 @@
+{
+  "vertex": "kasuga_lib:ksglib_oit_composite",
+  "fragment": "kasuga_lib:ksglib_oit_composite",
+  "samplers": [
+    { "name": "AccumulationSampler" },
+    { "name": "RevealageSampler" }
+  ]
+}

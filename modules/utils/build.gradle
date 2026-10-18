@@ -21,9 +21,6 @@ test {
     useJUnitPlatform()
 }
 
-base {
-    archivesName = 'utils'
-}
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
@@ -43,7 +40,6 @@ neoForge {
     }
 
     runs {}
-
 
     unitTest {
         // Enable JUnit support in the moddev plugin

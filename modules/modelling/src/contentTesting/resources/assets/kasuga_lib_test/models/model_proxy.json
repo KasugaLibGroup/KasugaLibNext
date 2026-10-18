@@ -1,0 +1,5 @@
+{
+  "kasuga_lib_test": [
+    "models/fsm/test_cube.obj"
+  ]
+}

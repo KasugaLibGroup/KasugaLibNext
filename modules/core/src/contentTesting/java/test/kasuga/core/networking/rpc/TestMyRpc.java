@@ -36,7 +36,7 @@ public class TestMyRpc {
             TestMyRpc::rpcFunctionWithResponse,
             ByteBufCodecs.VAR_INT,
             ByteBufCodecs.VAR_INT
-    ).executeOnServer().runOnMainThread().setTimeout(10).register(r);
+    ).executeOnServer().runOnMainThread().setTimeoutSeconds(10).register(r);
 
     public static int rpcFunctionWithResponse(IPayloadContext context, int i1) {
         return 42;

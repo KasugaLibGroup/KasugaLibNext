@@ -34,5 +34,28 @@ repo
 hs_err_pid*.log
 replay_pid*.log
 
+# logs
+logs
+
 .internal
 .docs
+
+# local OS/editor and runtime artifacts
+.lwjgl/
+.DS_Store
+**/.DS_Store
+*.log
+logs/
+
+# Local test model assets; keep out of commits
+/modules/modelling/src/main/resources/assets/kasuga_lib/models/gltf/maribel.glb
+/modules/modelling/src/main/resources/assets/kasuga_lib/models/gltf/renko.glb
+/modules/modelling/src/main/resources/assets/kasuga_lib/models/pmx/ling_singer.mmd.zip
+/modules/modelling/src/main/resources/assets/kasuga_lib/models/pmx/test.mmd.zip
+/modules/modelling/src/main/resources/assets/kasuga_lib/models/pmx/test2.mmd.zip
+/modules/modelling/src/main/resources/assets/kasuga_lib/models/pmx/test3.mmd.zip
+
+# Local feature analysis outputs (produced by feature-impact-analysis skill).
+# These are per-change working documents, not long-term assets — see
+# .agents/skills/feature-impact-analysis/SKILL.md "产出位置".
+/doc/local/

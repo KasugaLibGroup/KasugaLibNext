@@ -8,12 +8,13 @@ import lib.kasuga.scripting.ScriptEngineType;
 import lib.kasuga.scripting.ScriptException;
 import lib.kasuga.scripting.module.ResolvedPackage;
 import lib.kasuga.scripting.module.ResolvedScript;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLEnvironment;
 import org.slf4j.Logger;
 
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
 
 public class ScriptPackage {
 
@@ -88,14 +89,20 @@ public class ScriptPackage {
         }
         ScriptThread thread = threadGroup.createThread(groupName, engineInstance);
 
-        Stream.of(
-                resolved.info().entry().common(),
-                resolved.info().entry().server(),
-                resolved.info().entry().client()
-        ).flatMap(List::stream).forEach(entry -> {
-                LOGGER.info("[ScriptPackage] Scheduling entry '{}' for package '{}'", entry, groupName);
-                thread.recordCall(() -> executeEntry(engineInstance, entry));
-        });
+        // Physical-side filtering: common entries run on both sides; server entries only on a dedicated
+        // server, client entries only on the client. Without this, a server entry would also run in the
+        // client engine (and vice versa). (For integrated-server logic that must run on a physical client
+        // too, use a common entry.)
+        List<String> entriesToRun = new ArrayList<>(resolved.info().entry().common());
+        if (FMLEnvironment.dist == Dist.DEDICATED_SERVER) {
+            entriesToRun.addAll(resolved.info().entry().server());
+        } else if (FMLEnvironment.dist == Dist.CLIENT) {
+            entriesToRun.addAll(resolved.info().entry().client());
+        }
+        for (String entry : entriesToRun) {
+            LOGGER.info("[ScriptPackage] Scheduling entry '{}' for package '{}'", entry, groupName);
+            thread.recordCall(() -> executeEntry(engineInstance, entry));
+        }
 
         for (ScriptPackage child : children) {
             if (!child.isRunnable()) continue;
@@ -112,7 +119,8 @@ public class ScriptPackage {
                 return;
             }
             try (InputStream is = script.open()) {
-                engine.executeEntry(entryName, is);
+                // Pass the owning package so the require resolver can scope the entry's relative requires.
+                engine.executeEntry(entryName, is, resolved);
                 LOGGER.info("[ScriptPackage] Entry '{}' executed successfully in package '{}'", entryName, resolved.info().name());
             }
         } catch (Exception e) {

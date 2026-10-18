@@ -21,9 +21,6 @@ test {
     useJUnitPlatform()
 }
 
-base {
-    archivesName = 'utils'
-}
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 

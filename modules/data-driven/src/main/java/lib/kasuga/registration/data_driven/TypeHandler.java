@@ -30,7 +30,22 @@ public interface TypeHandler<T> {
 
     void apply(T definition, BuildContext context);
 
+    /**
+     * Top-level JSON field whose entries carry this handler's data as a nested object. An embedded
+     * type never occupies a top-level field of its own; it only ever arrives through
+     * {@link #extractEmbedded(JsonObject)}. {@code null} means "this is a top-level type".
+     */
     default String getParentTypeName() { return null; }
+
+    /**
+     * Key inside a parent entry's object that holds this embedded type's definition, e.g.
+     * {@code block_entity} inside a {@code blocks} entry. Only meaningful when
+     * {@link #getParentTypeName()} is non-null; diagnostics name it so an author who wrote the type
+     * as a top-level field is told exactly where it belongs.
+     *
+     * @return the embedded key, or {@code null} when this handler is not embedded
+     */
+    default String getEmbeddedKeyName() { return null; }
 
     default List<JsonObject> extractEmbedded(JsonObject parentJson) { return null; }
 
