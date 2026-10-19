@@ -30,15 +30,15 @@ The custom rendering surface includes owner-scoped world pipelines, managed effe
 post-processing graphs, reload-safe resource/generated shaders, the imperative Java Shader DSL,
 background shader preparation and schema-driven runtime parameters.
 
-See [api/EFFECT_RENDERING.md](api/EFFECT_RENDERING.md) for the API behavior, examples and the GLSL-to-Java
+See [doc/reference/effect-rendering.md](doc/reference/effect-rendering.md) for the API behavior, examples and the GLSL-to-Java
 Shader DSL guide.
 
 Camera movement, rotation, zoom and keyframe playback are documented in
-[api/camera-animation.md](api/camera-animation.md). Player / Free / Fixed creation and entity following are documented in
-[api/cameras.md](api/cameras.md).
+[doc/reference/camera-animation.md](doc/reference/camera-animation.md). Player / Free / Fixed creation and entity following are documented in
+[doc/reference/cameras.md](doc/reference/cameras.md).
 
 Optional world-wide volumetric skies, placeable cumulonimbus volumes and standalone previews are documented in
-[api/volumetric-clouds.md](api/volumetric-clouds.md).
+[doc/reference/volumetric-clouds.md](doc/reference/volumetric-clouds.md).
 
 Run the focused release gate with:
 
@@ -47,14 +47,14 @@ Run the focused release gate with:
 ```
 
 The manual and artifact checks for a release candidate are recorded in
-[API validation guide](api/verification.md).
+[API validation guide](doc/guides/verification.md).
 
 
 Documentation:
 ==========
 
-- [API reference index](api/README.md): interfaces, builders, configuration schemas, examples and commands.
-- [Architecture and principles](doc/README.md): data flow, ownership, algorithms and implementation boundaries.
-- [Skeleton physics, IK and diamond constraints](api/skeleton-dynamics.md).
-- [Model loading and rendering](api/modelling/README.md) / [中文](api/modelling/README.zh-CN.md).
-- [Formula API](api/formula/README.md) / [中文](api/formula/README.zh-CN.md).
+- [API reference index](doc/reference/README.md): interfaces, builders, configuration schemas, examples and commands.
+- [Architecture and principles](doc/explanation/README.md): data flow, ownership, algorithms and implementation boundaries.
+- [Skeleton physics, IK and diamond constraints](doc/reference/skeleton-dynamics.md).
+- [Model loading and rendering](doc/reference/modelling/README.en.md) / [中文](doc/reference/modelling/README.md).
+- [Formula API](doc/reference/formula/README.en.md) / [中文](doc/reference/formula/README.md).
