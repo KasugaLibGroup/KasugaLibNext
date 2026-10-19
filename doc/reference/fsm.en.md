@@ -237,7 +237,7 @@ The same Pose is also usable through [ModelPosing](model-posing.md), and the sha
 | `morphs` | object (string→float) | No | `{}` | morph name → weight |
 | `bones` | array | No | `[]` | List of bone transforms |
 | `frames` | array | No | `[]` | List of material frames |
-| `ik_enabled` | object (string→bool) | No | `{}` | Generic IK chain name to enabled state, see [Pose IK channel](model-posing.md#pose-的-ik-通道) |
+| `ik_enabled` | object (string→bool) | No | `{}` | Generic IK chain name to enabled state, see [Pose IK channel](model-posing.md#pose-ik-channels) |
 
 Source: `PoseDefinition.CODEC`. The IK channel follows the same pose blending and write-ownership rules; after driving stops, or after switching to a pose that lacks that channel, the default enabled state is restored.
 

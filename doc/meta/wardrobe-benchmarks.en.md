@@ -116,7 +116,7 @@ This verification confirms that the run path is clear; it does not prove that ot
 
 ## Performance Showcase
 
-Run [modelAssemblyProbe](../reference/model-assembly.md#本地真实素材探针与缓存基准) three times as separate JavaExec JVMs,
+Run [modelAssemblyProbe](../reference/model-assembly.md#local-real-asset-probe-and-cache-benchmark) three times as separate JavaExec JVMs,
 alternating `uncached-first`, `cached-first`, `uncached-first`, with a different report path each time.
 Besides the matching long dress and 1/10/100 duplicate small garments, the probe also measures this example's base body, RibbonDress short sleeves/long sleeves and hair assembly.
 When it finishes, run:

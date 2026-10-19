@@ -39,15 +39,15 @@ These tasks start a standalone OpenGL context. Shaders, upload, framebuffer, GPU
 
 A Quick Play save must already exist under `saves/` in the isolated directory; use a dedicated test world or a copy.
 `runClientHeadless` is still a full client: hidden by default on desktop platforms, EGL by default on Linux; for driver requirements see
-[headless API](offline-rendering.md#无窗口-mc-启动器).
+[headless API](offline-rendering.md#headless-mc-launcher).
 
 | Content | Reference |
 | --- | --- |
 | MMD/glTF models, native ragdoll | [model runtime entry points](../reference/modelling/README.md), [configuration/deployment](../reference/mmd-ragdoll.md) |
-| Full GUI and pixel-by-pixel checks of the final output | [Frame Output](../reference/frame-output.md#验证入口) |
+| Full GUI and pixel-by-pixel checks of the final output | [Frame Output](../reference/frame-output.md#verification-entry) |
 | Cameras, shared timeline and windows | [Camera Animation](../reference/camera-animation.md), [multi-camera](../reference/multi-camera-output.md) |
-| Alpha/OIT submit order and debug buffers | [Alpha/OIT](../reference/render-alpha-passes.md#可视化验收场景contenttesting) |
-| Multi-layer sky and a single cloud | [Volumetric clouds](../reference/volumetric-clouds.md#示例与验证) |
+| Alpha/OIT submit order and debug buffers | [Alpha/OIT](../reference/render-alpha-passes.md#visual-acceptance-scene-contenttesting) |
+| Multi-layer sky and a single cloud | [Volumetric clouds](../reference/volumetric-clouds.md#examples-and-verification) |
 
 ## Recording The Verification Scope
 

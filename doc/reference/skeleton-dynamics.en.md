@@ -231,7 +231,7 @@ new Joint(String name, String alias, int rigidBodyA, int rigidBodyB,
 `name`/`alias` are non-null, and all vectors are finite and copied. `rigidBodyA/B` must be valid and different during Builder validation.
 `position/rotation` is the shared joint frame, `*Min/*Max` are the author limits, and `*Spring` are the author spring parameters.
 The current model adapter maps this set of six-axis author parameters to a Box3D spherical cone/twist; translation is tightened to a fixed anchor.
-Other native joints are created through the [Physics API](physics.md#221-通用关节类型) and are not selected by this record's type field.
+Other native joints are created through the [Physics API](physics.md#221-generic-joint-types) and are not selected by this record's type field.
 
 ### Physics Example Without Format Metadata
 

@@ -96,7 +96,7 @@ Each instance holds its own player, timeline and PoseSink; a static pose and a n
 so channels that disappear from the previous pose are cleared automatically. Playback control and tick run serially, and the render sample consumes the clock snapshot
 published by the shared player. `stop`'s reset runs during the sampling phase and cannot replace sampling or instance updates.
 The current PoseDriver is still a single slot; installing a ModelPosing replaces the current driver.
-The shared drivers implement RebindablePoseDriver; for resource switching and clock preservation see [input migration](minecraft-model-assembly.md#驱动和输入迁移).
+The shared drivers implement RebindablePoseDriver; for resource switching and clock preservation see [input migration](minecraft-model-assembly.md#driver-and-input-migration).
 When animation layering is needed, use the FSM's `State.clip(AnimationLibrary.SAMPLER, clip, loop)` and `State.pose(Pose)`.
 
 ## Pose IK channels
