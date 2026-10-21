@@ -15,7 +15,8 @@ import org.slf4j.Logger;
 import java.io.IOException;
 
 /** Mod-bus registrations for the content-testing-only OIT visual fixture. */
-@EventBusSubscriber(modid = KasugaLib.MODID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = KasugaLib.MODID)
+// , bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT
 public final class OITVisualTestModEvents {
     private static final Logger LOGGER = LogUtils.getLogger();
 

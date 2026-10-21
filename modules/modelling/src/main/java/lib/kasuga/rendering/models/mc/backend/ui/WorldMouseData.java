@@ -33,11 +33,10 @@ public class WorldMouseData {
     }
 
     public void updatePosition(Vector2f position) {
-        this.lastMotion = position;
-        this.position = new Vector2f(position);
-        this.lastMotion =  new Vector2f();
-        lastMotion.add(this.position).sub(lastPosition);
-        motionHasBeenConsumed = false;
+        this.lastMotion.set(position).sub(this.position);
+        this.lastPosition.set(this.position);
+        this.position.set(position);
+        this.motionHasBeenConsumed = false;
     }
 
     public void mouseMoved(GuiEventListener listener) {
@@ -48,8 +47,9 @@ public class WorldMouseData {
         if (focused) listener.mouseClicked(position.x, position.y, button);
     }
 
+    /** Releases are routed to the press target, which may no longer be focused. */
     public void mouseReleased(GuiEventListener listener, int button) {
-        if (focused) listener.mouseReleased(position.x, position.y, button);
+        listener.mouseReleased(position.x, position.y, button);
     }
 
     public void mouseDragged(GuiEventListener listener, int button) {

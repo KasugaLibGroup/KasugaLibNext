@@ -26,7 +26,6 @@ import lib.kasuga.rendering.models.mc.backend.*;
 import lib.kasuga.rendering.models.mc.backend.data_type.KasugaShaderInstance;
 import lib.kasuga.rendering.models.mc.backend.data_type.KasugaGlobalBatchShaderInstance;
 import lib.kasuga.rendering.models.mc.backend.data_type.OitCompositeShaderInstance;
-import lib.kasuga.rendering.models.mc.backend.ui.UIBackend;
 import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
 import lib.kasuga.rendering.models.mc.registry.PipelineRegistry;
 import lib.kasuga.rendering.models.mc.source.model.*;
@@ -38,9 +37,6 @@ import lib.kasuga.rendering.models.mc.source.texture.bake.PbrBakeCoordinator;
 import lib.kasuga.rendering.models.mc.source.texture.bake.PbrBakeState;
 import lib.kasuga.rendering.models.uml.loaders.sources.SourceType;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.screens.AlertScreen;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.*;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -69,7 +65,6 @@ public class Constants {
 
     public static CombinedTextureManager TEXTURE_BASIC;
     public static SourceType TEXTURE_TYPE, MODEL_TYPE;
-    public static UIBackend UI_BACKEND;
 
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final RenderPipelineScope CLIENT_RENDER_PIPELINES = RenderPipelineScope.create(
@@ -82,9 +77,6 @@ public class Constants {
         ShaderPreparationScheduler.configureFromSystemProperty();
         ShaderPreparationScheduler.prestartWorkers();
         ShaderParameterPersistence.initialize();
-        if (UI_BACKEND == null) {
-            UI_BACKEND = new UIBackend();
-        }
         if (!renderPipelineRegistrationPosted) {
             renderPipelineRegistrationPosted = true;
             ModLoader.postEvent(new RegisterRenderPipelinesEvent(CLIENT_RENDER_PIPELINES));
@@ -485,20 +477,6 @@ public class Constants {
         } finally {
             source.endBatch(renderType);
         }
-    }
-
-    public static void testUI() {
-        if (UI_BACKEND.getRenderables().isEmpty()) {
-            Screen screen = new AlertScreen(() -> {
-                Minecraft.getInstance().player.displayClientMessage(
-                        Component.literal("触发了按钮"), true
-                );
-            }, Component.literal("Test"), Component.literal("This is a test"));
-            screen.init(Minecraft.getInstance(), Minecraft.getInstance().getWindow().getGuiScaledWidth(), Minecraft.getInstance().getWindow().getGuiScaledHeight());
-            UI_BACKEND.addRenderable(screen);
-        }
-        GuiGraphics guiGraphics = UIBackend.constructGuiGraphics();
-        UI_BACKEND.renderAllUis(guiGraphics, 0);
     }
 
 }
