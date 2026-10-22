@@ -38,14 +38,24 @@ public class UIInstanceData {
 
     public void setFocused(Entity entity, @Nullable Vector2f originalPos) {
         WorldMouseData data = operators.get(entity);
-        if (data != null) {data.focused = true;}
-        else operators.put(entity, new WorldMouseData(originalPos));
+        if (data == null) {
+            data = new WorldMouseData(originalPos);
+            operators.put(entity, data);
+        } else if (originalPos != null) {
+            data.updatePosition(originalPos);
+        }
+        data.focused = true;
     }
 
-    public void operate(Entity operator, BiConsumer<Entity, WorldMouseData> consumer) {
-        if (operators.containsKey(operator)) {
-            WorldMouseData data = operators.get(operator);
-            consumer.accept(operator, data);
-        }
+    /** @return true when the operator has state and the action was handed to it. */
+    public boolean operate(Entity operator, BiConsumer<Entity, WorldMouseData> consumer) {
+        WorldMouseData data = operators.get(operator);
+        if (data == null) return false;
+        consumer.accept(operator, data);
+        return true;
+    }
+
+    public void clearOperators() {
+        operators.clear();
     }
 }
