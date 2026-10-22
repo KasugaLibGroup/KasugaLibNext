@@ -47,6 +47,7 @@ A Quick Play save must already exist under `saves/` in the isolated directory; u
 | Full GUI and pixel-by-pixel checks of the final output | [Frame Output](../reference/frame-output.md#verification-entry) |
 | Cameras, shared timeline and windows | [Camera Animation](../reference/camera-animation.md), [multi-camera](../reference/multi-camera-output.md) |
 | Alpha/OIT submit order and debug buffers | [Alpha/OIT](../reference/render-alpha-passes.md#visual-acceptance-scene-contenttesting) |
+| World UI free cursor, text, scrolling, and dragging | [World UI Input](../reference/world-ui-input.en.md#development-acceptance) |
 | Multi-layer sky and a single cloud | [Volumetric clouds](../reference/volumetric-clouds.md#examples-and-verification) |
 
 ## Recording The Verification Scope

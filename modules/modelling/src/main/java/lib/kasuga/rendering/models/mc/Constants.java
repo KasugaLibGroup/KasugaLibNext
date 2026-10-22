@@ -117,6 +117,11 @@ public class Constants {
         pipelines.world(opaque, context -> renderModels(context, ModelRenderPass.OPAQUE, true, false));
         pipelines.world(mask, context -> renderModels(context, ModelRenderPass.MASK, false, false));
         pipelines.world(translucent, context -> renderModels(context, ModelRenderPass.TRANSLUCENT, false, true));
+        pipelines.world(RenderPipelineDescriptor.builder(
+                ResourceLocation.fromNamespaceAndPath(KasugaLib.MODID, "world_ui"), RenderPhase.AFTER_LEVEL)
+                .build(), context -> {
+                    if (UI_BACKEND != null) UI_BACKEND.renderWorld(context);
+                });
     }
 
     @SubscribeEvent

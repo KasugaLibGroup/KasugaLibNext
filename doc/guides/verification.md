@@ -49,6 +49,7 @@ Quick Play 的存档需预先存在于隔离目录 `saves/` 下，使用专用�
 | 完整 GUI 与最终输出逐像素检查 | [Frame Output](../reference/frame-output.md#验证入口) |
 | 摄像机、共享时间轴与窗口 | [Camera Animation](../reference/camera-animation.md)、[多机位](../reference/multi-camera-output.md) |
 | Alpha/OIT 提交顺序与调试缓冲 | [Alpha/OIT](../reference/render-alpha-passes.md#可视化验收场景contenttesting) |
+| 世界 UI 自由光标、文本、滚轮和拖拽 | [World UI Input](../reference/world-ui-input.md#开发验收) |
 | 多层天空与单云 | [体积云](../reference/volumetric-clouds.md#示例与验证) |
 
 ## 记录验证范围
