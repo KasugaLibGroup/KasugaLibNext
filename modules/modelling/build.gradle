@@ -214,6 +214,8 @@ neoForge {
             if (frameOutputSmoke.isPresent()) {
                 systemProperty 'kasuga.testFrameOutput', frameOutputSmoke.get()
             }
+            def worldUiInputSmoke = providers.gradleProperty('kasugaTestWorldUiInput')
+            if (worldUiInputSmoke.isPresent()) systemProperty 'kasuga.testWorldUiInput', worldUiInputSmoke.get()
             def cameraPerformance = providers.gradleProperty('kasugaTestCameraPerformance')
             if (cameraPerformance.isPresent()) systemProperty 'kasuga.testCameraPerformance', cameraPerformance.get()
             def cameraMotion = providers.gradleProperty('kasugaTestCameraMotion')

@@ -37,6 +37,9 @@ Camera movement, rotation, zoom and keyframe playback are documented in
 [doc/reference/camera-animation.md](doc/reference/camera-animation.md). Player / Free / Fixed creation and entity following are documented in
 [doc/reference/cameras.md](doc/reference/cameras.md).
 
+World-space UI panels and transparent free-cursor input are documented in
+[doc/reference/world-ui-input.md](doc/reference/world-ui-input.md).
+
 Optional world-wide volumetric skies, placeable cumulonimbus volumes and standalone previews are documented in
 [doc/reference/volumetric-clouds.md](doc/reference/volumetric-clouds.md).
 

@@ -16,6 +16,7 @@
 | 层级职责、挂载发布和在途 GPU 读取 | [UML Framework](uml-render-framework.md) |
 | 核心、图形 API 与宿主适配边界 | [Rendering Backends](rendering-backends.md) |
 | 原版可见性、逐视角标记与采样去重 | [Render Scheduling](render-scheduling.md) |
+| 屏幕反投影、世界 UI 与输入所有权 | [World UI Input](world-ui-input.md) |
 | 最终 blit、只读借用和共享捕获 | [Frame Output](frame-output.md) |
 | 同进程机位隔离、世界订阅与 GPU 同步 | [多机位与离屏](offline-rendering-and-multi-cam.md) |
 | 透明 pass、WBOIT 与深度合成 | [Alpha Rendering](render-alpha-passes.md) |

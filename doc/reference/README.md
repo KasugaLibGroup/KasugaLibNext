@@ -29,6 +29,7 @@
 | [UML framework](uml-render-framework.md) | backend/context/factory、调度与 buffer 的公共接口和生命周期契约 |
 | [后端扩展](rendering-backends.md) | 独立后端模块、宿主帧上下文、上传与输出适配 |
 | [调度与模型句柄](render-scheduling.md) | McModelHandle、可见性、Entity/BlockEntity renderer 接入 |
+| [世界 UI 与自由光标](world-ui-input.md) | 透明输入层、屏幕反投影、世界面板、拖拽捕获与键盘焦点 |
 | [最终画面输出](frame-output.md) | 订阅、共享帧、MIRROR/OFFSCREEN_ONLY、异常与关闭 |
 | [Player / Free / Fixed Camera](cameras.md) | 相机分类、创建、通用跟随目标、实体绑定、投影和运行时渲染配置 |
 | [多机位输出契约](multi-camera-output.md) / [启动与验证实操](../guides/offline-rendering.md) | 相机生命周期、资源包、独立窗口、启动、FBO 消费和录制 |
