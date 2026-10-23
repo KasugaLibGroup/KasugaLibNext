@@ -6,7 +6,6 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.TextArea;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
 import lib.kasuga.rendering.models.mc.backend.ui.UIBackend;
 import lib.kasuga.rendering.models.mc.backend.ui.WorldUiTextInput;
-import lib.kasuga.uip.ldlib.compat.LdlibWorldRenderScope;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -72,12 +71,6 @@ public final class LdElement extends ModularUIScreen implements WorldUiTextInput
     }
 
     @Override public void tick() { if (!closed) modularUI.tick(); }
-
-    @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        try (var ignored = LdlibWorldRenderScope.enter()) {
-            super.render(graphics, mouseX, mouseY, partialTick);
-        }
-    }
 
     /** The host screen supplies bounds and widget routing, but is never installed as the active screen. */
     @Override public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {}

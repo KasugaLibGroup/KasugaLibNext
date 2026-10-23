@@ -92,6 +92,21 @@ neoForge {
             if (smoke.isPresent()) systemProperty 'kasuga.ldlibWorldSmoke', smoke.get()
         }
 
+        clientModelDemo {
+            client()
+            gameDirectory = file('run/model-demo')
+            programArguments.addAll '--width', '1280', '--height', '900'
+            systemProperty 'kasuga.modelDemo.toolkit', providers.gradleProperty('kasugaModelToolkit').getOrElse('ldlib')
+            def world = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (world.isPresent()) programArguments.addAll '--quickPlaySingleplayer', world.get()
+            def capture = providers.gradleProperty('kasugaModelCapture')
+            if (capture.isPresent()) {
+                systemProperty 'kasuga.modelDemo.capture', file(capture.get()).absolutePath
+                systemProperty 'kasuga.headless', 'hidden'
+                systemProperty 'java.awt.headless', 'true'
+            }
+        }
+
         server {
             server()
             programArgument '--nogui'
@@ -134,7 +149,7 @@ configurations {
 
 // The early splash owns a separate GL context before the hidden-window mixins can run.
 tasks.register('prepareUiDemoClient') {
-    def configs = [file('run/ui-demo/config/fml.toml'), file('run/world-ui-demo/config/fml.toml')]
+    def configs = [file('run/ui-demo/config/fml.toml'), file('run/world-ui-demo/config/fml.toml'), file('run/model-demo/config/fml.toml')]
     doLast {
         configs.each { config ->
             config.parentFile.mkdirs()
@@ -146,7 +161,7 @@ tasks.register('prepareUiDemoClient') {
         }
     }
 }
-tasks.matching { it.name in ['runClientDemo', 'prepareClientDemoRun', 'runClientWorldDemo', 'prepareClientWorldDemoRun'] }.configureEach {
+tasks.matching { it.name in ['runClientDemo', 'prepareClientDemoRun', 'runClientWorldDemo', 'prepareClientWorldDemoRun', 'runClientModelDemo', 'prepareClientModelDemoRun'] }.configureEach {
     dependsOn 'prepareUiDemoClient'
 }
 

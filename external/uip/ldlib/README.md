@@ -33,11 +33,15 @@ policy and clears the UI's screen reference and internal focus. Removing the
 backend registration, leaving its world or disconnecting also closes the panel.
 
 LDLib2-specific rendering compatibility lives in this module's `compat` package.
-While `LdElement` renders, a client-only hook uses premultiplied blending for
-LDLib2's SDF rectangles and preserves destination alpha. Transparent hover/focus
-outlines therefore retain the input's background. The hook restores blend factors
-after each draw; ordinary 2D LDLib2 screens keep their upstream rendering behavior.
+Its client-only hook uses premultiplied blending for LDLib2's SDF rectangles and
+preserves destination alpha in both ordinary screens and world panels. Transparent
+hover/focus outlines and rounded corners therefore retain the existing background.
+The hook restores the caller's blend factors after each draw.
 The shared world-UI backend contains no LDLib2 hooks or dependencies.
+
+`ModelPreviewElement` displays a model published by the model loader inside either
+kind of LDLib2 UI. It uses the shared `GuiModelPreview` renderer and closes its
+private model/GPU resources when removed. See [UI model previews](../../../doc/reference/ui-model-preview.en.md).
 
 With no active Minecraft screen, the crosshair can select the panel. Editable
 LDLib2 `TextField` and `TextArea` focus temporarily captures keyboard input;
@@ -85,7 +89,7 @@ points, gameplay-key suppression, Escape and idempotent cleanup. It writes a
 framebuffer screenshot and checks that the unchanged title retains its glyph
 pixels after theme switching. It also reads the panel's actual RGBA attachment in
 default, hover and focused text-field states, and checks SDF alpha accumulation,
-premultiplied color, blend restoration and the unmodified ordinary-screen path.
+premultiplied color, blend restoration and all four rounded corners in both paths.
 Capturing restores the previous GL texture binding.
 It writes `world-report.json`; check `passed`, since stopping the
 client after a failed assertion can still produce a successful Gradle exit.
