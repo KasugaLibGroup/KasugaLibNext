@@ -1,7 +1,7 @@
 # 能力现状清单
 
 > **用途**：填 [01-impact-template.md](../assets/01-impact-template.md) 第 2 节"项目中是否存在且可直接用"时查这里。
-> 数据来自**实际扫描代码**，不是印象。渲染与输入项最后核对于 2026-10-22，其余项为 2026-10-17。
+> 数据来自**实际扫描代码**，不是印象。渲染与输入项最后核对于 2026-10-23，其余项为 2026-10-17。
 >
 > 这一项决定了阶段 2 展开哪些维度：
 > `直接可用` → 只问「消费」类风险；`不存在` → 还要问「设计是否完整」。
@@ -21,8 +21,8 @@
 | 9 | 空间与坐标 | `render-core/.../uml/math/`（`Transform`）+ `modelling/.../backend/ui` | ⚠ 部分 | 世界 UI 已覆盖视图投影、局部平面、边界与多目标路由；其他对象的坐标系仍缺少完整覆盖 |
 | 10 | 状态机/动画 | `render-core/.../dynamic/fsm/`、`.../dynamic/animation/` | ✅ 成熟 | 29 个测试类 |
 | 11 | 时序 | `render-core/.../dynamic/tick_loop/` | ✅ 可用 | 有 `ModelTickLoopTest` |
-| 12 | 事件与生命周期 | `core/registration/stages/`、`core/resource/*Event`、`modelling/.../backend/ui` | ⚠ 可用但有缺陷 | 世界 UI 已覆盖捕获/焦点/松键清理，注册项仍由调用方管理；其他资源释放链路有已知参数为 null 导致清理未执行的缺陷 |
-| 13 | 第三方集成 | `core/mixins/`（含 `KasugaLibMixinPlugin`） | ⚠ 可用但危险 | 世界 UI KeyboardHandler 注入有真实客户端行为 smoke；其余注入缺少统一生效性自检，Iris 可能静默跳过 |
+| 12 | 事件与生命周期 | `core/registration/stages/`、`core/resource/*Event`、`modelling/.../backend/ui`、`external/uip/ldlib/LdElement` | ⚠ 可用但有缺陷 | 世界 UI 已覆盖捕获/焦点/松键清理；LDLib2 适配器管理 tick、幂等关闭、断线及世界切换清理，通用注册仍由调用方管理；其他资源释放链路有已知参数为 null 导致清理未执行的缺陷 |
+| 13 | 第三方集成 | `core/mixins/`（含 `KasugaLibMixinPlugin`）、`modelling/.../backend/ui/WorldUiTextInput`、`external/uip/ldlib` | ⚠ 可用但危险 | 第三方文字焦点契约与 LDLib2 世界控件已有真实客户端点击/拖拽/Unicode/准心键盘 smoke；共享后端不依赖 LDLib2；其余注入缺少统一生效性自检，Iris 可能静默跳过 |
 | 14 | 脚本运行时 | `scripting/` | ✅ 可用 | 14 个测试类；沙箱 **fail-open** |
 | 15 | 平台与原生 | `external/slp/javet/`、`modelling/src/main/native/`（box3d） | ⚠ 可用但危险 | **无哈希校验**；移动端加载失败过 |
 | 16 | 配置 | — | ❌ **不存在** | 全仓 `ModConfigSpec` / `ConfigTracker` 零命中 |

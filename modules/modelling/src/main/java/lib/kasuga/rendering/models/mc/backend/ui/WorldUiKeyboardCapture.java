@@ -84,6 +84,7 @@ final class WorldUiKeyboardCapture {
         Set<GuiEventListener> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         GuiEventListener current = root;
         while (current != null && visited.add(current)) {
+            if (current instanceof WorldUiTextInput text) return text.hasTextInputFocus();
             if (current instanceof AbstractWidget widget && (!widget.active || !widget.visible)) return false;
             if (current instanceof EditBox text) return text.canConsumeInput();
             if (current instanceof MultiLineEditBox text) return text.isFocused();
