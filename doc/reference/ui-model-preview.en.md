@@ -48,5 +48,8 @@ Windows, Linux and Iris combinations have not been exercised.
 
 Add `-PkasugaModelCapture=/absolute/path/model.png` to run the smoke, capture and exit. Inspect
 `passed` in the adjacent `model-report.json`: a failed client assertion can still yield a successful
-Gradle exit. Vanilla/LDLib2 check actual model pixels, rotation, GUI resizing and canvas retirement;
+Gradle exit. Vanilla/LDLib2 check actual model pixels, rotation, repeated GUI resizing, current
+attachment dimensions/completeness and close cleanup. `:modules:modelling:renderGlTest` checks
+color/FBO/depth retirement immediately after resize, before later allocations can reuse their
+OpenGL names. A delayed `glIsTexture(oldId)` query cannot identify the original object.
 ModernUI checks its real render callback and detach cleanup. Demo classes stay out of release jars.
