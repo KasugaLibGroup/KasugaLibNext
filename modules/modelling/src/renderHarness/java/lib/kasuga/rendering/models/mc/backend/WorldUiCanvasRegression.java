@@ -103,6 +103,10 @@ final class WorldUiCanvasRegression {
     }
 
     private static void verifyAlpha(GlFixture gl, WorldUiFramebuffer canvas, FrameTexture old, int host) {
+        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, old.framebufferId());
+        int oldDepth = GL30.glGetFramebufferAttachmentParameteri(GL30.GL_READ_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
+                GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, host);
         int solid = gl.program("""
                 #version 150
                 out vec4 fragColor;
@@ -117,6 +121,9 @@ final class WorldUiCanvasRegression {
         });
         if (GL11.glIsTexture(old.textureId()) || GL30.glIsFramebuffer(old.framebufferId()))
             throw new AssertionError("Resizing retained the old canvas attachments");
+        // Query immediately, before another allocation can legitimately reuse a retired GLuint.
+        if (GL30.glIsRenderbuffer(oldDepth))
+            throw new AssertionError("Resizing retained the old canvas depth attachment");
         GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, frame.framebufferId());
         float[] pixels = read(2, 2, GL11.GL_RGBA, 4);
         for (int i = 0; i < 4; i++) {

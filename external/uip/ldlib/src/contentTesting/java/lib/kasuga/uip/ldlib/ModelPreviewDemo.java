@@ -31,6 +31,7 @@ import org.lwjgl.system.MemoryUtil;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 
 /** Opt-in previews using a real model published by model_loader, never a world-mounted model. */
@@ -46,6 +47,7 @@ public final class ModelPreviewDemo {
     private static UIElement rootElement, footerElement;
     private static long footerPixels;
     private static lib.kasuga.rendering.output.FrameTexture beforeResize;
+    private static final ArrayList<java.util.List<Integer>> RESIZES = new ArrayList<>();
     private static final LinkedHashMap<String, Object> REPORT = new LinkedHashMap<>();
 
     @SubscribeEvent public static void before(RenderFrameEvent.Pre event) {
@@ -131,15 +133,50 @@ public final class ModelPreviewDemo {
             }
             if (frame.width() == beforeResize.width() && frame.height() == beforeResize.height())
                 throw new IllegalStateException("Preview texture did not follow GUI scale resize");
-            if (GL30.glIsFramebuffer(beforeResize.framebufferId()) || GL11.glIsTexture(beforeResize.textureId()))
-                throw new IllegalStateException("Resizing retained the previous preview canvas");
-            REPORT.put("resizeReleasesOldCanvas", true);
+            // Old GLuints may already belong to unrelated textures after 30 frames. Immediate
+            // retirement of color/FBO/depth is asserted by WorldUiCanvasRegression instead.
+            verifyAttachments(frame);
+            RESIZES.add(java.util.List.of(frame.width(), frame.height()));
+            REPORT.put("resizeHistory", RESIZES);
+            if (RESIZES.size() < 3) {
+                beforeResize = frame;
+                var mc = Minecraft.getInstance();
+                mc.options.guiScale().set(RESIZES.size() == 1 ? 2 : 3);
+                mc.resizeDisplay();
+                return;
+            }
+            REPORT.put("resizeUpdatesCanvas", true);
             if (rootElement != null) {
                 REPORT.put("footerPixels", footerPixels);
                 if (footerPixels < 20) throw new IllegalStateException("Model preview lost the following UI text: " + footerPixels);
             }
             finish(null);
         } catch (Exception failure) { finish(failure); }
+    }
+
+    private static void verifyAttachments(lib.kasuga.rendering.output.FrameTexture frame) {
+        int texture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        int renderbuffer = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
+        try (var ignored = new GuiRenderScope()) {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, frame.framebufferId());
+            if (GL30.glCheckFramebufferStatus(GL30.GL_READ_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE)
+                throw new IllegalStateException("Resized preview framebuffer is incomplete");
+            int color = GL30.glGetFramebufferAttachmentParameteri(GL30.GL_READ_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+                    GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+            if (color != frame.textureId()) throw new IllegalStateException("Preview color attachment changed");
+            int depth = GL30.glGetFramebufferAttachmentParameteri(GL30.GL_READ_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
+                    GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, color);
+            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, depth);
+            if (GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_WIDTH) != frame.width()
+                    || GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_HEIGHT) != frame.height()
+                    || GL30.glGetRenderbufferParameteri(GL30.GL_RENDERBUFFER, GL30.GL_RENDERBUFFER_WIDTH) != frame.width()
+                    || GL30.glGetRenderbufferParameteri(GL30.GL_RENDERBUFFER, GL30.GL_RENDERBUFFER_HEIGHT) != frame.height())
+                throw new IllegalStateException("Resized preview attachment dimensions disagree");
+        } finally {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture);
+            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, renderbuffer);
+        }
     }
 
     private static void sampleFooter(GUIContext context) {

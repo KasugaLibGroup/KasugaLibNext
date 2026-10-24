@@ -17,7 +17,7 @@
 | 5 | 注册 | `core/registration/minecraft/`（block/block_entity/entity/menu/payload/data_component） | ✅ 可用 | 含代码模板；顺序依赖曾出过 bug |
 | 6 | 数据驱动注册 | `data-driven/` | ✅ 成熟 | 20 个测试类 |
 | 7 | 编解码 | `core/codec/KasugaCodec` | ✅ 可用 | — |
-| 8 | 渲染 | `core/rendering`（钩子）+ `render-core` + `render-opengl` + `modelling/rendering` | ⚠ 可用 | `renderGlTest` 15 场景；世界 UI 有独立深度/alpha/resize/销毁回归，隐藏客户端验证真实中文字体/控件在 MIN/0/MAX_GUI_Z 像素一致；UI模型预览使用独立实例/深度画布，原版、LDLib2和ModernUI均有原生客户端验证；玩家操作体验仍需验收 |
+| 8 | 渲染 | `core/rendering`（钩子）+ `render-core` + `render-opengl` + `modelling/rendering` | ⚠ 可用 | `renderGlTest` 15 场景；世界 UI 有独立深度/alpha/resize/销毁回归（退役即时检查纹理/FBO/深度附件，客户端反复缩放检查当前附件与像素），隐藏客户端验证真实中文字体/控件在 MIN/0/MAX_GUI_Z 像素一致；UI模型预览使用独立实例/深度画布，原版、LDLib2和ModernUI均有原生客户端验证；玩家操作体验仍需验收 |
 | 9 | 空间与坐标 | `render-core/.../uml/math/`（`Transform`）+ `modelling/.../backend/ui` | ⚠ 部分 | 世界 UI 已覆盖视图投影、局部平面、边界与多目标路由；其他对象的坐标系仍缺少完整覆盖 |
 | 10 | 状态机/动画 | `render-core/.../dynamic/fsm/`、`.../dynamic/animation/` | ✅ 成熟 | 29 个测试类 |
 | 11 | 时序 | `render-core/.../dynamic/tick_loop/` | ✅ 可用 | 有 `ModelTickLoopTest` |

@@ -47,5 +47,7 @@ LDLib2 和 ModernUI 的类与依赖分别位于 `external/uip/ldlib` 和 `extern
 ```
 
 添加 `-PkasugaModelCapture=/absolute/path/model.png` 会运行自动交互/像素检查并退出，旁边的
-`model-report.json` 需检查 `passed`。原版/LDLib2 检查实际模型像素、旋转、GUI 尺寸变化和画布释放；
+`model-report.json` 需检查 `passed`。原版/LDLib2 检查实际模型像素、旋转、反复 GUI 缩放、当前
+附件尺寸/完整性及关闭清理。`:modules:modelling:renderGlTest` 在缩放后立即检查颜色纹理、FBO 和
+深度附件退役，避免后续分配复用 OpenGL 编号后误报。延迟调用 `glIsTexture(oldId)` 无法辨认原对象。
 ModernUI 检查真实渲染回调及分离后的清理。开发演示不进入发布 jar。
