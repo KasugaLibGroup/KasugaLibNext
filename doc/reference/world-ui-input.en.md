@@ -44,6 +44,13 @@ Repeats/releases from keys still held at exit are consumed; fresh presses resume
 disabled/hidden fields, and read-only fields do not start capture. World changes, window focus loss,
 another Screen, or target removal also end capture.
 
+A panel with its own widget tree can implement `WorldUiTextInput` and report editable text focus
+through `hasTextInputFocus()`. It must clear internal focus when `setFocused(false)` is called,
+so Escape, target removal and panel changes can end editing. The shared backend remains independent
+of third-party widget libraries. LDLib2's `LdElement.attach(backend, ui, width, height, transform)`
+implements this contract and owns ticking, closing and world-boundary cleanup; see the
+[LDLib2 world-UI adapter and demo](../../external/uip/ldlib/README.md).
+
 A panel Screen can use its normal child-widget focus, keyboard, and text handling. Override the panel's own
 `renderBackground` if it should be transparent; its appearance is separate from the input layer.
 World rendering temporarily disables panel blur and then restores its previous value.
@@ -71,6 +78,7 @@ one extra unit beyond each GUI depth endpoint.
 | `close()` | Clears input, canvases, and registrations; custom backend owners must call it on destruction |
 | `resetInput()` | Clears hover, keyboard focus, and captures, balancing held mouse buttons and keys with release events |
 | `isKeyboardCaptured()` | Whether normal-view text keyboard capture is active |
+| `WorldUiTextInput.hasTextInputFocus()` | A third-party panel reports editable text focus in its own widget tree and clears that state on focus loss |
 | `renderAllUis(GuiGraphics, float)` | Custom world-render entry using the current world projection and effective model-view; do not call during the HUD orthographic pass |
 | `renderWorld(WorldRenderPipelineContext)` | World-pipeline entry for a custom backend; saves/restores projection and model-view and accepts only the main view |
 

@@ -42,6 +42,12 @@ backend.openPointer();
 本次 Escape 不打开暂停菜单。退出时仍按住的旧按键，其 repeat/release 会被消费，重新按下后恢复游戏输入。
 按钮、禁用/隐藏或只读的文本框不会触发接管；离开世界、失焦、切换 Screen 或删除目标也会结束接管。
 
+拥有自有控件树的面板可实现 `WorldUiTextInput`，通过 `hasTextInputFocus()` 报告当前是否有可编辑
+文本焦点；收到 `setFocused(false)` 时必须清除内部焦点，使 Escape、目标移除和切换面板能正常退出。
+通用后端不需要依赖第三方控件库。LDLib2 的 `LdElement.attach(backend, ui, width, height, transform)`
+已实现这一适配，并管理世界面板的 tick、关闭与离开世界清理，接入与演示见
+[LDLib2 世界 UI](../../external/uip/ldlib/README.md)。
+
 `Screen` 可正常使用其子控件的焦点、键盘和文本输入。世界面板若需透明背景，应重写自身
 `renderBackground`；输入层的透明与面板自身的外观分别控制。世界渲染期间只临时关闭面板的 blur，
 退出渲染后恢复其原值。
@@ -67,6 +73,7 @@ backend.openPointer();
 | `close()` | 清理输入、画布与全部注册；自有 backend 的所有者应在销毁时调用 |
 | `resetInput()` | 清理 hover、键盘焦点和输入捕获；为已按下的键/鼠标补发 release |
 | `isKeyboardCaptured()` | 是否正在正常视角的文本键盘接管模式中 |
+| `WorldUiTextInput.hasTextInputFocus()` | 第三方面板报告自身控件树的可编辑文本焦点；失焦时由面板清除内部状态 |
 | `renderAllUis(GuiGraphics, float)` | 自定义世界渲染入口；使用当前世界投影和有效 model-view，不能在 HUD 的正交投影阶段调用 |
 | `renderWorld(WorldRenderPipelineContext)` | 自有 backend 可从世界管线调用；负责投影/model-view 保存恢复，只接受主视角 |
 

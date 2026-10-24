@@ -1,0 +1,30 @@
+modLoader="javafml"
+loaderVersion="[2,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="kasuga_lib_modernui"
+version="1.0.0"
+displayName="KasugaLib ModernUI Adapter"
+description="Model loader previews for ModernUI."
+
+[[dependencies.kasuga_lib_modernui]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.kasuga_lib_modernui]]
+modId="kasuga_lib"
+type="required"
+versionRange="[1.0.0,)"
+ordering="AFTER"
+side="BOTH"
+
+[[dependencies.kasuga_lib_modernui]]
+modId="modernui"
+type="required"
+versionRange="[3.13.0.1,)"
+ordering="AFTER"
+side="CLIENT"

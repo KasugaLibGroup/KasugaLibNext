@@ -1,0 +1,75 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.107'
+}
+
+version = '1.0.0'
+group = 'lib.kasuga.uip.modernui'
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+repositories {
+    maven { url = 'https://api.modrinth.com/maven' }
+}
+
+sourceSets {
+    contentTesting {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+
+neoForge {
+    version = '21.1.203'
+    parchment {
+        mappingsVersion = '2024.11.17'
+        minecraftVersion = '1.21.1'
+    }
+    runs {
+        client { client() }
+        clientModelDemo {
+            client()
+            gameDirectory = file('run/model-demo')
+            programArguments.addAll '--width', '1280', '--height', '900'
+            systemProperty 'kasuga.modernModelDemo', 'true'
+            def capture = providers.gradleProperty('kasugaModelCapture')
+            if (capture.isPresent()) {
+                systemProperty 'kasuga.modelDemo.capture', file(capture.get()).absolutePath
+                systemProperty 'kasuga.headless', 'hidden'
+                systemProperty 'java.awt.headless', 'true'
+            }
+        }
+    }
+    mods {
+        kasuga_lib_modernui {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.contentTesting
+        }
+    }
+}
+
+dependencies {
+    // Official 1.21.1 NeoForge distribution, including ModernUI Core and Arc3D.
+    api('maven.modrinth:modern-ui:eMf1VSQd') { transitive = false }
+    compileOnlyApi project(':modules:modelling')
+    compileOnly project(':modules:core')
+    compileOnly project(':modules:render-core')
+    compileOnly project(':modules:render-opengl')
+    runtimeOnly(project(':modules:library')) {
+        transitive = false
+        attributes { attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling, Bundling.SHADOWED)) }
+    }
+}
+
+tasks.register('prepareModelDemo') {
+    def config = file('run/model-demo/config/fml.toml')
+    doLast {
+        config.parentFile.mkdirs()
+        def text = config.exists() ? config.getText('UTF-8') : ''
+        text = text.replaceAll(/(?m)^\s*earlyWindowControl\s*=.*$/, '')
+        config.setText(text + '\nearlyWindowControl = false\n', 'UTF-8')
+    }
+}
+tasks.matching { it.name in ['runClientModelDemo', 'prepareClientModelDemoRun'] }.configureEach {
+    dependsOn 'prepareModelDemo'
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }

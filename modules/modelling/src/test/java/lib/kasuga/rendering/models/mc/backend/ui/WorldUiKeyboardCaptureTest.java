@@ -14,6 +14,42 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class WorldUiKeyboardCaptureTest {
+    @Test void thirdPartyTextFocusCapturesUnicodeAndClearsOnDisableOrEscape() {
+        var router = new WorldUiInputRouter();
+        var editor = new ExternalEditor();
+        var capture = new WorldUiKeyboardCapture(router, () -> {});
+        router.beginFrame(new Matrix4f().perspective(1, 1, .05f, 100), 400, 400, 200, 200);
+        router.addSurface(editor, new Matrix4f().translation(-1, 1, -2).scale(.01f, -.01f, 1), 200, 200);
+        router.endFrame();
+        router.press(200, 200, 0);
+        router.release(200, 200, 0);
+        assertTrue(capture.refresh(true), "Third-party editable focus must capture gameplay keys");
+        assertTrue(capture.character('中', 0, true));
+        assertEquals("中", editor.text.toString());
+        editor.editable = false;
+        assertFalse(capture.refresh(true));
+        assertFalse(editor.focused);
+        editor.editable = true;
+        router.press(200, 200, 0);
+        router.release(200, 200, 0);
+        assertTrue(capture.refresh(true));
+        assertTrue(capture.key(GLFW.GLFW_KEY_ESCAPE, 1, GLFW.GLFW_PRESS, 0, true));
+        assertFalse(editor.focused);
+        assertNull(router.keyboardFocus());
+        assertFalse(capture.refresh(true));
+    }
+
+    private static final class ExternalEditor implements WorldUiTextInput {
+        boolean focused;
+        boolean editable = true;
+        final StringBuilder text = new StringBuilder();
+        @Override public boolean hasTextInputFocus() { return focused && editable; }
+        @Override public void setFocused(boolean focused) { this.focused = focused; }
+        @Override public boolean isFocused() { return focused; }
+        @Override public boolean mouseClicked(double x, double y, int button) { return true; }
+        @Override public boolean charTyped(char character, int modifiers) { text.append(character); return true; }
+    }
+
     @Test void textFocusCapturesUnconsumedHotkeysAndUnicodeWithoutOpeningAScreen() {
         var fixture = new Fixture();
         assertTrue(fixture.capture.refresh(true));
