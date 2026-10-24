@@ -11,7 +11,7 @@
 | # | 能力 | 项目中的位置 | 成熟度 | 缺口 |
 |---|---|---|---|---|
 | 1 | 存档持久化 | `core/saved/`（`CustomSavedData`、`SavedSystem`、`ScopedNbtSavedData`） | ⚠ 可用但不成熟 | **无持久化语义测试**（旧档/卸载/重复加载均未覆盖） |
-| 2 | 网络同步 | `core/networking/rpc/`、`registration/stages/PayloadRegistrationStage` | ✅ 可用 | 4 个测试类；缺多玩家真实场景验证 |
+| 2 | 网络同步 | `core/networking/rpc/`、`registration/stages/PayloadRegistrationStage`、`external/uip/ldlib/LdMenuElement` | ✅ 可用 | 通用网络有4个测试类；LDLib2同步菜单可移交世界宿主，Compose动态模型/RPC与每玩家隔离已有双客户端LAN验证；通用网络其他多人场景仍缺验证 |
 | 3 | 资源加载 | `core/resource/`（`ResourceSystem`、`ScopedResourceManager`） | ✅ 可用 | 含重载链路 |
 | 4 | 模型/资产加载 | `render-core/.../uml/loaders/`、`.../uml/typo/`（gltf/mmd/obj/bbmodel） | ✅ 成熟 | 多格式齐全，测试覆盖 morph/骨骼/UV |
 | 5 | 注册 | `core/registration/minecraft/`（block/block_entity/entity/menu/payload/data_component） | ✅ 可用 | 含代码模板；顺序依赖曾出过 bug |
@@ -22,7 +22,7 @@
 | 10 | 状态机/动画 | `render-core/.../dynamic/fsm/`、`.../dynamic/animation/` | ✅ 成熟 | 29 个测试类 |
 | 11 | 时序 | `render-core/.../dynamic/tick_loop/` | ✅ 可用 | 有 `ModelTickLoopTest` |
 | 12 | 事件与生命周期 | `core/registration/stages/`、`core/resource/*Event`、`modelling/.../backend/ui`、`external/uip/ldlib/LdElement` | ⚠ 可用但有缺陷 | 世界 UI 已覆盖捕获/焦点/松键清理；LDLib2 适配器管理 tick、幂等关闭、断线及世界切换清理，通用注册仍由调用方管理；其他资源释放链路有已知参数为 null 导致清理未执行的缺陷 |
-| 13 | 第三方集成 | `core/mixins/`（含 `KasugaLibMixinPlugin`）、`modelling/.../backend/ui/WorldUiTextInput`、`external/uip/ldlib` | ⚠ 可用但危险 | 第三方文字焦点契约与 LDLib2 世界控件已有真实客户端点击/拖拽/Unicode/准心键盘 smoke；ModernUI模型控件通过MinecraftSurfaceView公开回调绘制并跨线程清理；LDLib2 SDF兼容同时覆盖二维/世界alpha；共享后端不依赖第三方UI库；其余注入缺少统一生效性自检，Iris 可能静默跳过 |
+| 13 | 第三方集成 | `core/mixins/`（含 `KasugaLibMixinPlugin`）、`modelling/.../backend/ui/WorldUiTextInput`、`external/uip/ldlib`、`external/uip/ldlib-compose` | ⚠ 可用但危险 | LDLib2世界控件与文字焦点已有真实客户端交互smoke；ModernUI模型通过MinecraftSurfaceView回调绘制并跨线程清理；Compose依赖位于独立可选模块，双端固定注册、客户端重组/模型节点和世界菜单已有原生客户端与双客户端LAN验证；LDLib2 2.2.44的UISurface与SDF兼容限外部适配器；共享后端不依赖第三方UI库；物理专用服务端/Iris尚未验证 |
 | 14 | 脚本运行时 | `scripting/` | ✅ 可用 | 14 个测试类；沙箱 **fail-open** |
 | 15 | 平台与原生 | `external/slp/javet/`、`modelling/src/main/native/`（box3d） | ⚠ 可用但危险 | **无哈希校验**；移动端加载失败过 |
 | 16 | 配置 | — | ❌ **不存在** | 全仓 `ModConfigSpec` / `ConfigTracker` 零命中 |

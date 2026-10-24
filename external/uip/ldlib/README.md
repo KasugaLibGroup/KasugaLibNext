@@ -67,7 +67,7 @@ The module's development client also provides:
 - `/ksglib debug ldlib_ui stop`: remove the world panel.
 - `/ksglib debug ldlib_ui`: open the same controls as a regular 2D screen.
 
-The demo uses LDLib2 2.2.1's built-in MODERN stylesheet and can switch to MC/GDP
+The demo uses LDLib2 2.2.44's built-in MODERN stylesheet and can switch to MC/GDP
 without replacing the controls. It includes a button counter, text field, switch,
 draggable scroller, linked progress bar, selector and Chinese text. After a resource
 reload, reopen the demo to obtain updated stylesheets.
@@ -98,3 +98,9 @@ For a 2D comparison, run `:external:uip:ldlib:runClientDemo`; add
 `-PkasugaLdlibCapture=/tmp/ldlib-ui.png` to capture it and exit automatically.
 Demo/smoke classes live in `contentTesting` and are excluded from the published
 mod JAR. LDLib2 supplies its own resources and nested libraries as a dependency.
+
+For declarative controls, see the separate [Compose adapter](../ldlib-compose/README.md).
+`LdMenuElement` can move a normally opened server-backed menu to the same world canvas while
+retaining its menu synchronization; the Compose guide describes ownership and cleanup.
+LDLib2 2.2.44 rendering uses its public `UISurface` contract for canvas size, clipping and visual
+layers. SDF compatibility is scoped to its internal rectangle draw, with strict injection targets.

@@ -20,6 +20,7 @@ An alternative constructor accepts a `Supplier<Model>` that lends an asset or re
 |---|---|---|
 | Vanilla | `ModelPreviewWidget(x, y, width, height, preview)` | The owning Screen calls `close()` from `removed()` |
 | LDLib2 | `ModelPreviewElement(preview)` | Removal closes the preview; supports normal ModularUI and world panels |
+| LDLib2 Compose | `ModelPreview(modelLocation, modelName, ...)` | Removal or an asset-key change releases the preview; see the [Compose adapter](../../external/uip/ldlib-compose/README.md) |
 | ModernUI | `ModelPreviewView(context, modelLocation, modelName)` | Uses the public MinecraftSurfaceView renderer; detach schedules cleanup on Minecraft's render thread |
 
 Toolkit adapters live separately in `external/uip/ldlib` and `external/uip/modernui`. The shared

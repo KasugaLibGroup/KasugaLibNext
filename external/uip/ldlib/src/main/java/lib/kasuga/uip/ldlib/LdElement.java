@@ -6,6 +6,7 @@ import com.lowdragmc.lowdraglib2.gui.ui.elements.TextArea;
 import com.lowdragmc.lowdraglib2.gui.ui.elements.TextField;
 import lib.kasuga.rendering.models.mc.backend.ui.UIBackend;
 import lib.kasuga.rendering.models.mc.backend.ui.WorldUiTextInput;
+import lib.kasuga.uip.ldlib.compat.WorldCanvasSurface;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -74,6 +75,11 @@ public final class LdElement extends ModularUIScreen implements WorldUiTextInput
 
     /** The host screen supplies bounds and widget routing, but is never installed as the active screen. */
     @Override public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {}
+
+    @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        if (!closed) modularUI.getWidget().render(graphics, mouseX, mouseY, partialTick,
+                WorldCanvasSurface.capture(graphics));
+    }
 
     @Override public void setFocused(boolean focused) {
         if (!focused) modularUI.clearFocus();

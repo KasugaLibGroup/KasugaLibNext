@@ -1,0 +1,30 @@
+modLoader="javafml"
+loaderVersion="[2,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="kasuga_lib_ldlib_compose"
+version="1.0.0"
+displayName="KasugaLib LDLib2 Compose Adapter"
+description="Compose world panels and model-loader previews for LDLib2."
+
+[[dependencies.kasuga_lib_ldlib_compose]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.kasuga_lib_ldlib_compose]]
+modId="kasuga_lib_ldlib2"
+type="required"
+versionRange="[1.0.0,)"
+ordering="AFTER"
+side="BOTH"
+
+[[dependencies.kasuga_lib_ldlib_compose]]
+modId="ldlib2_compose"
+type="required"
+versionRange="[21.0.0.1,)"
+ordering="AFTER"
+side="BOTH"

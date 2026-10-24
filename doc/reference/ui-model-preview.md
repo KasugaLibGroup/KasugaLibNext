@@ -18,6 +18,7 @@ preview.setView(-0.55f, 0.25f, 1f); // yaw / pitch：弧度，zoom：正数
 |---|---|---|
 | 原版 | `ModelPreviewWidget(x, y, width, height, preview)` | 宿主 `Screen.removed()` 调用控件的 `close()` |
 | LDLib2 | `ModelPreviewElement(preview)` | 元素移除时关闭；适用于普通 ModularUI 和 `LdElement` 世界面板 |
+| LDLib2 Compose | `ModelPreview(modelLocation, modelName, ...)` | 随组合节点移除或资源 key 改变释放；见 [Compose 接入](ldlib-compose.md) |
 | ModernUI | `ModelPreviewView(context, modelLocation, modelName)` | 使用上游 `MinecraftSurfaceView` 的渲染回调；分离时回到 MC 渲染线程释放 |
 
 LDLib2 和 ModernUI 的类与依赖分别位于 `external/uip/ldlib` 和 `external/uip/modernui`；
