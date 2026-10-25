@@ -5,18 +5,11 @@ import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
 import io.micronaut.context.annotation.Context;
 import jakarta.annotation.PostConstruct;
-import jakarta.inject.Inject;
-import net.minecraft.core.registries.Registries;
-import lib.kasuga.rendering.models.mc.content.block.KasugaBlockEntity;
-import lib.kasuga.rendering.models.mc.registry.PipelineBindingRegistry;
-import lib.kasuga.rendering.models.mc.registry.pipeline_binding.BlockPipelineBinding;
 import lib.kasuga.rendering.models.uml.dynamic.animation.ClipSampler;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmRegistries;
-import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.codec.StateMachineDefinition;
 import lib.kasuga.registration.minecraft.block.BlockReg;
 import lib.kasuga.registration.minecraft.block_entity.BlockEntityReg;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 
 import java.util.Collections;
@@ -25,18 +18,6 @@ import java.util.function.Supplier;
 @Context
 public class ModellingContentTest {
 
-    
-    public static final ResourceLocation TEST_FAN_BE_ID =
-            ResourceLocation.fromNamespaceAndPath("kasuga_lib", "test_fan_be");
-
-    public static final ResourceLocation TEST_FAN_BE_MODEL =
-            ResourceLocation.fromNamespaceAndPath("kasuga_lib", "models/be/test_fan_be.geo.json");
-
-    public static final ResourceLocation TEST_FAN_FORMULA_ID =
-            ResourceLocation.fromNamespaceAndPath("kasuga_lib", "test_fan_formula");
-
-    public static final ResourceLocation TEST_FAN_FORMULA_MODEL =
-            ResourceLocation.fromNamespaceAndPath("kasuga_lib", "models/be/test_fan_be.bbmodel");
 
     /**
      * v2.0 fan machine definition — code-constructed JSON parsed through {@link StateMachineDefinition#CODEC}
@@ -76,59 +57,34 @@ public class ModellingContentTest {
             }
             """;
 
-    public static BlockReg<TestFanBeBlock> TEST_FAN_BE_BLOCK;
-    public static BlockEntityReg<KasugaBlockEntity> TEST_FAN_BE_BE;
-
-    public static BlockReg<FanBlock> TEST_FAN_FORMULA_BLOCK;
-    public static BlockEntityReg<FanBlockEntity> TEST_FAN_FORMULA_BE;
+    public static BlockReg<FanBlock> EXAMPLE_FAN_BLOCK;
+    public static BlockEntityReg<FanBlockEntity> EXAMPLE_FAN_BE;
 
     @PostConstruct
     public void init() {
         // 在方法内构造，规避静态字段初始化器的前向/自引用限制；
         // 注册本身由 REGISTRY 在 KasugaLibStartupEvent 时统一派发。
-        TEST_FAN_BE_BE = BlockEntityReg.of(
-                "test_fan_be",
-                (pos, state) -> new KasugaBlockEntity(TEST_FAN_BE_BE.getEntry(), pos, state)
-        ).validBlocks(Collections.singletonList((Supplier<Block>) () -> TEST_FAN_BE_BLOCK.getEntry()))
+        // The data-driven sibling (kasuga_lib:example_fan_data_driven) is registered by
+        // FanDataDrivenFactories from the content file — same classes, params-selected machine/model.
+        EXAMPLE_FAN_BE = BlockEntityReg.of(
+                "example_fan",
+                (pos, state) -> new FanBlockEntity(EXAMPLE_FAN_BE.getEntry(), pos, state)
+        ).validBlocks(Collections.singletonList((Supplier<Block>) () -> EXAMPLE_FAN_BLOCK.getEntry()))
                 .setParent(ModellingTestApplication.registry);
 
-        TEST_FAN_BE_BLOCK = BlockReg.of(
-                "test_fan_be",
-                props -> new TestFanBeBlock(props, () -> TEST_FAN_BE_BE.getEntry())
-        ).withDefaultBlockItem("test_fan_be")
+        EXAMPLE_FAN_BLOCK = BlockReg.of(
+                "example_fan",
+                props -> new FanBlock(props, () -> EXAMPLE_FAN_BE.getEntry())
+        ).withDefaultBlockItem("example_fan")
                 .setParent(ModellingTestApplication.registry);
-
-        // 绑定是纯数据（RL → features/behavior），无需等方块注册完成。
-        // 方块 id 固定为 kasuga_lib:test_fan_be，onLoad 时经 BuiltInRegistries 反查。
-        PipelineBindingRegistry.registerBlock(TEST_FAN_BE_ID, BlockPipelineBinding.single(
-                TEST_FAN_BE_MODEL,
-                null
-        ));
-
-        TEST_FAN_FORMULA_BE = BlockEntityReg.of(
-                "test_fan_formula",
-                (pos, state) -> new FanBlockEntity(TEST_FAN_FORMULA_BE.getEntry(), pos, state)
-        ).validBlocks(Collections.singletonList((Supplier<Block>) () -> TEST_FAN_FORMULA_BLOCK.getEntry()))
-                .setParent(ModellingTestApplication.registry);
-
-        TEST_FAN_FORMULA_BLOCK = BlockReg.of(
-                "test_fan_formula",
-                props -> new FanBlock(props, () -> TEST_FAN_FORMULA_BE.getEntry())
-        ).withDefaultBlockItem("test_fan_formula")
-                .setParent(ModellingTestApplication.registry);
-
-        PipelineBindingRegistry.registerBlock(TEST_FAN_FORMULA_ID, BlockPipelineBinding.single(
-                TEST_FAN_FORMULA_MODEL,
-                null
-        ));
 
         // v2.0 FSM registrations (code-constructed; no data/<modid>/kasugalib JSON).
-        FsmRegistries.GLOBAL.vars().register(FanBlockEntity.CYCLE);
+        FsmRegistries.GLOBAL.vars().register(FanFixtures.CYCLE);
         FsmRegistries.GLOBAL.vars().register(FanVarProvider.CURRENT_SPEED);
         FsmRegistries.GLOBAL.vars().register(FanVarProvider.ANGLE);
-        FsmRegistries.GLOBAL.definitions().register(FanBlockEntity.FAN_MACHINE_ID, fanMachineDefinition());
+        FsmRegistries.GLOBAL.definitions().register(FanFixtures.MACHINE_ID, fanMachineDefinition());
         FsmRegistries.GLOBAL.clips().register(
-                Id.fromNamespaceAndPath("kasuga_lib", "fan_fsm"),
+                FanFixtures.CLIP_ID,
                 ClipSampler.INSTANCE,
                 FanAnimationClipFactory.fanClip());
     }

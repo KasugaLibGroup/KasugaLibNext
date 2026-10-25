@@ -1,6 +1,7 @@
 package test.kasuga.modelling;
 
-import lib.kasuga.rendering.models.mc.dynamic.fsm.AnimationBlockEntity;
+import lib.kasuga.rendering.models.mc.dynamic.fsm.AnimationHost;
+import lib.kasuga.rendering.models.mc.proxies.ProxyTickers;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -19,6 +20,8 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
@@ -28,12 +31,17 @@ import org.jetbrains.annotations.Nullable;
 import java.util.function.Supplier;
 
 /**
- * v2.0 fan test block: {@code useWithoutItem} (server) raises the {@code cycle} FSM trigger, so the gear
- * layer cycles {@code off→g1→g2→g3→off}; the FSM sync channel broadcasts the resulting snapshot — no
- * {@code getUpdateTag} ramp broadcast, no {@code sendBlockUpdated}. Hosts an
- * {@link AnimationBlockEntity} and drives it every tick through {@link AnimationBlockEntity#TICKER}.
+ * The fan example block: right-click raises the {@code cycle} trigger on the hosted state machine
+ * ({@code off→g1→g2→g3→off}); the model system takes care of the rest.
+ *
+ * <p>Used by both registrations — the code-registered {@code example_fan} and the data-driven
+ * {@code example_fan_data_driven}. {@link #newBlockEntity} delegates to the block entity type, which is
+ * what lets the data-driven type inject its {@code params}-selected machine/model without a subclass.
  */
 public class FanBlock extends Block implements EntityBlock {
+
+    /** Mirrors the machine state "spinning" into the world; written by the proxy's push direction. */
+    public static final BooleanProperty RUNNING = BooleanProperty.create("running");
 
     private final Supplier<BlockEntityType<?>> blockEntityType;
 
@@ -42,29 +50,47 @@ public class FanBlock extends Block implements EntityBlock {
         this.blockEntityType = blockEntityType;
     }
 
-    @Nullable
     @Override
-    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
-        return new FanBlockEntity(blockEntityType.get(), pos, state);
+    public @Nullable BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
+        BlockEntityType<?> type = blockEntityType.get();
+        return type == null ? null : type.create(pos, state);
+    }
+
+    /**
+     * Both sides drive the proxy; the block may combine a previous ticker if it ever has one.
+     *
+     * <p>Do not use {@code forClientBlockEntity} here: the fan's state machine is authoritative on the
+     * server, so the server must materialize a proxy instance too.
+     */
+    @Override
+    public @Nullable <T extends BlockEntity> BlockEntityTicker<T> getTicker(
+            Level level, BlockState state, BlockEntityType<T> type) {
+        return ProxyTickers.forBlockEntity(type);
     }
 
     @Override
-    public RenderShape getRenderShape(BlockState state) {
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(RUNNING);
+    }
+
+    @Override
+    protected RenderShape getRenderShape(BlockState state) {
         return RenderShape.ENTITYBLOCK_ANIMATED;
     }
 
     @Override
-    protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult) {
-        if (!level.isClientSide && level.getBlockEntity(pos) instanceof FanBlockEntity fan) {
-            StateMachine<?> machine = fan.machine();
+    protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos,
+                                               Player player, BlockHitResult hitResult) {
+        return cycle(level, pos, player);
+    }
+
+    /** Cycles the gear. Host-agnostic: works for any {@link AnimationHost}, proxy-based or not. */
+    static InteractionResult cycle(Level level, BlockPos pos, Player player) {
+        if (!level.isClientSide() && level.getBlockEntity(pos) instanceof AnimationHost host) {
+            StateMachine<?> machine = host.machine();
             if (machine != null) {
-                machine.trigger(FanBlockEntity.CYCLE);
-                // The gear ring is locked off→g1→g2→g3→off: the click's destination is (gear+1)%4.
-                // Feedback mirrors the 1.0 catenary-wire item ({@code ComponentTranslationTool}):
-                // an action-bar message ({@code displayClientMessage(..., true)} — shows above the
-                // hotbar WITHOUT the accessibility "show subtitles" option) + the vanilla button click.
-                int gear = machine.layer("gear").activeStateIndex();
-                int next = (gear + 1) % 4;
+                machine.trigger(FanFixtures.CYCLE);
+                int next = (machine.layer("gear").activeStateIndex() + 1) % FanFixtures.GEAR_STATE_IDS.length;
                 player.displayClientMessage(
                         Component.translatable("msg.kasuga_lib.fan_gear_" + next).withStyle(ChatFormatting.GREEN),
                         true);
@@ -74,24 +100,26 @@ public class FanBlock extends Block implements EntityBlock {
         return InteractionResult.SUCCESS;
     }
 
+    /** Thin panel: keep adjacent blocks from culling against it and players from being blocked. */
     @Override
-    @SuppressWarnings("unchecked")
-    @Nullable
-    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
-        return type == blockEntityType.get() ? (BlockEntityTicker<T>) AnimationBlockEntity.TICKER : null;
-    }
-
-    /**
-     * The fan is a thin panel / animated custom-render block — it must not be treated as a full opaque
-     * cube, or adjacent blocks would wrongly cull their faces against it and players would be blocked.
-     */
-    @Override
-    public VoxelShape getOcclusionShape(BlockState state, BlockGetter level, BlockPos pos) {
+    protected VoxelShape getOcclusionShape(BlockState state, BlockGetter level, BlockPos pos) {
         return Shapes.empty();
     }
 
     @Override
-    public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+    protected VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos,
+                                           CollisionContext context) {
         return Shapes.empty();
+    }
+
+    /** Lets a comparator observe the machine → world direction. */
+    @Override
+    protected boolean hasAnalogOutputSignal(BlockState state) {
+        return true;
+    }
+
+    @Override
+    protected int getAnalogOutputSignal(BlockState state, Level level, BlockPos pos) {
+        return state.getValue(RUNNING) ? 15 : 0;
     }
 }

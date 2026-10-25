@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The registration half of the data-driven fan fixture: on the real (FML) test runtime the mod's own
  * index manifest — {@code data/kasuga_lib/kasuga_lib/data_driven/modelling.json}, shipped by the
  * modelling contentTesting source set — is consumed by {@code JsonTreeBuilder.buildForMod} and the
- * {@code kasuga_lib:test_fan_formula_data_driven} block (with its embedded block entity) really lands
+ * {@code kasuga_lib:example_fan_data_driven} block (with its embedded block entity) really lands
  * in {@code BuiltInRegistries}.
  *
  * <p>The two NeoForge-dependent assertions are guarded with {@link Assumptions#assumeTrue}: the plain
@@ -34,13 +34,13 @@ class FanDataDrivenRegistrationTest {
     private static final String MOD_ID = "kasuga_lib";
 
     private static final ResourceLocation BLOCK_ID =
-            ResourceLocation.parse("kasuga_lib:test_fan_formula_data_driven");
+            ResourceLocation.parse("kasuga_lib:example_fan_data_driven");
 
-    private static final ResourceLocation ORIGINAL_BLOCK_ID =
-            ResourceLocation.parse("kasuga_lib:test_fan_formula");
+    private static final ResourceLocation CODE_BLOCK_ID =
+            ResourceLocation.parse("kasuga_lib:example_fan");
 
     private static final ResourceLocation BE_ID =
-            ResourceLocation.parse("kasuga_lib:test_fan_formula_data_driven_be");
+            ResourceLocation.parse("kasuga_lib:example_fan_data_driven_be");
 
     @Test
     void dataDrivenFanBlockLandsInTheRegistryWithoutDisturbingTheOriginal() {
@@ -53,10 +53,9 @@ class FanDataDrivenRegistrationTest {
         assertTrue(BuiltInRegistries.BLOCK_ENTITY_TYPE.containsKey(BE_ID),
                 "the embedded block entity must be registered as " + BE_ID);
 
-        // The programmatic fixture shares the machine vars/vars and model RL but keeps its own id; the
-        // data-driven registration must not displace it.
-        assertNotSame(Blocks.AIR, BuiltInRegistries.BLOCK.get(ORIGINAL_BLOCK_ID),
-                "the programmatic " + ORIGINAL_BLOCK_ID + " must still be registered");
+        // The code-registered fixture uses the same classes and model; the data-driven registration must not displace it.
+        assertNotSame(Blocks.AIR, BuiltInRegistries.BLOCK.get(CODE_BLOCK_ID),
+                "the programmatic " + CODE_BLOCK_ID + " must still be registered");
     }
 
     /** Re-running the real index reader must be clean: no source, schema or factory error. */

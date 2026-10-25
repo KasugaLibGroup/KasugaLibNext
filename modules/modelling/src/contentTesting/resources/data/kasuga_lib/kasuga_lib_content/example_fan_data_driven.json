@@ -1,10 +1,10 @@
 {
   "blocks": [
     {
-      "id": "kasuga_lib:test_fan_formula_data_driven",
-      "type": "fan_block",
+      "id": "kasuga_lib:example_fan_data_driven",
+      "type": "example_fan_block",
       "block_entity": {
-        "type": "fan_be",
+        "type": "example_fan_be",
         "params": {
           "model": "kasuga_lib:models/be/test_fan_be.bbmodel",
           "state_machine": "kasuga_lib:fan_machine_data_driven"
