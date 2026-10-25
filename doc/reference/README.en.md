@@ -29,6 +29,7 @@ References are organized against the current source; historical performance/clie
 | [UML framework](uml-render-framework.md) | backend/context/factory, the public interfaces and lifecycle contracts for scheduling and buffers |
 | [Backend extension](rendering-backends.md) | Standalone backend modules, host frame context, upload and output adaptation |
 | [Scheduling and model handles](render-scheduling.md) | McModelHandle, visibility, Entity/BlockEntity renderer integration |
+| [Item model rendering](item-model-renderers.md) | `ItemModelRenderers` mapping, the shared BEWLR, the `builtin/entity` precondition, display transforms, and scheduling |
 | [Final frame output](frame-output.md) | Subscriptions, shared frames, MIRROR/OFFSCREEN_ONLY, exceptions, and closing |
 | [Player / Free / Fixed Camera](cameras.md) | Camera types, creation, generic follow targets, entity binding, projection, and runtime render configuration |
 | [Multi-camera output contract](multi-camera-output.md) / [Startup and verification walkthrough](../guides/offline-rendering.md) | Camera lifecycle, resource packs, standalone windows, startup, FBO consumption, and recording |
