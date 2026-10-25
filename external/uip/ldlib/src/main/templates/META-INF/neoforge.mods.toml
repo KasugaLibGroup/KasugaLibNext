@@ -17,11 +17,8 @@ license="${mod_license}"
 # A URL to refer people to when problems occur with this mod
 #issueTrackerURL="https://change.me.to.your.issue.tracker.example.invalid/" #optional
 
-#[[mixins]]
-#config="${mod_id}.mixins.json"
-
-[[accessTransformers]]
-file="META-INF/accesstransformer.cfg"
+[[mixins]]
+config="${mod_id}.mixins.json"
 
 # A list of mods - how many allowed here is determined by the individual mod loader
 [[mods]] #mandatory
@@ -97,6 +94,13 @@ description='''${mod_description}'''
     type="required"
     # This version range declares a minimum of the current minecraft version up to but not including the next major version
     versionRange="${kasuga_lib_version_range}"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="ldlib2"
+    type="required"
+    versionRange="[${ldlib2_version},)"
     ordering="AFTER"
     side="BOTH"
 

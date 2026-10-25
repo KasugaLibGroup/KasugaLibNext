@@ -15,6 +15,7 @@ This directory explains algorithms, data flow, module boundaries, timing, and re
 | Layer responsibilities, mount publishing, and in-flight GPU reads | [UML Framework](uml-render-framework.md) |
 | Core, graphics API, and host adaptation boundaries | [Rendering Backends](rendering-backends.md) |
 | Vanilla visibility, per-view marks, and sampling deduplication | [Render Scheduling](render-scheduling.md) |
+| Screen unprojection, world UI, and input ownership | [World UI Input](world-ui-input.en.md) |
 | Final blit, read-only borrow, and shared capture | [Frame Output](frame-output.md) |
 | Same-process camera view isolation, world subscription, and GPU synchronization | [Multi-Camera and Offscreen](offline-rendering-and-multi-cam.md) |
 | Translucent passes, WBOIT, and depth compositing | [Alpha Rendering](render-alpha-passes.md) |

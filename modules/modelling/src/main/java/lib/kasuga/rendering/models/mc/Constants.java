@@ -26,6 +26,7 @@ import lib.kasuga.rendering.models.mc.backend.*;
 import lib.kasuga.rendering.models.mc.backend.data_type.KasugaShaderInstance;
 import lib.kasuga.rendering.models.mc.backend.data_type.KasugaGlobalBatchShaderInstance;
 import lib.kasuga.rendering.models.mc.backend.data_type.OitCompositeShaderInstance;
+import lib.kasuga.rendering.models.mc.backend.ui.UIBackend;
 import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
 import lib.kasuga.rendering.models.mc.registry.PipelineRegistry;
 import lib.kasuga.rendering.models.mc.source.model.*;
@@ -65,6 +66,7 @@ public class Constants {
 
     public static CombinedTextureManager TEXTURE_BASIC;
     public static SourceType TEXTURE_TYPE, MODEL_TYPE;
+    public static UIBackend UI_BACKEND;
 
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final RenderPipelineScope CLIENT_RENDER_PIPELINES = RenderPipelineScope.create(
@@ -77,6 +79,9 @@ public class Constants {
         ShaderPreparationScheduler.configureFromSystemProperty();
         ShaderPreparationScheduler.prestartWorkers();
         ShaderParameterPersistence.initialize();
+        if (UI_BACKEND == null) {
+            UI_BACKEND = new UIBackend();
+        }
         if (!renderPipelineRegistrationPosted) {
             renderPipelineRegistrationPosted = true;
             ModLoader.postEvent(new RegisterRenderPipelinesEvent(CLIENT_RENDER_PIPELINES));
@@ -109,6 +114,11 @@ public class Constants {
         pipelines.world(opaque, context -> renderModels(context, ModelRenderPass.OPAQUE, true, false));
         pipelines.world(mask, context -> renderModels(context, ModelRenderPass.MASK, false, false));
         pipelines.world(translucent, context -> renderModels(context, ModelRenderPass.TRANSLUCENT, false, true));
+        pipelines.world(RenderPipelineDescriptor.builder(
+                ResourceLocation.fromNamespaceAndPath(KasugaLib.MODID, "world_ui"), RenderPhase.AFTER_LEVEL)
+                .build(), context -> {
+                    if (UI_BACKEND != null) UI_BACKEND.renderWorld(context);
+                });
     }
 
     @SubscribeEvent

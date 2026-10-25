@@ -67,6 +67,7 @@ public final class StandaloneRenderHarness {
             report.put("extensions", extensions);
             System.out.println("Standalone GL: " + report.get("renderer") + " / " + report.get("glVersion"));
             var suite = new RenderRegressionSuite(options.report.getParent());
+            run(results, "world-ui-canvas", WorldUiCanvasRegression::run);
             run(results, "depth-precision", suite::depthPrecision);
             run(results, "depth-handoff", suite::depthHandoff);
             run(results, "conditional-peel-loop", suite::conditionalPeel);

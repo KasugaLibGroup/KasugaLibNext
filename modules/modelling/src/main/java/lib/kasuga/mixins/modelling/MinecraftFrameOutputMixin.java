@@ -25,6 +25,8 @@ abstract class MinecraftFrameOutputMixin {
 
     @Inject(method = "close", at = @At("HEAD"))
     private void kasuga$releaseOutputs(CallbackInfo ci) {
+        if (lib.kasuga.rendering.models.mc.Constants.UI_BACKEND != null)
+            lib.kasuga.rendering.models.mc.Constants.UI_BACKEND.close();
         lib.kasuga.rendering.effect.builtin.cloud.CloudEffects.shutdown();
         lib.kasuga.rendering.output.mc.DualCameraDebug.close();
         lib.kasuga.rendering.output.mc.MinecraftFrameWindows.shutdown();
@@ -42,6 +44,8 @@ abstract class MinecraftFrameOutputMixin {
 
     @Inject(method = "updateLevelInEngines", at = @At("HEAD"))
     private void kasuga$releaseCameraWorld(ClientLevel level, CallbackInfo ci) {
+        if (lib.kasuga.rendering.models.mc.Constants.UI_BACKEND != null)
+            lib.kasuga.rendering.models.mc.Constants.UI_BACKEND.worldChanged();
         MinecraftWorldViews.worldChanged();
     }
 }

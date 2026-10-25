@@ -1,7 +1,7 @@
 # 能力现状清单
 
 > **用途**：填 [01-impact-template.md](../assets/01-impact-template.md) 第 2 节"项目中是否存在且可直接用"时查这里。
-> 数据来自**实际扫描代码**，不是印象。最后核对于 2026-10-17。
+> 数据来自**实际扫描代码**，不是印象。渲染与输入项最后核对于 2026-10-24，其余项为 2026-10-17。
 >
 > 这一项决定了阶段 2 展开哪些维度：
 > `直接可用` → 只问「消费」类风险；`不存在` → 还要问「设计是否完整」。
@@ -11,18 +11,18 @@
 | # | 能力 | 项目中的位置 | 成熟度 | 缺口 |
 |---|---|---|---|---|
 | 1 | 存档持久化 | `core/saved/`（`CustomSavedData`、`SavedSystem`、`ScopedNbtSavedData`） | ⚠ 可用但不成熟 | **无持久化语义测试**（旧档/卸载/重复加载均未覆盖） |
-| 2 | 网络同步 | `core/networking/rpc/`、`registration/stages/PayloadRegistrationStage` | ✅ 可用 | 4 个测试类；缺多玩家真实场景验证 |
+| 2 | 网络同步 | `core/networking/rpc/`、`registration/stages/PayloadRegistrationStage`、`external/uip/ldlib/LdMenuElement` | ✅ 可用 | 通用网络有4个测试类；LDLib2同步菜单可移交世界宿主，Compose动态模型/RPC与每玩家隔离已有双客户端LAN验证；通用网络其他多人场景仍缺验证 |
 | 3 | 资源加载 | `core/resource/`（`ResourceSystem`、`ScopedResourceManager`） | ✅ 可用 | 含重载链路 |
 | 4 | 模型/资产加载 | `render-core/.../uml/loaders/`、`.../uml/typo/`（gltf/mmd/obj/bbmodel） | ✅ 成熟 | 多格式齐全，测试覆盖 morph/骨骼/UV |
 | 5 | 注册 | `core/registration/minecraft/`（block/block_entity/entity/menu/payload/data_component） | ✅ 可用 | 含代码模板；顺序依赖曾出过 bug |
 | 6 | 数据驱动注册 | `data-driven/` | ✅ 成熟 | 20 个测试类 |
 | 7 | 编解码 | `core/codec/KasugaCodec` | ✅ 可用 | — |
-| 8 | 渲染 | `core/rendering`（钩子）+ `render-core` + `render-opengl` + `modelling/rendering` | ⚠ 可用 | `renderGlTest` 13 场景，**中文字体零覆盖** |
-| 9 | 空间与坐标 | `render-core/.../uml/math/`（`Transform`） | ⚠ 部分 | 变换数学有测试，**"对象自带坐标系"零覆盖** |
+| 8 | 渲染 | `core/rendering`（钩子）+ `render-core` + `render-opengl` + `modelling/rendering` | ⚠ 可用 | `renderGlTest` 15 场景；世界 UI 有独立深度/alpha/resize/销毁回归（退役即时检查纹理/FBO/深度附件，客户端反复缩放检查当前附件与像素），隐藏客户端验证真实中文字体/控件在 MIN/0/MAX_GUI_Z 像素一致；UI模型预览使用独立实例/深度画布，原版、LDLib2和ModernUI均有原生客户端验证；玩家操作体验仍需验收 |
+| 9 | 空间与坐标 | `render-core/.../uml/math/`（`Transform`）+ `modelling/.../backend/ui` | ⚠ 部分 | 世界 UI 已覆盖视图投影、局部平面、边界与多目标路由；其他对象的坐标系仍缺少完整覆盖 |
 | 10 | 状态机/动画 | `render-core/.../dynamic/fsm/`、`.../dynamic/animation/` | ✅ 成熟 | 29 个测试类 |
 | 11 | 时序 | `render-core/.../dynamic/tick_loop/` | ✅ 可用 | 有 `ModelTickLoopTest` |
-| 12 | 事件与生命周期 | `core/registration/stages/`、`core/resource/*Event` | ⚠ 可用但有缺陷 | **资源释放链路已知缺陷**：清理钩子可能因参数为 null 而不执行 |
-| 13 | 第三方集成 | `core/mixins/`（含 `KasugaLibMixinPlugin`） | ⚠ 可用但危险 | **无 mixin 生效性自检**；Iris 会静默跳过 |
+| 12 | 事件与生命周期 | `core/registration/stages/`、`core/resource/*Event`、`modelling/.../backend/ui`、`external/uip/ldlib/LdElement` | ⚠ 可用但有缺陷 | 世界 UI 已覆盖捕获/焦点/松键清理；LDLib2 适配器管理 tick、幂等关闭、断线及世界切换清理，通用注册仍由调用方管理；其他资源释放链路有已知参数为 null 导致清理未执行的缺陷 |
+| 13 | 第三方集成 | `core/mixins/`（含 `KasugaLibMixinPlugin`）、`modelling/.../backend/ui/WorldUiTextInput`、`external/uip/ldlib`、`external/uip/ldlib-compose` | ⚠ 可用但危险 | LDLib2世界控件与文字焦点已有真实客户端交互smoke；ModernUI模型通过MinecraftSurfaceView回调绘制并跨线程清理；Compose依赖位于独立可选模块，双端固定注册、客户端重组/模型节点和世界菜单已有原生客户端与双客户端LAN验证；LDLib2 2.2.44的UISurface与SDF兼容限外部适配器；共享后端不依赖第三方UI库；物理专用服务端/Iris尚未验证 |
 | 14 | 脚本运行时 | `scripting/` | ✅ 可用 | 14 个测试类；沙箱 **fail-open** |
 | 15 | 平台与原生 | `external/slp/javet/`、`modelling/src/main/native/`（box3d） | ⚠ 可用但危险 | **无哈希校验**；移动端加载失败过 |
 | 16 | 配置 | — | ❌ **不存在** | 全仓 `ModConfigSpec` / `ConfigTracker` 零命中 |

@@ -9,7 +9,6 @@ import org.joml.Vector2f;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 
 public class UIInstanceData {
 
@@ -41,21 +40,14 @@ public class UIInstanceData {
         if (data == null) {
             data = new WorldMouseData(originalPos);
             operators.put(entity, data);
-        } else if (originalPos != null) {
-            data.updatePosition(originalPos);
-        }
+        } else if (originalPos != null) data.updatePosition(originalPos);
         data.focused = true;
     }
 
-    /** @return true when the operator has state and the action was handed to it. */
-    public boolean operate(Entity operator, BiConsumer<Entity, WorldMouseData> consumer) {
-        WorldMouseData data = operators.get(operator);
-        if (data == null) return false;
-        consumer.accept(operator, data);
-        return true;
-    }
-
-    public void clearOperators() {
-        operators.clear();
+    public void operate(Entity operator, BiConsumer<Entity, WorldMouseData> consumer) {
+        if (operators.containsKey(operator)) {
+            WorldMouseData data = operators.get(operator);
+            consumer.accept(operator, data);
+        }
     }
 }
