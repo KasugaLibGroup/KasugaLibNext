@@ -61,8 +61,8 @@ public class AnimationBlockEntity extends BlockEntity implements AnimationHost {
 
     /**
      * Root transform placing the model at this block's position. Centered on x/z (+0.5) to match the
-     * framework's block-anchoring convention ({@code BlockPipelineBinding} centers the same way) — models
-     * authored centered at the origin (Blockbench default) then sit at the block center, not the corner.
+     * framework's block-anchoring convention (models authored centered at the origin, Blockbench default,
+     * then sit at the block center rather than the corner).
      */
     private Transform rootTransform() {
         return new Transform()

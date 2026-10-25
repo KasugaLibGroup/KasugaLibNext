@@ -46,6 +46,8 @@ public final class FsmAnimatedModel {
 
     private final Object owner;
     private final long ownerDiscriminator;
+    @Nullable
+    private final ResourceLocation explicitInstanceLoc;
     private final Supplier<Transform> rootTransform;
     private final Consumer<StateMachine<?>> onMachineBuilt;
     private final Consumer<ModelInstance> onClientModelBound;
@@ -73,8 +75,27 @@ public final class FsmAnimatedModel {
                             @Nullable Id stateMachineId, @Nullable ResourceLocation modelLoc, @Nullable String modelName,
                             @Nullable Consumer<StateMachine<?>> onMachineBuilt,
                             @Nullable Consumer<ModelInstance> onClientModelBound) {
+        this(owner, ownerDiscriminator, null, rootTransform, stateMachineId, modelLoc, modelName,
+                onMachineBuilt, onClientModelBound);
+    }
+
+    /**
+     * Full form with an explicit pipeline instance key.
+     *
+     * <p>When {@code instanceLoc} is non-null it is used verbatim as the {@link ModelInstance} key
+     * instead of the legacy {@code <model namespace>:fsm_<discriminator>} derivation. Callers that
+     * own a stable identity (see {@code ProxyIdentity}) should pass it: the legacy derivation
+     * ignores the dimension, so two hosts at the same coordinate in different dimensions share one
+     * instance, and it changes when the model changes.
+     */
+    public FsmAnimatedModel(Object owner, long ownerDiscriminator, @Nullable ResourceLocation instanceLoc,
+                            Supplier<Transform> rootTransform,
+                            @Nullable Id stateMachineId, @Nullable ResourceLocation modelLoc, @Nullable String modelName,
+                            @Nullable Consumer<StateMachine<?>> onMachineBuilt,
+                            @Nullable Consumer<ModelInstance> onClientModelBound) {
         this.owner = owner;
         this.ownerDiscriminator = ownerDiscriminator;
+        this.explicitInstanceLoc = instanceLoc;
         this.rootTransform = rootTransform;
         this.stateMachineId = stateMachineId;
         this.modelLoc = modelLoc;
@@ -407,6 +428,9 @@ public final class FsmAnimatedModel {
 
     /** Per-host unique instance identifier, so two hosts never share one {@link ModelInstance}. */
     private ResourceLocation instanceLoc() {
+        if (explicitInstanceLoc != null) {
+            return explicitInstanceLoc;
+        }
         ResourceLocation base = modelLoc != null
                 ? modelLoc
                 : ResourceLocation.fromNamespaceAndPath("kasuga_lib", "unknown");
