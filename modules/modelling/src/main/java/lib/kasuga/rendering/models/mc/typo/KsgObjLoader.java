@@ -191,30 +191,55 @@ public class KsgObjLoader extends ObjModelLoader<String, ResourceLocation, Strin
 
     @Override
     public String getTextureContent(String mtlUrl) {
-        Pair<ResourceLocation, Path> pair = IdentifierHelper.getRLAndPath(mtlUrl);
-        if (pair == null) return "";
-        Optional<InputStream> stream;
-        if (pair.getSecond() == null) {
-            ResourceLocation location = ResourceLocation.tryBuild(
-                    pair.getFirst().getNamespace(),
-                    "models/" + pair.getFirst().getPath() + ".mtl"
-            );
-            stream = IdentifierHelper.getInputStream(location);
-        } else {
-            stream = IdentifierHelper.getInputStream(pair.getSecond());
+        Optional<InputStream> stream = openMtl(mtlUrl);
+        if (stream.isEmpty()) {
+            stream = openSiblingMtl(mtlUrl);
         }
-        if (stream.isEmpty()) return "";
-        try (InputStream inputStream = stream.get()) {
-            InputStreamReader reader = new InputStreamReader(inputStream);
-            StringBuilder sb = new StringBuilder();
-            char[] buffer = new char[1024];
-            int read;
-            while ((read = reader.read(buffer)) != -1) {
-                sb.append(buffer, 0, read);
-            }
-            return sb.toString();
+        return stream.map(KsgObjLoader::readAll).orElse("");
+    }
+
+    private Optional<InputStream> openMtl(String mtlUrl) {
+        Pair<ResourceLocation, Path> pair = IdentifierHelper.getRLAndPath(mtlUrl);
+        if (pair == null) {
+            return Optional.empty();
+        }
+        if (pair.getSecond() != null) {
+            return IdentifierHelper.getInputStream(pair.getSecond());
+        }
+        ResourceLocation location = ResourceLocation.tryBuild(
+                pair.getFirst().getNamespace(),
+                "models/" + pair.getFirst().getPath() + ".mtl"
+        );
+        return location == null ? Optional.empty() : IdentifierHelper.getInputStream(location);
+    }
+
+    /**
+     * Blockbench exports write {@code mtllib pk209p_main.mtl} without a namespace. The resolver above
+     * turns that into {@code minecraft:models/pk209p_main.mtl}, which never exists; resolve it next to
+     * the OBJ that declared it instead.
+     */
+    private Optional<InputStream> openSiblingMtl(String mtlUrl) {
+        if (mtlUrl == null || mtlUrl.indexOf(':') >= 0 || getCurrentInput() == null) {
+            return Optional.empty();
+        }
+        ResourceLocation owner = loadedModels.get(getCurrentInput());
+        if (owner == null) {
+            return Optional.empty();
+        }
+        String path = owner.getPath();
+        int slash = path.lastIndexOf('/');
+        if (slash < 0) {
+            return Optional.empty();
+        }
+        ResourceLocation sibling = ResourceLocation.tryBuild(
+                owner.getNamespace(), path.substring(0, slash + 1) + mtlUrl);
+        return sibling == null ? Optional.empty() : IdentifierHelper.getInputStream(sibling);
+    }
+
+    private static String readAll(InputStream stream) {
+        try (InputStream input = stream) {
+            return new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         } catch (IOException e) {
-            // warn about failed mtl loading
             return "";
         }
     }

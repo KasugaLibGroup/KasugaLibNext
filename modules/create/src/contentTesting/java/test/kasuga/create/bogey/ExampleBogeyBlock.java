@@ -5,10 +5,15 @@ import com.simibubi.create.content.trains.bogey.AbstractBogeyBlock;
 import com.simibubi.create.content.trains.bogey.BogeySizes;
 import com.simibubi.create.content.trains.bogey.BogeyStyle;
 import com.simibubi.create.content.trains.track.TrackMaterial;
+import lib.kasuga.rendering.models.mc.proxies.ProxyTickers;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.HitResult;
@@ -84,5 +89,15 @@ public final class ExampleBogeyBlock extends AbstractBogeyBlock<ExampleBogeyBloc
     @Override
     public BlockEntityType<? extends ExampleBogeyBlockEntity> getBlockEntityType() {
         return blockEntityType.get();
+    }
+
+    @Override
+    public <S extends BlockEntity> BlockEntityTicker<S> getTicker(Level level, BlockState state, BlockEntityType<S> type) {
+        return ProxyTickers.forBlockEntity(type);
+    }
+
+    @Override
+    protected RenderShape getRenderShape(BlockState state) {
+        return RenderShape.ENTITYBLOCK_ANIMATED;
     }
 }

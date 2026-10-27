@@ -79,7 +79,7 @@ class KasugaMonorepoPlugin implements Plugin<Project> {
             duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         }
 
-        project.ext.useModProject = { Project targetProject ->
+        project.ext.useModProject = { Project targetProject, boolean includeContentTesting = true ->
 
             project.evaluationDependsOn(targetProject.path)
 
@@ -122,7 +122,7 @@ class KasugaMonorepoPlugin implements Plugin<Project> {
 
             project.afterEvaluate {
 
-                if(targetProject.sourceSets.hasProperty("contentTesting")) {
+                if(includeContentTesting && targetProject.sourceSets.hasProperty("contentTesting")) {
                     project.neoForge {
                         mods {
                             "${modId}" {
@@ -132,7 +132,7 @@ class KasugaMonorepoPlugin implements Plugin<Project> {
                     }
                 }
 
-                if(project.sourceSets.hasProperty("contentTesting") && targetProject.sourceSets.hasProperty("contentTesting")) {
+                if(includeContentTesting && project.sourceSets.hasProperty("contentTesting") && targetProject.sourceSets.hasProperty("contentTesting")) {
                     project.sourceSets {
                         contentTesting {
                             System.out.println("Add contentTesting classpath from " + targetProject.path + " to " + project.path)

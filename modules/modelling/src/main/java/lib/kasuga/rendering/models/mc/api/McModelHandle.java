@@ -425,6 +425,24 @@ public final class McModelHandle {
         return this;
     }
 
+    /**
+     * Replaces the root pose as a whole: position, rotation and scale.
+     *
+     * <p>Before mounting this is the pose handed to the binder; while mounted it is applied to the
+     * skeleton root in the instance's own coordinate system (origin-local when a floating origin is
+     * enabled). Use {@link #setPos(Vec3)} instead when only the world anchor may change and the
+     * skeleton must keep its rotation.
+     *
+     * @param pose the pose to copy; it is not retained
+     * @return this handle
+     */
+    public McModelHandle setPose(Transform pose) {
+        Objects.requireNonNull(pose, "pose");
+        ensurePose().set(pose);
+        flushPose();
+        return this;
+    }
+
     /** Advanced: direct mutable access to the root transform (flushed on every prior call). */
     public Transform pose() {
         return ensurePose();

@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 public final class BogeyGroupReg extends Reg<BogeyGroupReg, BogeyStyle> {
@@ -29,6 +30,8 @@ public final class BogeyGroupReg extends Reg<BogeyGroupReg, BogeyStyle> {
     private ParticleOptions smokeParticle;
     private CompoundTag defaultData;
     private BogeyStyle delegate;
+    private Consumer<BogeyStyle> onCommitted = style -> {
+    };
 
     public BogeyGroupReg(String name, String cycleGroup) {
         this.name = Objects.requireNonNull(name, "name");
@@ -74,6 +77,21 @@ public final class BogeyGroupReg extends Reg<BogeyGroupReg, BogeyStyle> {
                 Objects.requireNonNull(block, "block"),
                 Objects.requireNonNull(rendererHandle, "rendererHandle")
         ));
+        return this;
+    }
+
+    /**
+     * Runs once, after this style has been committed to {@code AllBogeyStyles}.
+     *
+     * <p>The style id and its sizes only exist at that point, so any work that needs the real
+     * {@link BogeyStyle} (model mappings for an external render pipeline, metadata, diagnostics)
+     * must be registered here rather than in the caller's {@code register} method.
+     *
+     * @param callback the action to run with the committed style
+     * @return this registration, for chaining
+     */
+    public BogeyGroupReg onCommitted(Consumer<BogeyStyle> callback) {
+        this.onCommitted = Objects.requireNonNull(callback, "callback");
         return this;
     }
 
@@ -153,6 +171,7 @@ public final class BogeyGroupReg extends Reg<BogeyGroupReg, BogeyStyle> {
         BogeyStyle style = builder.build();
         BogeyMetadataIndex.put(style, new BogeyMetadataIndex.StyleMetadata(id, cycleId));
         delegate = style;
+        onCommitted.accept(style);
     }
 
     private ResourceLocation resolveId(String path) {
