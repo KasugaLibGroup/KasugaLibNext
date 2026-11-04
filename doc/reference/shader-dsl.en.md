@@ -28,6 +28,81 @@
 
 - The DSL checks the stage interface of a graphics program during Java construction. The caller must match the `RenderShaderDescriptor` vertex format to the attributes.
 
+## GraalJS Scripting
+
+The optional `:modules:shader-graal` module provides `lib.kasuga.shader.graal.GraalShaderCompiler`. It uses GraalJS Community 24.1.2 on Java 21 to call the Java DSL directly and return the same `ShaderProgram` type. The module declares its Graal Maven dependencies; the main library does not include it automatically.
+
+```groovy
+dependencies {
+    implementation project(':modules:shader-graal')
+}
+```
+
+For example, `screen-tint.js`:
+
+```javascript
+const tintParameter = ShaderParameter.builder(
+    "Tint", "Screen tint", ShaderParameterType.COLOR_RGB
+).range(0, 1).defaultValues(1, 0.5, 0.25).build();
+
+Shader.fullscreen("example:script_tint", shader => {
+    const tint = shader.exposeVec3(tintParameter);
+    const source = shader.sampler2D("SceneSampler").sample(shader.texCoord());
+    shader.fragmentColor(shader.vec4(source.rgb().mul(tint), source.a()));
+});
+```
+
+The host reads a UTF-8 file or supplies a diagnostic name and source text:
+
+```java
+import lib.kasuga.shader.ShaderProgram;
+import lib.kasuga.shader.graal.GraalShaderCompiler;
+import java.nio.file.Path;
+
+GraalShaderCompiler compiler = new GraalShaderCompiler();
+ShaderProgram program = compiler.compile(Path.of("shaders/screen-tint.js"));
+// Or compiler.compile("screen-tint.js", scriptText)
+```
+
+Pass `program` to `RenderShaderDescriptor.generated(program)` for registration, or to `ShaderResourceCompiler.compile(List.of(program), outputDirectory)` to write `.vsh`, `.fsh`, and `.json` resources. The caller owns source discovery, recompilation timing, and installing the replacement program. This entry point does not scan resource packs or register a general-purpose `ScriptEngine`.
+
+| Script global | Java type |
+| --- | --- |
+| `Shader` | `lib.kasuga.shader.ShaderProgram`, including `fullscreen` / `graphics` |
+| `ShaderParameter` | Parameter factories and builder |
+| `ShaderParameterType` | Parameter type enum |
+| `ShaderStructType` | Named struct builder |
+| `ShaderType` | Basic shader type enum |
+
+Builders, expressions, variables, and struct fields use their Java method names and type constraints. JavaScript arrow functions map to `Consumer` / `Runnable`, including nested callbacks for `forRange`, `ifThenElse`, `whileLoop`, `doWhile`, and `switchOn`. Vectors, matrices, arrays, exposed parameters, and stage linking use the existing DSL.
+
+JavaScript numbers passed to `float` parameters use Java float rounding, so values such as `0.1`, `1.35`, and `Math.sin(...)` work directly. Values passed to `int` parameters must still be integers within range. Existing DSL checks for non-finite numbers remain in effect.
+
+The final script expression must evaluate to one `ShaderProgram`. Top-level `return`, ES module `import` / `export`, and Node.js `require` are outside this script entry point. JavaScript `if`, `for`, and operators execute during construction. Use `.add()`, `.mul()`, `.lt()`, and builder control flow to generate shader arithmetic and dynamic control flow.
+
+Each call creates and closes an independent Graal context. The returned IR has no JavaScript dependencies and remains usable for resource generation. Compiler instances can be shared between threads. Compile definitions outside per-frame drawing callbacks. File failures throw `IOException`; script, DSL validation, and budget failures throw `ShaderScriptException`, with `sourceName()`, `line()`, `column()`, and the original cause. Lines and columns are one-based, or zero when unavailable.
+
+The default budget is 1,000,000 executed JavaScript statements per compilation, including a few statements that initialize the globals. Use `new GraalShaderCompiler(statementLimit)` to set a positive budget. Contexts expose only the listed DSL types and members, with no arbitrary host class access, reflection, file I/O, thread creation, or native access. This construction-time statement budget does not provide a wall-clock, memory, or process isolation boundary. The existing `raw*` GLSL methods remain available for trusted shader definitions.
+
+The bridge uses the official Graal [Java interoperability](https://www.graalvm.org/jdk22/reference-manual/js/JavaInteroperability/) and [HostAccess](https://www.graalvm.org/23.1/javadoc/sdk/org/graalvm/polyglot/HostAccess.html) APIs. Verify it with:
+
+```sh
+./gradlew :modules:shader-graal:check :modules:shader-graal:assemble :modules:shader:test
+```
+
+The real-client regression compiles the original `screen-tint.js` once and installs its generated shader through the existing registry. Prepare an isolated client directory with a copy of an existing test world, then run:
+
+```sh
+./gradlew :modules:modelling:runClientHeadless \
+  -PkasugaTestGraalShader=true \
+  -PkasugaClientDirectory=/absolute/path/to/isolated-client \
+  -PkasugaQuickPlayWorld=existing-test-world
+```
+
+The test dispatches real mouse click, drag, and release events through `ShaderParameterScreen`, adjusts RGB, and clicks reset. It checks GPU pixels from the world and a translucent probe, parameter values, uploaded uniforms, program ID, and generation. Success logs `GRAAL_SHADER_CLIENT_SMOKE_PASS` and exits. Check `passed` in `debug/graal-shader/report.json`: a normal client shutdown after a failed assertion can still make Gradle report success. This directory also contains the three generated resources and PNGs for the default, neutral, blue, reset, and parameter-editor states. The opt-in flag adds Graal to that development run only, without a modelling main-library dependency.
+
+On 2026-11-04, Apple M3 Max, Java 21.0.3, Minecraft 1.21.1 / NeoForge 21.1.203, and Iris 1.8.12 + Sodium 0.6.13 with no shader pack enabled passed this test. All four parameter states had zero maximum channel error across the 1920×1080 world image and 32×16 translucent probe, unchanged alpha, and stable GPU program and generation. The run also exposed and fixed NeoForge scanning a Graal aggregator POM as a jar, and reset buttons retaining their initial enabled state after slider changes. This record does not cover active shader packs, other platforms, or other Minecraft versions.
+
 ## User-Adjustable Shader Parameters
 
 A shader does not expose all uniforms automatically. Register each user-adjustable parameter. Each parameter has a fixed `name`, `description`, `ShaderParameterType`, inclusive `range`, and `defaultValues`. The parameter name is also the GLSL uniform name. The name must be a valid, non-reserved GLSL identifier.

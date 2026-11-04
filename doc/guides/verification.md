@@ -8,6 +8,7 @@
 ```sh
 ./gradlew :modules:modelling:modelUnitTest
 ./gradlew :modules:formula:test
+./gradlew :modules:shader-graal:check :modules:shader-graal:assemble :modules:shader:test
 ./gradlew renderingReleaseCheck
 ```
 
@@ -15,7 +16,9 @@
 配置了本平台 CMake 时包含 Box3D 原生测试；没有原生构建能力时会排除相应标签。
 本地 PMX/glTF 资产测试还依赖本机 fixture，可选资产缺失时的 skipped 不能算作真实资产验证。
 
-`renderingReleaseCheck` 包含 Gradle 插件测试、shader 测试/assemble、render-core/render-opengl assemble、
+`shader-graal:check` 在 Java 21 普通 JVM 中使用真实 GraalJS，比较脚本与 Java 构造的 IR、GLSL、JSON 和参数 schema，并检查错误、访问限制、语句预算及上下文独立性；无需启动 Minecraft。
+
+`renderingReleaseCheck` 包含 Gradle 插件测试、shader 测试/assemble、shader-graal check/assemble、render-core/render-opengl assemble、
 modelling JVM 测试、contentTesting 编译及 jar/source/javadoc 产物，以及 library assemble。
 该任务不等于运行真实 Minecraft 世界或执行全部独立 GL 回归。
 
@@ -50,6 +53,7 @@ Quick Play 的存档需预先存在于隔离目录 `saves/` 下，使用专用�
 | 摄像机、共享时间轴与窗口 | [Camera Animation](../reference/camera-animation.md)、[多机位](../reference/multi-camera-output.md) |
 | Alpha/OIT 提交顺序与调试缓冲 | [Alpha/OIT](../reference/render-alpha-passes.md#可视化验收场景contenttesting) |
 | 世界 UI 自由光标、文本、滚轮和拖拽 | [World UI Input](../reference/world-ui-input.md#开发验收) |
+| GraalJS shader 生成、真实世界像素与参数面板 | [Shader DSL](../reference/shader-dsl.md#graaljs-脚本入口)，`-PkasugaTestGraalShader=true`；检查 `debug/graal-shader/report.json` |
 | 多层天空与单云 | [体积云](../reference/volumetric-clouds.md#示例与验证) |
 
 ## 记录验证范围

@@ -28,6 +28,81 @@
 
 - DSL 在 Java 构造期检查 graphics 程序的阶段接口。调用方必须让 `RenderShaderDescriptor` 的顶点格式与各属性对应。
 
+## GraalJS 脚本入口
+
+可选模块 `:modules:shader-graal` 提供 `lib.kasuga.shader.graal.GraalShaderCompiler`。它在 Java 21 上使用 GraalJS Community 24.1.2，直接调用下面的 Java DSL，返回相同的 `ShaderProgram`。该模块自带声明所需的 Graal Maven 依赖；主库不自动引入它。
+
+```groovy
+dependencies {
+    implementation project(':modules:shader-graal')
+}
+```
+
+例如 `screen-tint.js`：
+
+```javascript
+const tintParameter = ShaderParameter.builder(
+    "Tint", "画面色调", ShaderParameterType.COLOR_RGB
+).range(0, 1).defaultValues(1, 0.5, 0.25).build();
+
+Shader.fullscreen("example:script_tint", shader => {
+    const tint = shader.exposeVec3(tintParameter);
+    const source = shader.sampler2D("SceneSampler").sample(shader.texCoord());
+    shader.fragmentColor(shader.vec4(source.rgb().mul(tint), source.a()));
+});
+```
+
+宿主读取 UTF-8 文件，或直接传入源名和脚本文本：
+
+```java
+import lib.kasuga.shader.ShaderProgram;
+import lib.kasuga.shader.graal.GraalShaderCompiler;
+import java.nio.file.Path;
+
+GraalShaderCompiler compiler = new GraalShaderCompiler();
+ShaderProgram program = compiler.compile(Path.of("shaders/screen-tint.js"));
+// 或 compiler.compile("screen-tint.js", scriptText)
+```
+
+`program` 可交给 `RenderShaderDescriptor.generated(program)` 注册，也可交给 `ShaderResourceCompiler.compile(List.of(program), outputDirectory)` 输出 `.vsh`、`.fsh` 和 `.json`。调用方负责读取资源、决定重编译时机和安装新程序；此入口不自动扫描资源包，也不注册通用 `ScriptEngine`。
+
+| 脚本全局量 | Java 类型 |
+| --- | --- |
+| `Shader` | `lib.kasuga.shader.ShaderProgram`，含 `fullscreen` / `graphics` |
+| `ShaderParameter` | 参数工厂与 builder |
+| `ShaderParameterType` | 参数类型枚举 |
+| `ShaderStructType` | 具名 struct builder |
+| `ShaderType` | 基本 shader 类型枚举 |
+
+回调中的 builder、表达式、变量、struct 字段沿用 Java 方法名和类型约束；JavaScript 箭头函数可以传给 `Consumer` / `Runnable`，包括 `forRange`、`ifThenElse`、`whileLoop`、`doWhile` 与 `switchOn` 的嵌套回调。向量、矩阵、数组、`expose*` 参数和跨阶段校验均使用原 DSL。
+
+JavaScript 数字传给 `float` 形参时按 Java 的 float 转换舍入，因此 `0.1`、`1.35` 和 `Math.sin(...)` 可直接使用；传给 `int` 形参时仍须是范围内的整数。DSL 原有的非有限数校验继续生效。
+
+脚本最后一个表达式必须得到一个 `ShaderProgram`。顶层 `return`、ES module `import` / `export` 和 Node.js `require` 不属于此脚本入口。JavaScript 的 `if`、`for`、运算符只在构建时执行；要生成 shader 算术与动态控制流，仍使用 `.add()`、`.mul()`、`.lt()` 和 builder 控制流方法。
+
+每次调用创建并关闭独立的 Graal 上下文，成功返回的 IR 不依赖 JavaScript 对象，可继续生成资源；编译器实例可跨线程复用。不要在逐帧绘制回调中反复编译。文件读取失败抛 `IOException`；脚本、DSL 校验或预算失败抛 `ShaderScriptException`，提供 `sourceName()`、`line()`、`column()` 与原始 cause。行列从 1 开始，无法定位时为 0。
+
+默认执行预算为每次编译 1,000,000 条 JavaScript 语句，包含少量全局绑定初始化语句；用 `new GraalShaderCompiler(statementLimit)` 设置正整数预算。上下文只开放列出的 DSL 类型和成员，不开放任意宿主类、反射、文件 IO、线程创建或 native access。预算是构建期语句限制，不能替代时间、内存或进程隔离；原 DSL 的 `raw*` GLSL 接口仍适用于受信任的 shader 定义。
+
+此桥接使用 Graal 官方的 [Java 互操作](https://www.graalvm.org/jdk22/reference-manual/js/JavaInteroperability/) 与 [HostAccess](https://www.graalvm.org/23.1/javadoc/sdk/org/graalvm/polyglot/HostAccess.html) API。验证命令：
+
+```sh
+./gradlew :modules:shader-graal:check :modules:shader-graal:assemble :modules:shader:test
+```
+
+真实客户端回归入口使用原来的 `screen-tint.js`，编译一次并通过现有注册器安装生成的 shader。准备一个隔离客户端目录和已有测试世界副本，然后执行：
+
+```sh
+./gradlew :modules:modelling:runClientHeadless \
+  -PkasugaTestGraalShader=true \
+  -PkasugaClientDirectory=/absolute/path/to/isolated-client \
+  -PkasugaQuickPlayWorld=existing-test-world
+```
+
+测试通过真实 `ShaderParameterScreen` 的鼠标点击、拖动和释放事件调节 RGB，再点击重置；同时比较世界画面和半透明探针的 GPU 像素、参数值、实际 uniform、program ID 与 generation。成功会打印 `GRAAL_SHADER_CLIENT_SMOKE_PASS` 并退出客户端；必须检查 `debug/graal-shader/report.json` 的 `passed`，因为测试失败时正常退出也可能让 Gradle 显示成功。该目录另含三个生成资源，以及默认、中性、蓝色、重置和参数面板 PNG。测试开关只为本次开发运行添加 Graal 运行时，不进入 modelling 主库依赖。
+
+2026-11-04 在 Apple M3 Max、Java 21.0.3、Minecraft 1.21.1 / NeoForge 21.1.203、Iris 1.8.12 + Sodium 0.6.13（未启用光影包）中实测：四个参数状态的 1920×1080 世界画面和 32×16 半透明探针最大通道误差均为 0，alpha 保持不变，GPU program 与 generation 不变。实测还修复了 NeoForge 扫描 Graal 聚合 POM 的启动问题，以及滑块修改后重置按钮未刷新状态的问题。此记录不覆盖启用光影包、其他平台或其他 Minecraft 版本。
+
 ## 用户可调 shader 参数
 
 shader 不会自动暴露所有 uniform。每个用户可调参数都要逐个注册。参数有固定的 `name`、`description`、`ShaderParameterType`、闭区间的 `range` 和 `defaultValues`。参数名同时就是 GLSL uniform 名，必须是合法且非保留的 GLSL 标识符。

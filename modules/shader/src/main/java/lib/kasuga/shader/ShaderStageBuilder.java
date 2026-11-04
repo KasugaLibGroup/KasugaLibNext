@@ -10,7 +10,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 /** Shared typed statements and declarations for vertex and fragment stages. */
-abstract class ShaderStageBuilder implements ShaderAssignmentOwner {
+public abstract class ShaderStageBuilder implements ShaderAssignmentOwner {
     private static final List<Number> IDENTITY_MATRIX_2 = List.of(
             1, 0,
             0, 1
