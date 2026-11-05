@@ -76,6 +76,27 @@ ShaderProgram program = compiler.compile(Path.of("shaders/screen-tint.js"));
 
 回调中的 builder、表达式、变量、struct 字段沿用 Java 方法名和类型约束；JavaScript 箭头函数可以传给 `Consumer` / `Runnable`，包括 `forRange`、`ifThenElse`、`whileLoop`、`doWhile` 与 `switchOn` 的嵌套回调。向量、矩阵、数组、`expose*` 参数和跨阶段校验均使用原 DSL。
 
+脚本可以用 `shader.rawDeclaration(...)`、`rawStatement(...)` 和 `rawFloat(...)` 等方法插入内联 GLSL，也可以由宿主显式提供具名片段或 UTF-8 文件：
+
+```java
+import java.util.Map;
+
+ShaderProgram program = compiler.compileWithGlslFiles(
+        Path.of("shaders/effect.js"), Map.of("helpers", Path.of("shaders/helpers.glsl")));
+// 或 compiler.compile("effect.js", scriptText, Map.of("helpers", glslText))
+```
+
+```javascript
+Shader.fullscreen("example:custom", shader => {
+    shader.rawDeclaration(glsl("helpers"));
+    const transform = shader.mat2(1, 0, 0, 1); // 按列排列
+    shader.letVec2("uv", transform.transform(shader.texCoord()));
+    shader.fragmentColor(shader.vec4(shader.rawVec3("customColor(uv)"), shader.f32(1)));
+});
+```
+
+`glsl(name)` 只能获取宿主提供的内容，不读取任意路径；未知名称在脚本位置报错，文件读取失败抛出 `IOException`。文件应只包含对应插入位置的片段，不能作为完整 shader 替换生成的 `main`、`#version` 或资源元数据。raw GLSL 不经过 DSL 校验，只应使用可信内容。矩阵还支持 `mat3`、`mat4`、`uniformMat*` 和 `localMat*`。
+
 JavaScript 数字传给 `float` 形参时按 Java 的 float 转换舍入，因此 `0.1`、`1.35` 和 `Math.sin(...)` 可直接使用；传给 `int` 形参时仍须是范围内的整数。DSL 原有的非有限数校验继续生效。
 
 脚本最后一个表达式必须得到一个 `ShaderProgram`。顶层 `return`、ES module `import` / `export` 和 Node.js `require` 不属于此脚本入口。JavaScript 的 `if`、`for`、运算符只在构建时执行；要生成 shader 算术与动态控制流，仍使用 `.add()`、`.mul()`、`.lt()` 和 builder 控制流方法。
@@ -158,6 +179,8 @@ handle.parameters().set(TINT, 1.0, 0.55, 0.2);
 fullscreen 方法收到句柄时，Kasuga 在绘制前上传默认参数块。相关方法是 `PostProcessContext.fullscreen(...)` 和 `PostProcessGraphContext.fullscreen(...)`。Kasuga 无法从一个直接的 `ShaderInstance` 推断出注册，需要用 `.parameters(block)` 绑定参数块。同一个 shader 的每套独立配置都用 `handle.createParameterBlock()` 各建一块。
 
 当前 `ShaderParameterType` 的取值包括 float、integer、boolean、vec2、vec3、vec4、RGB color 和 RGBA color，也包括 mat2、mat3 与 mat4。range 作用于所有分量。布尔参数始终使用 `[0, 1]`。
+
+浮点参数的值和范围端点均舍入为 32 位 shader float 后再比较，与运行时存储一致。整数和布尔参数仍按精确整数比较。
 
 打开参数面板：
 

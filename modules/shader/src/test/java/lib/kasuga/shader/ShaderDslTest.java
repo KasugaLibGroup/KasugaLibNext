@@ -148,6 +148,28 @@ class ShaderDslTest {
     }
 
     @Test
+    void floatParameterRangesUseStoredFloatPrecision() {
+        ShaderParameter vector = ShaderParameter.builder("Tint", "Decimal endpoints", ShaderParameterType.VEC3)
+                .range(-0.3, 0.3)
+                .defaultValues(-0.3, 0.3, 0.3)
+                .build();
+        vector.validate(-0.3f, 0.3f, 0.3f);
+        assertThrows(IllegalArgumentException.class, () -> vector.validate(-0.31, 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> vector.validate(0, 0, 0.31));
+        assertThrows(IllegalArgumentException.class, () -> vector.validate(Double.MAX_VALUE, 0, 0));
+    }
+
+    @Test
+    void rejectsNonFiniteUniformDefaultsDuringConstruction() {
+        assertThrows(IllegalArgumentException.class, () -> ShaderProgram.fullscreen("example:invalid_float", shader ->
+                shader.uniformFloat("Value", Float.POSITIVE_INFINITY)));
+        assertThrows(IllegalArgumentException.class, () -> ShaderProgram.fullscreen("example:invalid_vector", shader ->
+                shader.uniformVec3("Value", 0, Float.NaN, 0)));
+        assertThrows(IllegalArgumentException.class, () -> ShaderProgram.fullscreen("example:invalid_array", shader ->
+                shader.uniformFloatArray("Value", 2, Float.NEGATIVE_INFINITY)));
+    }
+
+    @Test
     void rejectsInvalidProgramsDuringJavaConstruction() {
         assertThrows(IllegalArgumentException.class, () -> ShaderProgram.fullscreen("invalid", shader ->
                 shader.fragmentColor(shader.vec4(0, 0, 0, 1))));

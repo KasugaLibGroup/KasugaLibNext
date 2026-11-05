@@ -76,6 +76,27 @@ Pass `program` to `RenderShaderDescriptor.generated(program)` for registration, 
 
 Builders, expressions, variables, and struct fields use their Java method names and type constraints. JavaScript arrow functions map to `Consumer` / `Runnable`, including nested callbacks for `forRange`, `ifThenElse`, `whileLoop`, `doWhile`, and `switchOn`. Vectors, matrices, arrays, exposed parameters, and stage linking use the existing DSL.
 
+Scripts can insert inline GLSL with `shader.rawDeclaration(...)`, `rawStatement(...)`, `rawFloat(...)`, and related methods. The host can also explicitly supply named snippets or UTF-8 files:
+
+```java
+import java.util.Map;
+
+ShaderProgram program = compiler.compileWithGlslFiles(
+        Path.of("shaders/effect.js"), Map.of("helpers", Path.of("shaders/helpers.glsl")));
+// Or compiler.compile("effect.js", scriptText, Map.of("helpers", glslText))
+```
+
+```javascript
+Shader.fullscreen("example:custom", shader => {
+    shader.rawDeclaration(glsl("helpers"));
+    const transform = shader.mat2(1, 0, 0, 1); // column-major
+    shader.letVec2("uv", transform.transform(shader.texCoord()));
+    shader.fragmentColor(shader.vec4(shader.rawVec3("customColor(uv)"), shader.f32(1)));
+});
+```
+
+`glsl(name)` can only retrieve host-provided content, not read arbitrary paths. Unknown names fail at the script location, and file read failures throw `IOException`. Files must contain snippets appropriate to the insertion point, not complete shaders replacing generated `main`, `#version`, or resource metadata. Raw GLSL bypasses DSL validation and must be trusted. Matrices also support `mat3`, `mat4`, `uniformMat*`, and `localMat*`.
+
 JavaScript numbers passed to `float` parameters use Java float rounding, so values such as `0.1`, `1.35`, and `Math.sin(...)` work directly. Values passed to `int` parameters must still be integers within range. Existing DSL checks for non-finite numbers remain in effect.
 
 The final script expression must evaluate to one `ShaderProgram`. Top-level `return`, ES module `import` / `export`, and Node.js `require` are outside this script entry point. JavaScript `if`, `for`, and operators execute during construction. Use `.add()`, `.mul()`, `.lt()`, and builder control flow to generate shader arithmetic and dynamic control flow.
@@ -158,6 +179,8 @@ handle.parameters().set(TINT, 1.0, 0.55, 0.2);
 When a fullscreen method receives a handle, Kasuga uploads the default parameter block before the draw. The applicable methods are `PostProcessContext.fullscreen(...)` and `PostProcessGraphContext.fullscreen(...)`. Kasuga cannot infer a registration from a direct `ShaderInstance`. Use `.parameters(block)` to bind a parameter block. Use `handle.createParameterBlock()` for each independent configuration of one shader.
 
 The current `ShaderParameterType` values include float, integer, boolean, vec2, vec3, vec4, RGB color, and RGBA color. `ShaderParameterType` also includes mat2, mat3, and mat4. The range applies to all components. Boolean parameters always use `[0, 1]`.
+
+For floating-point parameters, values and range endpoints are compared after rounding to 32-bit shader floats, matching runtime storage. Integer and boolean ranges retain exact integer semantics.
 
 To open the parameter panel:
 

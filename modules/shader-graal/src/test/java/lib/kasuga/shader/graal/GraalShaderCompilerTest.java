@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 
@@ -195,6 +196,65 @@ class GraalShaderCompilerTest {
         assertSameProgram(java, scripted);
     }
 
+    @Test
+    void decimalParameterEndpointsRemainValidAfterFloatStorage() {
+        ShaderProgram program = compiler.compile("endpoints.js", """
+                const tint = ShaderParameter.builder("Tint", "tint", ShaderParameterType.COLOR_RGB)
+                    .range(-0.3, 0.3).defaultValues(-0.3, 0.3, 0.3).build();
+                Shader.fullscreen("example:endpoints", shader => {
+                    shader.fragmentColor(shader.vec4(shader.exposeVec3(tint), shader.f32(1)));
+                });
+                """);
+        var tint = program.parameterSchema().require("Tint");
+        assertDoesNotThrow(() -> tint.validate(-0.3f, 0.3f, 0.3f));
+        assertThrows(IllegalArgumentException.class, () -> tint.validate(-0.31, 0.3f, 0.3f));
+    }
+
+    @Test
+    void inlineAndProvidedGlslAndTypedMatricesWorkTogether() {
+        ShaderProgram program = compiler.compile("raw.js", """
+                Shader.fullscreen("example:raw", shader => {
+                    shader.rawDeclaration(glsl("helpers"));
+                    shader.rawStatement("float gain = helper();");
+                    const m2 = shader.mat2(1, 0, 0, 1);
+                    const m3 = shader.mat3(1, 0, 0, 0, 1, 0, 0, 0, 1);
+                    const m4 = shader.mat4(1, 0, 0, 0, 0, 1, 0, 0,
+                                          0, 0, 1, 0, 0, 0, 0, 1);
+                    shader.letVec2("uv", m2.transform(shader.texCoord()));
+                    shader.letVec3("color", m3.transform(shader.vec3(1, 1, 1)));
+                    shader.fragmentColor(m4.transform(shader.vec4(shader.rawVec3("color * gain"), shader.f32(1))));
+                });
+                """, Map.of("helpers", "float helper() { return 0.5; }"));
+        String fragment = MinecraftGlsl150Backend.generate(program).fragmentSource();
+        assertTrue(fragment.contains("float helper() { return 0.5; }"));
+        assertTrue(fragment.contains("float gain = helper();"));
+        assertTrue(fragment.contains("mat2("));
+        assertTrue(fragment.contains("mat3("));
+        assertTrue(fragment.contains("mat4("));
+    }
+
+    @Test
+    void callerSelectsUtf8GlslFilesAndMissingSourcesFail(@TempDir Path directory) throws IOException {
+        Path script = directory.resolve("shader.js");
+        Path helper = directory.resolve("helper.glsl");
+        Files.writeString(script, """
+                Shader.fullscreen("example:file", shader => {
+                    shader.rawDeclaration(glsl("helper"));
+                    shader.fragmentColor(shader.vec4(shader.rawVec3("tint()"), shader.f32(1)));
+                });
+                """, StandardCharsets.UTF_8);
+        Files.writeString(helper, "// 色调\nvec3 tint() { return vec3(1.0); }", StandardCharsets.UTF_8);
+        ShaderProgram program = compiler.compileWithGlslFiles(script, Map.of("helper", helper));
+        assertTrue(MinecraftGlsl150Backend.generate(program).fragmentSource().contains("// 色调"));
+        var error = assertThrows(ShaderScriptException.class, () -> compiler.compile(script));
+        assertEquals(script.toString(), error.sourceName());
+        assertEquals(2, error.line());
+        assertTrue(error.getMessage().contains("Unknown GLSL source: helper"));
+        assertThrows(IOException.class, () -> compiler.compileWithGlslFiles(
+                script, Map.of("helper", directory.resolve("missing.glsl"))));
+        assertThrows(ShaderScriptException.class, () -> compiler.compile("bad.js", "glsl(1)"));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"undefined", "null", "42", "({})", "[]", "() => 1"})
     void rejectsNonProgramResults(String source) {
@@ -235,6 +295,25 @@ class GraalShaderCompilerTest {
         assertEquals("invalid.js", error.sourceName());
         assertNotNull(error.getCause());
         assertFalse(error.getMessage().contains("Unknown identifier"), error::getMessage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "s.uniformFloat('Gain', 1e100)",
+            "s.uniformFloat('Gain', -1e100)",
+            "s.uniformFloat('Gain', NaN)",
+            "s.uniformFloat('Gain', Infinity)",
+            "s.uniformVec3('Tint', 0, 1e100, 0)",
+            "s.uniformFloatArray('Samples', 2, 1e100)",
+            "s.uniformMat2('Transform', 1, 0, 0, 1e100)"
+    })
+    void rejectsNonFiniteUniformDefaultsAtScriptLocation(String declaration) {
+        String source = "Shader.fullscreen('example:bad', s => {\n"
+                + declaration + ";\ns.fragmentColor(s.vec4(1, 1, 1, 1));\n});";
+        var error = assertThrows(ShaderScriptException.class, () -> compiler.compile("uniform.js", source));
+        assertEquals("uniform.js", error.sourceName());
+        assertEquals(2, error.line());
+        assertTrue(error.column() > 0);
     }
 
     @ParameterizedTest
@@ -286,7 +365,7 @@ class GraalShaderCompilerTest {
 
     @Test
     void fileSourcesUseUtf8AndKeepTheirPathInDiagnostics(@TempDir Path directory) throws IOException {
-        Path source = directory.resolve("着色器.js");
+        Path source = directory.resolve("shader.js");
         Files.writeString(source, "// 中文\n" + SOLID, StandardCharsets.UTF_8);
         assertEquals("example:solid", compiler.compile(source).id());
         Files.writeString(source, "// 中文\nthrow new Error('错误');", StandardCharsets.UTF_8);

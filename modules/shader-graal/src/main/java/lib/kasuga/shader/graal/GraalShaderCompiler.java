@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -50,8 +52,41 @@ public final class GraalShaderCompiler {
      * @throws ShaderScriptException if evaluation or shader validation fails
      */
     public ShaderProgram compile(Path source) throws IOException {
+        return compile(source, Map.of());
+    }
+
+    /**
+     * Reads a UTF-8 script and makes caller-provided GLSL snippets available through
+     * {@code glsl(name)}. The script cannot read files itself.
+     *
+     * @param source shader definition file
+     * @param glslSources named, trusted GLSL snippets
+     * @return the constructed program
+     * @throws IOException if the script cannot be read
+     * @throws ShaderScriptException if evaluation or shader validation fails
+     */
+    public ShaderProgram compile(Path source, Map<String, String> glslSources) throws IOException {
         Objects.requireNonNull(source, "source");
-        return compile(source.toString(), Files.readString(source, StandardCharsets.UTF_8));
+        return compile(source.toString(), Files.readString(source, StandardCharsets.UTF_8), glslSources);
+    }
+
+    /**
+     * Reads the specified UTF-8 GLSL files before evaluating the UTF-8 script.
+     * Keys are explicit source names, not paths resolved by the script.
+     *
+     * @param source shader definition file
+     * @param glslFiles named, trusted GLSL files
+     * @return the constructed program
+     * @throws IOException if a script or GLSL file cannot be read
+     * @throws ShaderScriptException if evaluation or shader validation fails
+     */
+    public ShaderProgram compileWithGlslFiles(Path source, Map<String, Path> glslFiles) throws IOException {
+        Objects.requireNonNull(glslFiles, "glslFiles");
+        Map<String, String> sources = new LinkedHashMap<>();
+        for (var entry : glslFiles.entrySet()) {
+            sources.put(entry.getKey(), Files.readString(entry.getValue(), StandardCharsets.UTF_8));
+        }
+        return compile(source, sources);
     }
 
     /**
@@ -67,8 +102,23 @@ public final class GraalShaderCompiler {
      *                               or the result is not a program
      */
     public ShaderProgram compile(String sourceName, CharSequence source) {
+        return compile(sourceName, source, Map.of());
+    }
+
+    /**
+     * Evaluates a script with named, caller-provided GLSL snippets accessible via
+     * {@code glsl(name)}. Snippets are unchecked raw GLSL and must be trusted.
+     *
+     * @param sourceName diagnostic source name
+     * @param source JavaScript source text
+     * @param glslSources named, trusted GLSL snippets
+     * @return the constructed program
+     * @throws ShaderScriptException if evaluation or shader validation fails
+     */
+    public ShaderProgram compile(String sourceName, CharSequence source, Map<String, String> glslSources) {
         Objects.requireNonNull(sourceName, "sourceName");
         Objects.requireNonNull(source, "source");
+        Map<String, String> snippets = Map.copyOf(glslSources);
         try (Context context = Context.newBuilder("js")
                 .allowHostAccess(ShaderDslBindings.HOST_ACCESS)
                 .allowHostClassLookup(ShaderDslBindings::allowsClassLookup)
@@ -79,7 +129,7 @@ public final class GraalShaderCompiler {
                         .statementLimit(statementLimit, null).build())
                 .option("engine.WarnInterpreterOnly", "false")
                 .build()) {
-            ShaderDslBindings.install(context);
+            ShaderDslBindings.install(context, snippets);
             Value result = context.eval(Source.newBuilder("js", source, sourceName).buildLiteral());
             if (result.isHostObject() && result.asHostObject() instanceof ShaderProgram program) {
                 return program;

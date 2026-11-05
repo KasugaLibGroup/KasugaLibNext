@@ -28,6 +28,7 @@ import lib.kasuga.shader.Vec4Expr;
 import lib.kasuga.shader.VertexShaderBuilder;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.HostAccess;
+import org.graalvm.polyglot.proxy.ProxyExecutable;
 
 import java.util.List;
 import java.util.Map;
@@ -51,7 +52,16 @@ final class ShaderDslBindings {
         return GLOBALS.values().stream().anyMatch(type -> type.getName().equals(name));
     }
 
-    static void install(Context context) {
+    static void install(Context context, Map<String, String> glslSources) {
+        context.getBindings("js").putMember("glsl", (ProxyExecutable) arguments -> {
+            if (arguments.length != 1 || !arguments[0].isString()) {
+                throw new IllegalArgumentException("glsl requires one source name");
+            }
+            String name = arguments[0].asString();
+            String source = glslSources.get(name);
+            if (source == null) throw new IllegalArgumentException("Unknown GLSL source: " + name);
+            return source;
+        });
         StringBuilder declarations = new StringBuilder();
         GLOBALS.forEach((name, type) -> declarations.append("const ").append(name)
                 .append(" = Java.type('").append(type.getName()).append("');\n"));
@@ -66,7 +76,7 @@ final class ShaderDslBindings {
                 .allowListAccess(true)
                 // JS numbers are doubles. Match Java's explicit float rounding for values such
                 // as 0.1; Graal otherwise rejects these as lossy primitive conversions. Integer
-                // conversions stay exact; the DSL's existing finite-value checks still apply.
+                // conversions stay exact; DSL construction validates non-finite float values.
                 .targetTypeMapping(Double.class, Float.class, value -> true, Double::floatValue,
                         HostAccess.TargetMappingPrecedence.LOW);
         List<Class<?>> types = List.of(
