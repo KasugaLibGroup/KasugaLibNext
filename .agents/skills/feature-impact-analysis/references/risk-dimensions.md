@@ -482,6 +482,7 @@ OpenGL 的 texture/FBO/renderbuffer 名字可以在删除后被其他对象复�
 - [ ] 对方版本升级改了内部约定，你怎么发现？
 
 **典型失效**：旁挂数据与外部结构各自演化出现漂移；外部对象销毁后旁挂数据残留为孤儿。
+GraalJS聚合依赖包含POM资源，普通JVM会忽略，但NeoForge会把运行时条目当JAR交给union filesystem扫描，启动时报ProviderNotFoundException。真实客户端依赖应使用聚合POM实际列出的语言与Truffle运行时JAR，不能只靠纯JVM引擎测试证明宿主兼容。
 
 ### R-XMOD-3 多方块 / 附着物 · 严重度：严重
 
@@ -548,6 +549,8 @@ OpenGL 的 texture/FBO/renderbuffer 名字可以在删除后被其他对象复�
 **检查项**
 - [ ] 配置是服务端权威还是客户端各自生效？（涉及玩法的必须服务端权威）
 - [ ] 改了要重启吗？热重载后现有对象怎么响应？
+
+**典型失效**：参数面板的Reset/Reset all仅在init时计算active；滑块从默认值修改后，参数和画面已变化但按钮一直灰掉。需在真实Screen鼠标操作后同时检查参数、像素与按钮状态，不能只测参数块。
 
 ### R-CONFIG-2 损坏与降级 · 严重度：一般
 

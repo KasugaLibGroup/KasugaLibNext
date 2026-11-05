@@ -8,6 +8,7 @@ Model selection, configuration and output paths for a specific topic are in the 
 ```sh
 ./gradlew :modules:modelling:modelUnitTest
 ./gradlew :modules:formula:test
+./gradlew :modules:shader-graal:check :modules:shader-graal:assemble :modules:shader:test
 ./gradlew renderingReleaseCheck
 ```
 
@@ -15,7 +16,9 @@ Model selection, configuration and output paths for a specific topic are in the 
 When CMake is configured for the current platform, the Box3D native tests are included; without native build capability the matching tags are excluded.
 Local PMX/glTF asset tests also depend on a local fixture, so a skipped result for a missing optional asset cannot count as real-asset verification.
 
-`renderingReleaseCheck` covers Gradle plugin tests, shader tests/assemble, render-core/render-opengl assemble, the modelling JVM tests, contentTesting compilation and the jar/source/javadoc artifacts, plus library assemble.
+`shader-graal:check` runs real GraalJS on a plain Java 21 JVM. It compares scripted and Java-built IR, GLSL, JSON, and parameter schemas, and checks diagnostics, access restrictions, statement limits, and context isolation without starting Minecraft.
+
+`renderingReleaseCheck` covers Gradle plugin tests, shader tests/assemble, shader-graal check/assemble, render-core/render-opengl assemble, the modelling JVM tests, contentTesting compilation and the jar/source/javadoc artifacts, plus library assemble.
 That task is not the same as running a real Minecraft world or running every standalone GL regression.
 
 ## Standalone OpenGL Harness
@@ -48,6 +51,7 @@ A Quick Play save must already exist under `saves/` in the isolated directory; u
 | Cameras, shared timeline and windows | [Camera Animation](../reference/camera-animation.md), [multi-camera](../reference/multi-camera-output.md) |
 | Alpha/OIT submit order and debug buffers | [Alpha/OIT](../reference/render-alpha-passes.md#visual-acceptance-scene-contenttesting) |
 | World UI free cursor, text, scrolling, and dragging | [World UI Input](../reference/world-ui-input.en.md#development-acceptance) |
+| GraalJS shader generation, world pixels, and parameter editor | [Shader DSL](../reference/shader-dsl.en.md#graaljs-scripting), `-PkasugaTestGraalShader=true`; check `debug/graal-shader/report.json` |
 | Multi-layer sky and a single cloud | [Volumetric clouds](../reference/volumetric-clouds.md#examples-and-verification) |
 
 ## Recording The Verification Scope

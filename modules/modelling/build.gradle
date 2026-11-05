@@ -248,6 +248,12 @@ neoForge {
             if (windowSmoke.isPresent()) systemProperty 'kasuga.testFrameWindows', windowSmoke.get()
             def headlessSmoke = providers.gradleProperty('kasugaTestHeadless')
             if (headlessSmoke.isPresent()) systemProperty 'kasuga.testHeadless', headlessSmoke.get()
+            def graalShaderSmoke = providers.gradleProperty('kasugaTestGraalShader')
+            if (graalShaderSmoke.isPresent()) {
+                systemProperty 'kasuga.testGraalShader', graalShaderSmoke.get()
+                systemProperty 'kasuga.testGraalShader.script', rootProject.file(
+                        'modules/shader-graal/src/test/resources/shaders/screen-tint.js').absolutePath
+            }
             def dualCameraCapture = providers.gradleProperty('kasugaDebugDualCameraCaptureFrames')
             if (dualCameraCapture.isPresent()) systemProperty 'kasuga.debugDualCamera.captureFrames', dualCameraCapture.get()
             def cameraIrisSmoke = providers.gradleProperty('kasugaTestCameraIris')
@@ -330,6 +336,11 @@ configurations {
 }
 
 dependencies {
+    contentTestingImplementation project(':modules:shader-graal')
+    if (providers.gradleProperty('kasugaTestGraalShader').map { it.toBoolean() }.getOrElse(false)) {
+        additionalRuntimeClasspath project(':modules:shader-graal')
+    }
+
     api project(":modules:shader")
     api project(':modules:render-core')
     api project(':modules:render-opengl')

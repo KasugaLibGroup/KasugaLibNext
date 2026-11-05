@@ -23,9 +23,9 @@
 | 11 | 时序 | `render-core/.../dynamic/tick_loop/` | ✅ 可用 | 有 `ModelTickLoopTest` |
 | 12 | 事件与生命周期 | `core/registration/stages/`、`core/resource/*Event`、`modelling/.../backend/ui`、`external/uip/ldlib/LdElement` | ⚠ 可用但有缺陷 | 世界 UI 已覆盖捕获/焦点/松键清理；LDLib2 适配器管理 tick、幂等关闭、断线及世界切换清理，通用注册仍由调用方管理；其他资源释放链路有已知参数为 null 导致清理未执行的缺陷 |
 | 13 | 第三方集成 | `core/mixins/`（含 `KasugaLibMixinPlugin`）、`modelling/.../backend/ui/WorldUiTextInput`、`external/uip/ldlib`、`external/uip/ldlib-compose` | ⚠ 可用但危险 | LDLib2世界控件与文字焦点已有真实客户端交互smoke；ModernUI模型通过MinecraftSurfaceView回调绘制并跨线程清理；Compose依赖位于独立可选模块，双端固定注册、客户端重组/模型节点和世界菜单已有原生客户端与双客户端LAN验证；LDLib2 2.2.44的UISurface与SDF兼容限外部适配器；共享后端不依赖第三方UI库；物理专用服务端/Iris尚未验证 |
-| 14 | 脚本运行时 | `scripting/` | ✅ 可用 | 14 个测试类；沙箱 **fail-open** |
+| 14 | 脚本运行时 | `scripting/`；可选 `shader-graal/` | ✅ 可用 | 通用 scripting 有14个测试类，沙箱 **fail-open**；shader-graal 是独立Java21/GraalJS构建期前端，直接复用类型化DSL，显式host成员/类型白名单、语句预算和每次独立Context，不自动注册通用ScriptEngine；35个JVM场景，2026-11-04 M3 Max/MC1.21.1/NeoForge21.1.203/Iris+Sodium无光影包已验证原screen-tint.js生成、加载、全画面RGBA、真实滑块/重置及稳定GPU program；其他平台/启用光影包需另验 |
 | 15 | 平台与原生 | `external/slp/javet/`、`modelling/src/main/native/`（box3d） | ⚠ 可用但危险 | **无哈希校验**；移动端加载失败过 |
-| 16 | 配置 | — | ❌ **不存在** | 全仓 `ModConfigSpec` / `ConfigTracker` 零命中 |
+| 16 | 配置 | `core/.../ClientRenderingRegistry`（ModConfigSpec）、`modelling/.../effect/shader/ShaderParameterPersistence`（专用JSON） | ✅ 可用 | 旧清单的“全仓零命中”已不符合当前源码；shader参数有schema校验、异步JSON保存和重置默认语义，2026-11-04真实参数面板回归已覆盖按钮随滑块变化刷新；其他配置类型仍需按具体实现核对 |
 | 17 | 音效与粒子 | 音效：`core/src/codeTemplate/.../registration/minecraft/sound/SoundReg`；粒子：`modelling/.../rendering/effect/particle/` | ⚠ 分散 | **两处分散**，没有统一的"表现层"门面；播放时机属于业务，无处挂 |
 | 18 | 领域规则 / 业务逻辑 | — | — | 不依赖项目能力，属于需求自身；填这一项说明要**自己设计规则** |
 | 19 | 其他新子系统 | — | — | 每次现场建。**只有前 18 项都放不进去时才用** |
