@@ -53,10 +53,10 @@ reload 期的状态机与动画剪辑文件同样是内容文件，只是被列�
 
 JSON 里的 `type` 是一个**工厂注册键**。照抄下面的例子前，先确认这个键在你的环境里存在：
 
-- 库主体内置的方块工厂只有 `fsm_block`（modelling 模块）；
+- 库提供普通方块工厂 `data_driven_block`（支持 [JSON 方块状态属性](../../reference/data-driven/block-state-properties.md)）；modelling 侧另有 `fsm_block` 工厂；
 - 本文示例用的 `simple_block`、`simple_item` 这类键由本仓 `contentTesting` 源集注册，是**测试夹具，不随库发布**。
 
-`type` 找不到工厂时，该条目会被打一条 WARN 然后跳过（不进错误桶）。给自己的模组写工厂的方法见 [guide-extension.md](guide-extension.md)。
+未声明 `state_properties` 时，`type` 找不到工厂会打 WARN 并跳过（不进错误桶）；声明了状态属性而工厂不支持时会记录加载错误。给自己的模组写工厂的方法见 [guide-extension.md](guide-extension.md)。
 
 ### 4.2 放三个文件
 

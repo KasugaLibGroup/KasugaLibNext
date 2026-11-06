@@ -177,13 +177,14 @@ Parsing is in `BlockTypeHandler.parse` (`BlockTypeHandler.java:25-34`), generic 
 | `type` | string | yes | — | Factory name, looked up in `FactoryRegistry.BlockFactory` (`BlockTypeHandler.createRegistration`, `:59-64`) |
 | `registry_group` | string | no | `null` → attached to the root group | Owning group id (raw-string match) |
 | `properties` | object | no | — | Block properties, see section 2.6 |
+| `state_properties` | object | no | — | Minecraft block-state properties; see [block-state-properties.en.md](block-state-properties.en.md) |
 | `item_properties` | object | no | — | Item properties for the block's item; `tab` decides the creative tab (`BlockTypeHandler.resolveCreativeTab`, `:51-57`) |
 | `params` | object | no | `null` | Passed to the factory verbatim by `create(path, params)` |
 | `state_machine` | string | no | — | Forwarded into the BE params only when the entry contains a `block_entity` (see section 2.5) |
 
 - When `id` or `type` is missing, `parse` throws (`json.get("id").getAsString()`); the registration phase's element-level tolerance catches that exception → error + bucket entry, so **only that entry is lost while sibling entries in the same file register as usual** (`JsonTreeBuilder` produces `entry <i> in '<key>' failed to parse: <msg>; entry skipped`). Missing values for the other fields fall back to their defaults.
-- `type` finds no matching factory → only a WARN is logged, the entry is skipped, and **it does not go into the bucket** (`RegTypeHandler.java:70-74`).
-- **Unknown keys inside the object are silently ignored** (parse reads known keys only), the opposite of the error for an unknown top-level file key; see section 2.7.
+- When `state_properties` is absent, `type` finds no matching factory → only a WARN is logged, the entry is skipped, and **it does not go into the bucket** (`RegTypeHandler.java:70-74`).
+- **Unknown keys on the block entry itself are silently ignored**, but fields within `state_properties` declarations are checked strictly; see section 2.7.
 
 ### 2.4 `items` entries
 
@@ -272,7 +273,7 @@ Properties are inherited along the parent chain, and a child entry overrides its
 The two positions differ in strictness, which is the difference easiest to trip over:
 
 - An unknown **top-level file** field → error + bucket entry (`dispatchContent`, `JsonTreeBuilder.java:475-490`). A misspelled `blokcs` is caught.
-- An unknown key **inside an object** → silently ignored (each handler's `parse` reads known keys only), with no error. For example, an extra `foo` in a block entry produces no diagnostic at all.
+- An unknown key **inside an entry object** → silently ignored (each handler's `parse` reads known keys only), with no error. For example, an extra `foo` in a block entry produces no diagnostic at all. Property definitions within `state_properties` are an exception: their unknown fields are errors.
 
 ### 2.8 An embedded type written as a top-level field by mistake
 
@@ -435,7 +436,7 @@ Format errors in the registration and reload phases are basically all in this li
 
 The following cases only log and do not write a bucket entry, because the entry is downgraded rather than malformed:
 
-- Unknown factory `type` → the entry is skipped (`RegTypeHandler.java:70-74`).
+- Without `state_properties`, an unknown factory `type` skips the entry (`RegTypeHandler.java:70-74`). A missing or incompatible state-property factory is a loading error.
 - Unknown `properties` / `item_properties` key → that key is ignored (`JsonPropertyParser.java:50-52`; `JsonItemParser.java:63`).
 - Unknown `map_color` / `sound_type` (`JsonPropertyParser.java:80-82,90-92`).
 - BE host block not found / unknown BE factory (`BlockEntityTypeHandler.java:77,83`).

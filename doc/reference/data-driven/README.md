@@ -9,6 +9,7 @@
 | 文档 | 类型 | 内容 |
 | --- | --- | --- |
 | [schema.md](schema.md) | Reference | 索引清单与内容文件的字段、类型、D1–D6 规则、错误分类 |
+| [block-state-properties.md](block-state-properties.md) | Reference | 方块状态属性格式、原版属性引用与工厂扩展 |
 | [api-registration.md](api-registration.md) | Reference | 注册期入口 `JsonTreeBuilder`、索引 API、内容分派与冲突解决 |
 | [api-extension.md](api-extension.md) | Reference | `TypeHandler` 体系、`BuildContext`、`FactoryRegistry`、属性解析器 |
 | [api-diagnostics.md](api-diagnostics.md) | Reference | `Diagnostics` 门面、`/kasuga_data` 命令与错误分类 |

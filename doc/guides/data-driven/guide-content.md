@@ -490,7 +490,7 @@ reload 域有两类内容，顶层字段名就是它们各自唯一的合法键�
 | 路径写成 `/blocks.json`、`blocks`（缺后缀）、`a/../b.json` | error：`path must be relative` / `path must include the '.json' suffix` / `path must not contain '.' or '..'` | `validateSourcePath`（`:383-392`；`JsonTreeBuilderSourcePathTest.rejectsMalformedSourcePaths`） |
 | 清单指向一个不存在的文件 | error：`Source file not found ...` | 路径相对 `data/<mod>/`；先确认文件真的进了 jar |
 | 索引目录里放了内容文件 | error：该文件被当清单解析，报缺两个域字段 | 索引目录只放清单 |
-| 方块 `type` 没有对应工厂 | 方块不出现；日志 WARN `No factory for type '...'` | **只记日志、不入错误桶**（`RegTypeHandler.apply`，`:70-74`）。工厂要先注册，见 [guide-extension.md](guide-extension.md) |
+| 未声明 `state_properties` 的方块 `type` 没有对应工厂 | 方块不出现；日志 WARN `No factory for type '...'` | **只记日志、不入错误桶**（`RegTypeHandler.apply`，`:70-74`）。工厂要先注册，见 [guide-extension.md](guide-extension.md) |
 | 方块引用了不存在的 `registry_group` | 方块仍出现，但属性/标签页不符预期 | **静默挂根组**，无日志（第 3.3 节） |
 | 属性名写错（如 `sound_type` 拼错） | 该属性被忽略；日志 WARN `Unknown block property` / `Unknown sound type` | **只记日志、不入错误桶**（`JsonPropertyParser`，`:50-57`、`:87-95`） |
 | 注册期某元素 `parse` 抛异常（该元素字段畸形） | error：`Content file '<label>' for mod '<mod>': entry <i> in '<key>' failed to parse: <msg>; entry skipped` | **只丢该元素**，同文件兄弟条目照常注册（`JsonTreeBuilder.java:530, 592`；与 reload 侧 `…; element skipped` 同构）。 |

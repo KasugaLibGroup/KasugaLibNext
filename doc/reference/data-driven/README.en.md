@@ -9,6 +9,7 @@ Reference pages (this directory):
 | Document | Type | Content |
 | --- | --- | --- |
 | [schema.md](schema.md) | Reference | Fields, types, D1–D6 rules, and error classification for the index manifest and content files |
+| [block-state-properties.en.md](block-state-properties.en.md) | Reference | Block-state declarations, vanilla properties, and custom factories |
 | [api-registration.md](api-registration.md) | Reference | Registration-phase entry point `JsonTreeBuilder`, the index API, content dispatch, and conflict resolution |
 | [api-extension.md](api-extension.md) | Reference | The `TypeHandler` system, `BuildContext`, `FactoryRegistry`, and property parsers |
 | [api-diagnostics.md](api-diagnostics.md) | Reference | The `Diagnostics` facade, the `/kasuga_data` command, and error classification |

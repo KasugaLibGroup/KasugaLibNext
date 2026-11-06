@@ -114,7 +114,7 @@ public static LiteralArgumentBuilder<CommandSourceStack> kasugaDataCommand()   /
 
 | 情形 | 出处 |
 |------|------|
-| 找不到工厂 | `RegTypeHandler:71-73` |
+| 未声明 `state_properties` 时找不到工厂 | `RegTypeHandler:71-73` |
 | 分组引用环 | `JsonTreeBuilder:823-825` |
 | 未知方块属性 / 值不合法 | `JsonPropertyParser:50-57` |
 | 未知物品属性 | `JsonItemParser:63` |

@@ -4,6 +4,9 @@ import com.google.gson.JsonObject;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.data_driven.property.JsonItemParser;
 import lib.kasuga.registration.data_driven.property.JsonPropertyParser;
+import lib.kasuga.registration.data_driven.context.BuildContext;
+import lib.kasuga.registration.data_driven.state.StatePropertySet;
+import lib.kasuga.registration.data_driven.state.StatefulBlockFactory;
 import lib.kasuga.registration.factory.FactoryRegistry;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
@@ -29,8 +32,19 @@ public class BlockTypeHandler extends RegTypeHandler<BlockDef> {
             json.has("registry_group") ? json.get("registry_group").getAsString() : null,
             json.has("properties") ? json.getAsJsonObject("properties") : null,
             json.has("item_properties") ? json.getAsJsonObject("item_properties") : null,
-            json.has("params") ? json.getAsJsonObject("params") : null
+            json.has("params") ? json.getAsJsonObject("params") : null,
+            json.has("state_properties") ? StatePropertySet.parse(json.get("state_properties")) : null
         );
+    }
+
+    @Override
+    public void apply(BlockDef definition, BuildContext context) {
+        if (definition.stateProperties() != null
+                && !(FactoryRegistry.get(definition.type()) instanceof StatefulBlockFactory)) {
+            throw new IllegalArgumentException("Block '" + definition.id() + "' declares state_properties, but factory '"
+                    + definition.type() + "' does not support them");
+        }
+        super.apply(definition, context);
     }
 
     @Override
@@ -60,6 +74,9 @@ public class BlockTypeHandler extends RegTypeHandler<BlockDef> {
     protected Reg<?, ?> createRegistration(BlockDef definition, String path) {
         FactoryRegistry.BlockFactory factory = FactoryRegistry.get(definition.type());
         if (factory == null) return null;
+        if (definition.stateProperties() != null) {
+            return ((StatefulBlockFactory) factory).create(path, definition.params(), definition.stateProperties());
+        }
         return factory.create(path, definition.params());
     }
 
