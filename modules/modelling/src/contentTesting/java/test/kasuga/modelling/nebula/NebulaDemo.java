@@ -29,7 +29,6 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
-import java.util.Arrays;
 import java.util.Set;
 import java.util.UUID;
 
@@ -56,6 +55,7 @@ public final class NebulaDemo {
     private static boolean detailEnabled = true, captureMode;
     private static float flashProbe = -1;
     private static int renderWidth, renderHeight;
+    private static final NebulaGpuTimer GPU_TIMER = new NebulaGpuTimer();
 
     private NebulaDemo() {}
     public static NebulaSimulation simulation() { return SIMULATION; }
@@ -72,6 +72,12 @@ public final class NebulaDemo {
     static void detail(boolean enabled) { detailEnabled = enabled; }
     static void flash(float value) { flashProbe = value; }
     static void capture(boolean enabled) { captureMode = enabled; }
+    static void measureGpuTime(boolean enabled) { GPU_TIMER.enabled(enabled); }
+    static double lastGpuPassMs() { return GPU_TIMER.lastMs(); }
+    static long completedGpuQueries() { return GPU_TIMER.samples(); }
+    static double gpuPassTotalMs() { return GPU_TIMER.totalMs(); }
+    static double gpuPassMaxMs() { return GPU_TIMER.maxMs(); }
+    static boolean lastQueryDeleteVerified() { return GPU_TIMER.lastDeleteVerified(); }
     static int renderWidth() { return renderWidth; }
     static int renderHeight() { return renderHeight; }
     static void orbit(double dx, double dy) {
@@ -141,15 +147,21 @@ public final class NebulaDemo {
 
     public static void stop() {
         var previous = session;
-        if (previous == null) return;
+        if (previous == null) { releaseGpuTimer(); return; }
         restoring = previous;
         session = null;
         resetScene();
+        releaseGpuTimer();
         var mc = Minecraft.getInstance();
         mc.options.hideGui = previous.hideGui;
         if (mc.screen instanceof NebulaScreen) mc.setScreen(null);
         if (!previous.server.isShutdown()) previous.server.execute(() -> restore(previous));
         else if (restoring == previous) restoring = null;
+    }
+
+    private static void releaseGpuTimer() {
+        if (RenderSystem.isOnRenderThread()) GPU_TIMER.close();
+        else RenderSystem.recordRenderCall(GPU_TIMER::close);
     }
 
     /** Restore before PlayerList saves the departing player, including closing the game window. */
@@ -207,24 +219,9 @@ public final class NebulaDemo {
         var world = context.world();
         float partial = world.partialTick().getGameTimeDeltaPartialTick(false);
         float time = SIMULATION.time(captureMode ? 1 : partial);
-        Arrays.fill(BOLT_DATA, 0); Arrays.fill(LIGHT_DATA, 0);
-        renderedPeak = 0;
-        int count = 0, light = 0;
-        for (var bolt : SIMULATION.bolts()) {
-            float energy = bolt.strength(time);
-            renderedPeak = Math.max(renderedPeak, energy);
-            int k = light++ * 4;
-            LIGHT_DATA[k] = bolt.center().x; LIGHT_DATA[k+1] = bolt.center().y; LIGHT_DATA[k+2] = bolt.center().z;
-            LIGHT_DATA[k+3] = energy;
-            for (var segment : bolt.segments()) {
-                k = count++ * 8;
-                BOLT_DATA[k] = segment.start().x; BOLT_DATA[k+1] = segment.start().y; BOLT_DATA[k+2] = segment.start().z;
-                BOLT_DATA[k+3] = energy;
-                BOLT_DATA[k+4] = segment.end().x; BOLT_DATA[k+5] = segment.end().y; BOLT_DATA[k+6] = segment.end().z;
-                BOLT_DATA[k+7] = segment.width();
-            }
-        }
-        int segmentCount = count;
+        var lightning = NebulaLightningData.pack(SIMULATION.bolts(), time, LIGHT_DATA, BOLT_DATA);
+        renderedPeak = lightning.peak();
+        int segmentCount = lightning.segments();
         // The procedural scene uses a Kasuga follow camera in compact cloud-local units.
         var craft = NebulaFlight.sample(time);
         var target = context.write(VOLUME);
@@ -236,27 +233,32 @@ public final class NebulaDemo {
                 .invert();
         INVERSE_VIEW.identity().lookAt(eye, look, new Vector3f(0, 1, 0))
                 .rotateLocalZ((float) Math.toRadians(camera.roll())).invert();
-        context.fullscreen(VOLUME, volumeShader).uniforms(shader -> {
-            RenderSystem.disableBlend();
-            shader.safeGetUniform("InverseProjection").set(INVERSE_PROJECTION);
-            shader.safeGetUniform("InverseView").set(INVERSE_VIEW);
-            shader.safeGetUniform("Eye").set((float) eye.x, (float) eye.y, (float) eye.z);
-            shader.safeGetUniform("CraftPosition").set(craft.position().x, craft.position().y, craft.position().z);
-            shader.safeGetUniform("CraftInverse").set(craft.toLocal());
-            shader.safeGetUniform("WakeData").set(NebulaFlight.wake(time));
-            shader.safeGetUniform("InteractionStrength").set(interactionEnabled ? 1f : 0f);
-            shader.safeGetUniform("CraftVisible").set(craftVisible ? 1f : 0f);
-            shader.safeGetUniform("CoreStrength").set(coreEnabled ? 1f : 0f);
-            shader.safeGetUniform("DetailStrength").set(detailEnabled ? 1f : 0f);
-            shader.safeGetUniform("GlobalFlash").set(flashProbe >= 0 ? flashProbe : renderedPeak);
-            shader.safeGetUniform("ShipScale").set(NebulaFlight.SHIP_SCALE);
-            var velocity = new Vector3f(NebulaFlight.sample(time+.01f).position()).sub(craft.position()).mul(100);
-            shader.safeGetUniform("CraftVelocity").set(velocity.x,velocity.y,velocity.z);
-            shader.safeGetUniform("Time").set(time);
-            shader.safeGetUniform("SegmentCount").set(segmentCount);
-            shader.safeGetUniform("BoltData").set(BOLT_DATA);
-            shader.safeGetUniform("LightData").set(LIGHT_DATA);
-        }).draw(false);
+        GPU_TIMER.begin();
+        try {
+            context.fullscreen(VOLUME, volumeShader).uniforms(shader -> {
+                RenderSystem.disableBlend();
+                shader.safeGetUniform("InverseProjection").set(INVERSE_PROJECTION);
+                shader.safeGetUniform("InverseView").set(INVERSE_VIEW);
+                shader.safeGetUniform("Eye").set((float) eye.x, (float) eye.y, (float) eye.z);
+                shader.safeGetUniform("CraftPosition").set(craft.position().x, craft.position().y, craft.position().z);
+                shader.safeGetUniform("CraftInverse").set(craft.toLocal());
+                shader.safeGetUniform("WakeData").set(NebulaFlight.wake(time));
+                shader.safeGetUniform("InteractionStrength").set(interactionEnabled ? 1f : 0f);
+                shader.safeGetUniform("CraftVisible").set(craftVisible ? 1f : 0f);
+                shader.safeGetUniform("CoreStrength").set(coreEnabled ? 1f : 0f);
+                shader.safeGetUniform("DetailStrength").set(detailEnabled ? 1f : 0f);
+                shader.safeGetUniform("GlobalFlash").set(flashProbe >= 0 ? flashProbe : renderedPeak);
+                shader.safeGetUniform("ShipScale").set(NebulaFlight.SHIP_SCALE);
+                var velocity = new Vector3f(NebulaFlight.sample(time+.01f).position()).sub(craft.position()).mul(100);
+                shader.safeGetUniform("CraftVelocity").set(velocity.x,velocity.y,velocity.z);
+                shader.safeGetUniform("Time").set(time);
+                shader.safeGetUniform("SegmentCount").set(segmentCount);
+                shader.safeGetUniform("BoltData").set(BOLT_DATA);
+                shader.safeGetUniform("LightData").set(LIGHT_DATA);
+            }).draw(false);
+        } finally {
+            GPU_TIMER.end();
+        }
         drawCount++;
     }
 

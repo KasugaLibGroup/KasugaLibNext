@@ -61,7 +61,18 @@ public final class NebulaClientSmokeTest {
             }
             if (mc.getOverlay() != null || mc.player == null) return;
             if (stage == 0) {
-                if (!NebulaDemo.active() || !(mc.screen instanceof NebulaScreen) || ++frames < 40) return;
+                if (!NebulaDemo.active() || !(mc.screen instanceof NebulaScreen)) return;
+                frames++;
+                if (frames == 18) NebulaDemo.measureGpuTime(true);
+                long samples = NebulaDemo.completedGpuQueries();
+                if (frames < 40 || samples < 15 && frames < 80) return;
+                NebulaDemo.measureGpuTime(false);
+                check(samples >= 15, "Too few completed asynchronous GPU queries: " + samples);
+                double meanMs = NebulaDemo.gpuPassTotalMs() / samples;
+                check(Double.isFinite(meanMs) && meanMs > 0, "GPU timer returned invalid durations");
+                REPORT.put("gpuAsyncSamples", samples);
+                REPORT.put("gpuPassMeanMs", meanMs);
+                REPORT.put("gpuPassMaxMs", NebulaDemo.gpuPassMaxMs());
                 check(mc.level.dimension().equals(Level.END), "Not in the End");
                 check(mc.player.getY() > 500, "Not at the clean observation point");
                 check(NebulaDemo.drawCount() > 10, "Graph did not draw");
@@ -227,6 +238,7 @@ public final class NebulaClientSmokeTest {
                 check(NebulaDemo.idle(), "Escape left the session active");
                 check(NebulaDemo.drawCount() == stoppedDraws, "Stopped graph still draws");
                 check(!(mc.screen instanceof NebulaScreen), "Escape left the controls open");
+                check(NebulaDemo.lastQueryDeleteVerified(), "Escape did not delete GPU timer queries");
                 checkRestored();
                 REPORT.put("escapeRestoresPlayer", true);
                 check(NebulaDemo.start(), "Restart failed");
@@ -238,6 +250,8 @@ public final class NebulaClientSmokeTest {
             } else if (stage == 9) {
                 if (++frames < 20) return;
                 check(NebulaDemo.idle(), "Repeated stop is not idempotent");
+                check(NebulaDemo.lastQueryDeleteVerified(), "Repeated stop left GPU timer queries allocated");
+                REPORT.put("timerQueriesReleasedOnStop", true);
                 checkRestored();
                 REPORT.put("restartAndIdempotentStop", true);
                 check(NebulaDemo.start(), "Start before disconnect failed");
