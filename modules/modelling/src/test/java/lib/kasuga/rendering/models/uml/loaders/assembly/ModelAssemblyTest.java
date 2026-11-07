@@ -178,6 +178,24 @@ class ModelAssemblyTest {
     }
 
     @Test
+    void dependencyInspectionDoesNotInvalidateResolvedAssemblies() {
+        Model body = model(1, false, MeshMode.TRIANGLES);
+        Model other = model(1, false, MeshMode.TRIANGLES);
+        var cache = new ModelAssemblyCache();
+        var registry = new ModelAssemblyRegistry<String, String>(
+                key -> new ModelAssembly.Source(key.equals("body") ? body : other, 1), cache);
+        registry.register("outfit", ModelAssemblyDefinition.builder("body", "body").build());
+        var resolved = registry.resolve("outfit");
+        assertEquals(Set.of("outfit"), registry.dependentIds(body));
+        assertEquals(Set.of(), registry.dependentIds(other));
+        assertSame(resolved, registry.resolve("outfit"));
+        assertEquals(1, cache.stats().entries());
+        assertEquals(Set.of("outfit"), registry.invalidate(body));
+        assertEquals(0, cache.stats().entries());
+        assertEquals(Set.of(), registry.dependentIds(body));
+    }
+
+    @Test
     void boundedLruAndVertexBudgetRetainOnlyRecentAssembliesAndOldResultsStayUsable() {
         Model body = model(1, false, MeshMode.TRIANGLES);
         ModelAssemblyCache cache = new ModelAssemblyCache(2, 6);

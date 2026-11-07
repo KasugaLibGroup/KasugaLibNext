@@ -1,28 +1,14 @@
 package lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler;
 
-import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
-import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.ModelTickLoop;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.PendingTransform;
 import lib.kasuga.rendering.models.uml.structure.Model;
 
-/**
- * Evaluates the skeleton hierarchy and solves common skeleton IK through Caliko once per tick.
- *
- * <p>This stage is skipped while physics owns the pose — the ragdoll's
- * kinematic-target evaluation performs the same animation + IK solve against
- * identical inputs, so solving here would only duplicate the work.</p>
- */
+/** Evaluates one constrained animation/IK target for every standard skeleton motion state. */
 public class IkModule implements ModelTickLoopModule {
-
     @Override
     public void tick(Model model, PendingTransform[] transforms, ModelTickLoop loop, float deltaTime) {
-        ModelInstance instance = loop.getInstance();
-        SkeletonRagdoll ragdoll = instance.getRagdoll();
-        if (ragdoll != null && ragdoll.enabled()) return;
-        instance.getSkeletonInstance().updateTransform();
+        loop.getInstance().getSkeletonInstance().evaluatePoseTarget();
     }
-
-    @Override
-    public void destroy(Model model) {}
+    @Override public void destroy(Model model) {}
 }

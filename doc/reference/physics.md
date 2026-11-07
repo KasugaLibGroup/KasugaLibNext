@@ -20,7 +20,7 @@ Box3D JNI 编译并继续生成不含原生物理的 modelling 包。运行时�
 物理、IK 等模块只实现自身内部逻辑：
 
 ```text
-kasuga:apply -> [user pre-IK modules] -> kasuga:ik -> [user post-IK modules]
+[user pre-IK modules] -> kasuga:apply -> kasuga:ik -> [user post-IK modules]
   -> kasuga:physics -> [user post-physics modules] -> kasuga:anchor
 ```
 
@@ -28,17 +28,17 @@ kasuga:apply -> [user pre-IK modules] -> kasuga:ik -> [user post-IK modules]
 
 ```text
 PoseDriver.sample(partialTick)
+  -> pre-IK modules（写 pending transforms 和 transient IK target）
   -> SkeletonApplyModule（flush pending transforms）
-  -> pre-IK modules（写 transient IK target；需要 flush pending 的模块应放在 apply 前）
-  -> IkModule（层级求值 + 通用 Caliko IK；物理接管姿态时跳过）
+  -> IkModule（所有运动状态均求解层级与通用 Caliko IK）
   -> post-IK modules（读同帧 IK 结果、提交 controller force）
-  -> RagdollModule（Box3D fixed steps + bone writeback）
+  -> SkeletonPhysicsModule（固定步驱动、Box3D 与骨骼写回）
   -> post-physics modules（观察最终姿态）
   -> AnchorModule（重算显示子物体锚点世界变换）
   -> renderer upload
 ```
 
-`MinecraftRagdollRuntime` 在 `RenderFrame.Pre` 中先采样动画再推进物理，backend 随后的 `sample` 会消费
+`MinecraftModelRuntime`（旧 `MinecraftRagdollRuntime` 为兼容委托）在 `RenderFrame.Pre` 中先采样动画再推进物理，backend 随后的 `sample` 会消费
 本帧已准备标记，不会用动画重新覆盖物理结果。动画/IK 目标按输入 mutation epoch 求值和缓存，
 输入不变时，fixed steps 复用同一动画目标；原生的力累计与 fixed-step 执行仍由 world 管理。
 
@@ -54,8 +54,30 @@ instance.tick(frameSeconds);              // 直接推进整条管线
 需要一次完成动画采样和物理推进时使用：
 
 ```java
-instance.evaluatePhysicsFrame(partialTick, frameSeconds);
+instance.evaluateFrame(partialTick, frameSeconds);
 ```
+
+### 标准骨架运动状态
+
+```java
+var skeleton = instance.getSkeletonInstance();
+var physics = skeleton.relax(); // null if native physics is unavailable
+skeleton.drivePose(new SkeletonInstance.PoseDrive(5f, 1f, 800f, 250f, 1f));
+skeleton.relax();             // release tracking; keep profile and scene
+skeleton.resumeAnimation();   // restore current animation/IK pose
+skeleton.detachRelaxation();  // release adapter, not its shared scene
+```
+
+`getMotionState()` 返回 `ANIMATED`、`RELAXED` 或 `DRIVEN`；驱动权重为零时属于 `RELAXED`。
+松弛与驱动态均保留关节和接触约束；骨架需要公共物理定义，必要时还需 profile。
+`relax(profile)` 和 `relax(scene, profile)` 选择主体约束配置与共享场景。
+`getRelaxation()` 提供历史类型名为 `SkeletonRagdoll` 的适配句柄，保留原有 `Body`/`Profile` API。
+旧 `ModelInstance.enablePhysics` 委托到 skeleton；无 scene 参数的旧接口仍选择独立世界。
+
+共享场景通过 `ModelTickLoop.tickSharedPhysics` 执行所有参与者的标准物理槽，再统一推进一次世界，
+先写回全部骨架，最后运行 post-physics 和 anchor。共享成员不能独立 tick/step。
+`beforePhysicsStep` 每个固定步计算控制力，`afterSharedPhysics` 提交共享物理槽的结果。
+目标姿态修改应放在 pre-IK，post-IK 读取已求解目标；不会在控制器内部偷偷重算 IK。
 
 ## 2. 通用刚体 API
 
@@ -308,15 +330,15 @@ skeleton.resetIkEnabled();
 | 槽位 | 模块 | 职责 |
 | --- | --- | --- |
 | `kasuga:apply` | `SkeletonApplyModule` | 把 pending transforms flush 进骨架；identity 槽位跳过，不覆盖动画写好的骨骼 |
-| `kasuga:ik` | `IkModule` | 层级求值 + 通用 Caliko IK；物理启用时由物理接管姿态，此槽自动跳过 |
-| `kasuga:physics` | `RagdollModule` | 推进 SkeletonRagdoll（Box3D）并写回；未启用物理时 no-op |
+| `kasuga:ik` | `IkModule` | 为所有运动状态求解同帧动画/IK 目标 |
+| `kasuga:physics` | `SkeletonPhysicsModule` | 推进 SkeletonRagdoll（Box3D）并写回；未启用物理时 no-op |
 | `kasuga:anchor` | `AnchorModule` | 重算锚点世界变换并通知显示子物体 |
 
 用户模块用类型化助手挂到标准槽位之间，排序完全由管线提供：
 
 ```java
 ModelTickLoop loop = instance.getTickLoop();
-loop.addPreIk("my-target", module);      // 默认 apply 之后、IK 之前
+loop.addPreIk("my-target", module);      // apply 之前，pending 与 IK 目标同帧生效
 loop.addPostIk("my-controller", module); // IK 之后、物理之前
 loop.addPostPhysics("my-observer", module); // 物理之后、锚点之前
 loop.module(ModelTickLoop.SLOT_ANCHOR, AnchorModule.class); // 取内置模块实例
@@ -342,9 +364,9 @@ hand.setEnabled(false);
 
 ### 5.2 `ActiveRagdollModule`
 
-该 controller 在 post-IK 阶段将 dynamic body 拉向同帧动画/IK body target：先调用
-`SkeletonRagdoll.evaluateAnimationTarget()` 刷新 kinematic target，再计算 PD spring 的 force/torque；
-积分、碰撞、joint、sleep 仍全部由 Box3D 在 physics 阶段执行。
+该兼容 controller 在 post-IK 阶段读取标准 IK 槽已求解的 target，不重新求解骨架。
+PD spring 通过 `beforePhysicsStep` 每个固定步计算；积分、碰撞与关节仍由 Box3D 执行。
+控制全部骨架时可直接使用 `skeleton.drivePose(...)`。
 
 控制全部 dynamic body：
 
@@ -472,3 +494,27 @@ Block/Entity，不参与服务端权威碰撞、保存、区块序列化或多�
   stylized PBR 转换仍使用 [pbr.md](pbr.md) 中的独立规则和 atlas baker。
 
 渲染 pipeline、shader 与 effect API 见 [effect-rendering.md](effect-rendering.md)。
+
+
+### 客户端管线调度与验证
+
+`MinecraftModelRuntime.register(instance)` 自动推进标准模型帧；共享模型使用 `register(scene)`，
+同一模型同时直接注册和加入共享 scene 时按场景去重。关闭的实例与 scene 会从注册表清理。
+`unregister` 停止自动调度；手动调用 `instance.evaluateFrame(partialTick, seconds)` 或共享 scene 的 `evaluateFrame`。
+动画逻辑时钟仍由 host 调用 `instance.animate(dt)` 推进，帧采样与物理 fixed step 分开。
+`RenderModelTickLoopManager.registerLoop` 始终返回实例的标准 loop；扩展模块请安装到该 loop，
+不再依赖旧的 `create` factory 创建第二条管线。取消调度不会销毁实例拥有的模块。
+
+可复现真实客户端检查：
+
+```sh
+./scripts/run-headless-client.sh -PkasugaTestSkeletonRelaxation=true \
+  -PkasugaClientDirectory=run/skeleton-relaxation-smoke \
+  -PkasugaQuickPlayWorld=<已有测试世界目录名>
+```
+
+该检查需要 contentTesting 的 test3 PMX 与 maribel glTF 资源，输出
+`debug/skeleton-relaxation/report.json` 和四个状态截图，并自动退出。
+只覆盖本地复制测试世界，帧率与平台环境需在报告中记录。
+
+零权重 PoseDrive 在物理槽与求力入口均直接返回，不遍历刚体、不提交零力。角驱动保留旧 ActiveRagdollModule 的线性质量尺度以兼容既有参数；它不是按转动惯量归一化的 PD，maximumTorque 对小尺寸骨架仍然重要。

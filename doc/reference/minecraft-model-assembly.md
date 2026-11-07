@@ -118,14 +118,14 @@ if (service != null) service.register(outfitId, definition);
 
 ```java
 new McModelAssemblies(
-    ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> output,
+    ModelPipeLine<ResourceLocation, ResourceLocation> output,
     Function<McModelAssemblies.Reference, McModelAssemblies.PublishedSource> sources,
     ModelAssemblyCache cache);
 
 new McModelAssemblies.Reference(ResourceLocation model);
 new McModelAssemblies.Reference(ResourceLocation model, @Nullable String modelName);
 new McModelAssemblies.PublishedSource(
-    ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline, ResourceLocation key);
+    ModelPipeLine<ResourceLocation, ResourceLocation> pipeline, ResourceLocation key);
 
 void register(ResourceLocation id, ModelAssemblyDefinition<McModelAssemblies.Reference> definition);
 boolean unregister(ResourceLocation id);
@@ -134,7 +134,7 @@ Map<ResourceLocation, ModelAssemblyDefinition<McModelAssemblies.Reference>> defi
 @Nullable ModelAssembly resolve(ResourceLocation id);
 @Nullable ModelInstance createAndBind(ResourceLocation id, ResourceLocation instanceId, @Nullable Transform root);
 McModelHandle handle(ResourceLocation id, ResourceLocation instanceId);
-ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline();
+ModelPipeLine<ResourceLocation, ResourceLocation> pipeline();
 ModelAssemblyCache.Stats cacheStats();
 void close();
 ```
@@ -189,23 +189,36 @@ registry 保持资源定义与最新完整结果，返回集合视图只读；�
 
 | 方法 | 行为 |
 | --- | --- |
-| `Model getModel(StorageIdentifierType key)` | 未发布时为 null |
-| `long modelRevision(StorageIdentifierType key)` | 当前发布版本；不存在时为 0 |
-| `StorageIdentifierType modelKeyOf(ModelInstance instance)` | 查找注册键，未登记为 null；绑定后保留键以便常数时间检查 |
-| `AutoCloseable onModelChanged(Consumer<ModelChange<StorageIdentifierType>> listener)` | game thread 通知，在旧实例 close 前执行；关闭订阅即注销 |
-| `void publishModels(Map<StorageIdentifierType,Model>)` | 合并发布；相同对象跳过；替换时回收该键的实例 |
-| `void replaceModels(Map<StorageIdentifierType,Model>)` | 完整替换，删除快照中缺失的模型 |
-| `boolean removeModel(StorageIdentifierType key)` | 移除该键和实例；不存在返回 false |
-| `Builder.buildForPublishedModels()` | 无 SourceManager/Loader 的派生管线，仍需 bridge 和 backend |
+| `Model getModel(K key)` | 未发布时为 null |
+| `long modelRevision(K key)` | 当前发布版本；不存在时为 0 |
+| `K modelKeyOf(ModelInstance instance)` | 查找注册键，未登记为 null；绑定后保留键以便常数时间检查 |
+| `AutoCloseable onModelChanged(Consumer<ModelChange<K>> listener)` | game thread 通知，在旧实例 close 前执行；关闭订阅即注销 |
+| `PublishedBuilder<K, I, B>.build()` | 无 SourceManager/Loader 的派生管线，仍需 bridge 和 backend |
 
 `ModelChange<K>` 为 `key, previous, current, revision`，删除时 current 为 null。
 listener 异常不会跳过其他 listener 或旧实例回收，错误在清理完成后汇总抛出。
 实例按资源键登记，共享同一个 Model 的不同键互不回收；相同键/instanceId 的 createInstance 幂等。
-纯发布管线调用 prepare/load 会报错；SourceManager/Loader 管线的旧 build 方法继续要求 Reader。
+纯发布管线调用 `prepareModel` 会报错；SourceManager/Loader 管线的旧 build 方法继续要求 Reader。
 
-`ModelPublicationBatch<K>.publish(prepared)` 发布一个资源管理者的完整代：prepared 的键为
-`ModelPipeLine<?,?,K,?,?>`，值为 `Map<K,Model>`。下一代缺失的旧受管键会删除，其他发布者的键保留。
-所有受管管线都有清理机会，即使较早的一条管线清理失败。
+模型统一通过 `ModelPublicationCoordinator.global()` 管理。每个 `ModelPublicationBatch<K>` 是独立发布者：
+`publish(prepared)` 替换该发布者跨所有管线的完整集合，`put(pipeline, models)` 合并，`remove(pipeline, key)`
+删除自己的键，`close()` 释放自己的所有键。不同发布者使用同一管线的同一键会报错，即使 Model 相同；
+冲突或提交前准备失败不会更改当前代。旧的 `publishModels`、`replaceModels`、`removeModel` 和 `loadModel`
+已移除；先调用 `prepareModel`，再经发布者提交。相同 Model 引用的更新不会退役实例。
+
+跨管线模型和版本通过单一 generation 原子切换。多次读取需要固定同一代时：
+
+```java
+try (var snapshot = ModelPublicationCoordinator.global().pin()) {
+    Model model = snapshot.getModel(pipeline, key);
+    long revision = snapshot.modelRevision(pipeline, key);
+}
+```
+
+快照只保留 Model 引用和版本，不保留实例或 GPU 资源；应及时关闭，且并发读取者不能与 Model 及其内部对象的修改竞争。
+单独调用 pipeline 查询可能跨代。发布、实例和监听器操作须在同一游戏线程串行执行；通知或清理中禁止重入发布。
+提交后监听或清理失败会汇总为 `PublicationCommittedException`，其 generation 已生效，不代表回滚。
+模型代的原子性不包括纹理 atlas、PMX 查找表或 glTF manifest；这些资源仍有独立的加载与生命周期。
 
 ## 驱动和输入迁移
 
@@ -223,3 +236,19 @@ void MorphInstance<Id>.copyInputsTo(MorphInstance<Id> target);
 morph 迁移复制标识对应的激活值/因子，不复制结果缓存或源结构对象。目标不存在的名称忽略。
 `AnimationPlayback.retarget` 保持时钟对象/所有权；自有时钟按新片段时长更新，外部时钟不修改。
 这些控制操作须与 tick 串行，render sample 消费既有快照机制。
+
+
+### 管线类型与发布线程
+
+`ModelPipeLine<K, I>` 只公开模型键与实例键；源格式/纹理由加载闭包捕获，后端类型由内部挂载适配器捕获。
+纯发布管线使用 `new ModelPipeLine.PublishedBuilder<K, I, Renderable>()...build()`，无须填写源与纹理的 Object 占位。
+带 loader 的 Builder 保留装配时所需的类型参数，它们不会进入运行时管线。
+
+默认发布域为 `ModelPublicationCoordinator.global()`。独立域可创建 `new ModelPublicationCoordinator()`，
+经 `withPublicationCoordinator` 绑定管线，并传给 `new ModelPublicationBatch<K>(coordinator)`；跨域发布被拒绝。
+原拥有线程可在无事务时调用 `releaseThread()`，供替代线程随后接管；其他线程不能抢占绑定。
+首次使用前准备订阅的注册与关闭不会绑定线程，所有事务/订阅状态均在同一锁下维护。
+
+准备阶段只允许删除 staged 模型，轮次上限由 staged 条目数推导。
+`Preparation.beforeNotifications(owner, action)` 按 owner 身份去重，动作只在提交后、全部通知前执行；
+准备失败不会执行。拼装缓存通过此阶段失效，与跨管线 listener 的遍历顺序无关。

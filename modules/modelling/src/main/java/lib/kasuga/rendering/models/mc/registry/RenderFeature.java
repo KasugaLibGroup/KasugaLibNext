@@ -13,8 +13,8 @@ public record RenderFeature(
         ResourceLocation modelKey,
         BiFunction<BlockState, BlockPos, Transform> rootTransform
 ) {
-    public ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline() {
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> p = PipelineRegistry.resolve(modelKey);
+    public ModelPipeLine<ResourceLocation, ResourceLocation> pipeline() {
+        ModelPipeLine<ResourceLocation, ResourceLocation> p = PipelineRegistry.resolve(modelKey);
         if (p == null) {
             throw new IllegalStateException("Model key '" + modelKey + "' is not routed to any pipeline");
         }

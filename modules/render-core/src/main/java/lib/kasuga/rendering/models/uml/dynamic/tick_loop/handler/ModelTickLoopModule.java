@@ -12,5 +12,12 @@ public interface ModelTickLoopModule {
      */
     void tick(Model model, PendingTransform[] transforms, ModelTickLoop loop, float deltaTime);
 
+    /** Fixed-step controller hook; animation, IK and frame callbacks are not repeated here. */
+    default void beforePhysicsStep(Model model, ModelTickLoop loop) {}
+
+    /** Physics-slot commit hook after a shared-world barrier, before downstream observers run. */
+    default void afterSharedPhysics(Model model, PendingTransform[] transforms,
+                                    ModelTickLoop loop, float deltaTime) {}
+
     void destroy(Model model);
 }

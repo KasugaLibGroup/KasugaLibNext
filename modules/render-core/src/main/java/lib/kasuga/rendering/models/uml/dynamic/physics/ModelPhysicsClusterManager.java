@@ -32,6 +32,7 @@ public final class ModelPhysicsClusterManager implements AutoCloseable {
         final Vector3d lastPosition = new Vector3d();
         final Vector3f estimatedVelocity = new Vector3f();
         boolean positionInitialized;
+        boolean attaching = true;
 
         RegisteredInstance(ModelInstance instance, SkeletonRagdoll.Profile profile) {
             this.instance = instance;
@@ -202,9 +203,20 @@ public final class ModelPhysicsClusterManager implements AutoCloseable {
 
     public synchronized SkeletonRagdoll attach(ModelInstance instance, SkeletonRagdoll.Profile profile) {
         ensureOpen();
-        Objects.requireNonNull(instance, "instance");
-        registeredInstances.put(instance, new RegisteredInstance(instance, profile));
-        recluster(0f);
+        Objects.requireNonNull(instance, "instance").requireOpen();
+        SkeletonRagdoll state = instance.getSkeletonInstance().getRelaxation();
+        if (!lib.kasuga.rendering.models.uml.dynamic.physics.box3d.NativeBox3D.availableOrWarn()) return null;
+        if (state != null && !Objects.equals(state.profile(), profile)) instance.detachPhysics();
+        else if (state != null) state.setEnabled(true);
+        RegisteredInstance registration = new RegisteredInstance(instance, profile);
+        RegisteredInstance previous = registeredInstances.put(instance, registration);
+        try {
+            recluster(0f);
+        } catch (RuntimeException | Error failure) {
+            if (previous == null) registeredInstances.remove(instance);
+            else registeredInstances.put(instance, previous);
+            throw failure;
+        } finally { registration.attaching = false; }
         return instance.getRagdoll();
     }
 
@@ -302,6 +314,15 @@ public final class ModelPhysicsClusterManager implements AutoCloseable {
 
     public synchronized void recluster(float dt) {
         ensureOpen();
+        registeredInstances.entrySet().removeIf(entry -> entry.getKey().isClosed()
+                || (!entry.getValue().attaching && entry.getKey().getSkeletonInstance().getRelaxation() == null));
+        pairSeparationTimers.keySet().removeIf(pair -> !registeredInstances.containsKey(pair.a)
+                || !registeredInstances.containsKey(pair.b));
+        var liveInstances = new ArrayList<>(registeredInstances.keySet());
+        registeredJoints.removeIf(j -> findInstanceIndex(j.bodyA(), liveInstances) < 0
+                || findInstanceIndex(j.bodyB(), liveInstances) < 0);
+        registeredBallJoints.removeIf(j -> findInstanceIndex(j.bodyA(), liveInstances) < 0
+                || findInstanceIndex(j.bodyB(), liveInstances) < 0);
         if (registeredInstances.isEmpty()) {
             for (Cluster cluster : activeClusters) cluster.close();
             activeClusters.clear();
@@ -400,55 +421,83 @@ public final class ModelPhysicsClusterManager implements AutoCloseable {
 
         Map<ModelInstance, Cluster> nextClusterByInstance = new IdentityHashMap<>();
 
-        for (List<ModelInstance> group : groups.values()) {
-            Cluster chosenCluster = null;
-            for (ModelInstance member : group) {
-                Cluster candidate = clusterByInstance.get(member);
-                if (candidate != null && reusableClusters.contains(candidate)) {
-                    chosenCluster = candidate;
-                    reusableClusters.remove(candidate);
-                    break;
-                }
-            }
-
-            if (chosenCluster == null) {
-                Vector3d centroid = computeCentroid(group, positions, instanceList);
-                ModelPhysicsScene newScene = new ModelPhysicsScene(centroid, substepCount);
-                chosenCluster = new Cluster(newScene);
-                if (environmentFactory != null) {
-                    chosenCluster.environment = environmentFactory.create(newScene, centroid);
-                    if (chosenCluster.environment != null) {
-                        newScene.world().setCollisionEnvironment(chosenCluster.environment);
+        var allocatedScenes = new ArrayList<ModelPhysicsScene>();
+        var originalScenes = new IdentityHashMap<ModelInstance, ModelPhysicsScene>();
+        for (ModelInstance member : instanceList) {
+            var state = member.getSkeletonInstance().getRelaxation();
+            if (state != null) originalScenes.put(member, state.physicsScene());
+        }
+        try {
+            for (List<ModelInstance> group : groups.values()) {
+                Cluster chosenCluster = null;
+                for (ModelInstance member : group) {
+                    Cluster candidate = clusterByInstance.get(member);
+                    if (candidate != null && reusableClusters.contains(candidate)) {
+                        chosenCluster = candidate;
+                        reusableClusters.remove(candidate);
+                        break;
                     }
                 }
-            }
 
-            chosenCluster.members.clear();
-            for (ModelInstance member : group) {
-                chosenCluster.members.add(member);
-                nextClusterByInstance.put(member, chosenCluster);
-                RegisteredInstance reg = registeredInstances.get(member);
-                member.enablePhysics(chosenCluster.scene, reg.profile);
-            }
-
-            for (PhysicsJoint joint : registeredJoints) {
-                int a = findInstanceIndex(joint.bodyA(), group);
-                int b = findInstanceIndex(joint.bodyB(), group);
-                if (a >= 0 && b >= 0 && !chosenCluster.joints.contains(joint)) {
-                    chosenCluster.scene.addJoint(joint);
-                    chosenCluster.joints.add(joint);
+                if (chosenCluster == null) {
+                    Vector3d centroid = computeCentroid(group, positions, instanceList);
+                    ModelPhysicsScene newScene = new ModelPhysicsScene(centroid, substepCount);
+                    allocatedScenes.add(newScene);
+                    chosenCluster = new Cluster(newScene);
+                    if (environmentFactory != null) {
+                        chosenCluster.environment = environmentFactory.create(newScene, centroid);
+                        if (chosenCluster.environment != null) {
+                            newScene.world().setCollisionEnvironment(chosenCluster.environment);
+                        }
+                    }
                 }
-            }
-            for (BallJoint joint : registeredBallJoints) {
-                int a = findInstanceIndex(joint.bodyA(), group);
-                int b = findInstanceIndex(joint.bodyB(), group);
-                if (a >= 0 && b >= 0 && !chosenCluster.ballJoints.contains(joint)) {
-                    chosenCluster.scene.addJoint(joint);
-                    chosenCluster.ballJoints.add(joint);
+
+                chosenCluster.members.clear();
+                for (ModelInstance member : group) {
+                    chosenCluster.members.add(member);
+                    nextClusterByInstance.put(member, chosenCluster);
+                    // Membership chooses a world; it must not change the skeleton's drive/relaxation policy.
+                    var state = member.getSkeletonInstance().getRelaxation();
+                    if (state == null) member.getSkeletonInstance().relax(chosenCluster.scene, registeredInstances.get(member).profile);
+                    else state.moveTo(chosenCluster.scene);
                 }
+
+                for (PhysicsJoint joint : registeredJoints) {
+                    int a = findInstanceIndex(joint.bodyA(), group);
+                    int b = findInstanceIndex(joint.bodyB(), group);
+                    if (a >= 0 && b >= 0 && !chosenCluster.joints.contains(joint)) {
+                        chosenCluster.scene.addJoint(joint);
+                        chosenCluster.joints.add(joint);
+                    }
+                }
+                for (BallJoint joint : registeredBallJoints) {
+                    int a = findInstanceIndex(joint.bodyA(), group);
+                    int b = findInstanceIndex(joint.bodyB(), group);
+                    if (a >= 0 && b >= 0 && !chosenCluster.ballJoints.contains(joint)) {
+                        chosenCluster.scene.addJoint(joint);
+                        chosenCluster.ballJoints.add(joint);
+                    }
+                }
+
+                nextClusters.add(chosenCluster);
             }
 
-            nextClusters.add(chosenCluster);
+        } catch (RuntimeException | Error failure) {
+            // Failed profile/environment construction must not leak a newly allocated native world.
+            for (ModelInstance member : instanceList) {
+                var state = member.getSkeletonInstance().getRelaxation();
+                if (state == null || !allocatedScenes.contains(state.physicsScene())) continue;
+                try {
+                    if (originalScenes.containsKey(member)) state.moveTo(originalScenes.get(member));
+                    else member.detachPhysics();
+                } catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+            }
+            for (ModelPhysicsScene scene : allocatedScenes) {
+                try { scene.close(); }
+                catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+            }
+            for (Cluster cluster : activeClusters) { cluster.joints.clear(); cluster.ballJoints.clear(); }
+            throw failure;
         }
 
         for (Cluster abandoned : reusableClusters) {
@@ -463,6 +512,7 @@ public final class ModelPhysicsClusterManager implements AutoCloseable {
 
     public synchronized void step(float deltaSeconds) {
         ensureOpen();
+        if (!(deltaSeconds > 0f) || !Float.isFinite(deltaSeconds)) return;
         recluster(deltaSeconds);
         for (Cluster cluster : activeClusters) {
             cluster.scene.step(deltaSeconds);
@@ -471,6 +521,7 @@ public final class ModelPhysicsClusterManager implements AutoCloseable {
 
     public synchronized void evaluateFrame(float partialTick, float deltaSeconds) {
         ensureOpen();
+        if (!(deltaSeconds > 0f) || !Float.isFinite(deltaSeconds)) return;
         recluster(deltaSeconds);
         for (Cluster cluster : activeClusters) {
             cluster.scene.evaluateFrame(partialTick, deltaSeconds);

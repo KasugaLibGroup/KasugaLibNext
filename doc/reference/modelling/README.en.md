@@ -90,7 +90,7 @@ ResourceLocation instanceKey = ResourceLocation.fromNamespaceAndPath(
         "examplemod", "engine_at_spawn"
 );
 
-ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline =
+ModelPipeLine<ResourceLocation, ResourceLocation> pipeline =
         PipelineRegistry.resolve(modelKey);
 if (pipeline == null || !pipeline.hasModel(modelKey)) {
     // The proxy rule did not match, or resource reload has not completed yet.

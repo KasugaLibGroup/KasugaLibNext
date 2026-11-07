@@ -90,7 +90,7 @@ public final class ModelSmokeTests {
     private static void testBbmodel(String modelPath, String instanceName, Vec3 position) {
         ResourceLocation modelLoc = ResourceLocation.tryBuild(KasugaLib.MODID, modelPath);
         ResourceLocation instanceLoc = ResourceLocation.tryBuild(KasugaLib.MODID, instanceName);
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = PipelineRegistry.bbmodel();
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = PipelineRegistry.bbmodel();
         if (!pipeline.hasModel(modelLoc)) {
             if (!missingBbmodelLogged) {
                 missingBbmodelLogged = true;
@@ -137,7 +137,7 @@ public final class ModelSmokeTests {
     private static void testFmtModel(String modelPath, String instanceName, Vec3 position) {
         ResourceLocation modelLoc = ResourceLocation.tryBuild(KasugaLib.MODID, modelPath);
         ResourceLocation instanceLoc = ResourceLocation.tryBuild(KasugaLib.MODID, instanceName);
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = PipelineRegistry.fmtArchive();
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = PipelineRegistry.fmtArchive();
         if (!pipeline.hasModel(modelLoc)) {
             if (!missingFmtLogged) {
                 missingFmtLogged = true;
@@ -161,7 +161,7 @@ public final class ModelSmokeTests {
     private static void testFmtBinaryModel(String modelPath, String instanceName, Vec3 position) {
         ResourceLocation modelLoc = ResourceLocation.tryBuild(KasugaLib.MODID, modelPath);
         ResourceLocation instanceLoc = ResourceLocation.tryBuild(KasugaLib.MODID, instanceName);
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = PipelineRegistry.fmtBinary();
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = PipelineRegistry.fmtBinary();
         if (!pipeline.hasModel(modelLoc)) {
             if (!missingFmtLogged) {
                 missingFmtLogged = true;
@@ -200,7 +200,7 @@ public final class ModelSmokeTests {
         }
         missingMmdLogged = false;
         ResourceLocation instanceLoc = ResourceLocation.tryBuild(KasugaLib.MODID, instanceName);
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = PipelineRegistry.pmx();
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = PipelineRegistry.pmx();
         if (pipeline.hasInstance(modelLoc, instanceLoc)) {
             if (enablePhysics) attachMmdPhysics(pipeline.getInstance(modelLoc, instanceLoc));
             return;
@@ -249,14 +249,14 @@ public final class ModelSmokeTests {
     }
 
     private static void testJe() {
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = PipelineRegistry.je();
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = PipelineRegistry.je();
         addStaticInstance(pipeline, ResourceLocation.tryBuild(KasugaLib.MODID, "models/je/test_parent_a.json"),
                 ResourceLocation.tryBuild(KasugaLib.MODID, "test_je_a"), null);
         addStaticInstance(pipeline, ResourceLocation.tryBuild(KasugaLib.MODID, "models/je/test_parent_b.json"),
                 ResourceLocation.tryBuild(KasugaLib.MODID, "test_je_b"), new Transform().translate(2, 0, 0));
     }
 
-    private static void addStaticInstance(ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline,
+    private static void addStaticInstance(ModelPipeLine<ResourceLocation, ResourceLocation> pipeline,
                                           ResourceLocation modelLoc, ResourceLocation instanceLoc, Transform transform) {
         if (!pipeline.hasModel(modelLoc) || pipeline.hasInstance(modelLoc, instanceLoc)) return;
         if (pipeline.createInstance(modelLoc, instanceLoc, transform, null, null) != null) {

@@ -5,6 +5,8 @@ import lib.kasuga.rendering.models.uml.backend.BackendContext;
 import lib.kasuga.rendering.models.uml.bridge.Bridge;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPublicationBatch;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPublicationCoordinator;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
 import lib.kasuga.rendering.models.uml.dynamic.SkeletonInstance;
 import lib.kasuga.rendering.models.uml.framework.render.RenderBackend;
@@ -32,6 +34,7 @@ import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -119,8 +122,9 @@ class BackendContractTest {
         first.fail = second.fail = true;
         TestBackend a = new TestBackend(), b = new TestBackend();
         Adapter adapter = new Adapter(model -> first);
-        ModelPipeLine<Object, Resource, String, String, String> pipeline = pipeline(adapter, a, b);
-        pipeline.publishModels(Map.of("model", instance().getModel()));
+        ModelPipeLine<String, String> pipeline = pipeline(adapter, a, b);
+        var publication = new ModelPublicationBatch<String>();
+        publication.put(pipeline, Map.of("model", instance().getModel()));
         ModelInstance instance = pipeline.createInstance("model", "instance", null, null, null);
         instance.setPoseDriver(new PoseDriver() {});
         pipeline.addToRenderer("model", "instance", "bridge", "a");
@@ -135,7 +139,7 @@ class BackendContractTest {
         assertTrue(ModelRenderScheduling.scheduler().shouldRender(instance));
         assertEquals(1, first.closes);
         assertEquals(1, second.closes);
-        a.close(); b.close();
+        publication.close(); a.close(); b.close();
     }
 
     @Test
@@ -148,24 +152,142 @@ class BackendContractTest {
             return resource;
         });
         TestBackend a = new TestBackend(), b = new TestBackend();
-        ModelPipeLine<Object, Resource, String, String, String> pipeline = pipeline(adapter, a, b);
-        pipeline.publishModels(Map.of("model", instance().getModel()));
+        ModelPipeLine<String, String> pipeline = pipeline(adapter, a, b);
+        var publication = new ModelPublicationBatch<String>();
+        publication.put(pipeline, Map.of("model", instance().getModel()));
         for (String id : List.of("one", "two")) {
             pipeline.createInstance("model", id, null, null, null);
             pipeline.addToRenderer("model", id, "bridge", "a");
             pipeline.addToRenderer("model", id, "bridge", "b");
         }
-        assertThrows(IllegalStateException.class, () -> pipeline.publishModels(Map.of("model", instance().getModel())));
+        assertThrows(ModelPublicationCoordinator.PublicationCommittedException.class,
+                () -> publication.put(pipeline, Map.of("model", instance().getModel())));
         assertTrue(a.getRenderingObjects().isEmpty());
         assertTrue(b.getRenderingObjects().isEmpty());
         assertFalse(pipeline.hasInstance("model", "one"));
         assertFalse(pipeline.hasInstance("model", "two"));
         assertEquals(4, resources.size());
         for (Resource resource : resources) assertEquals(1, resource.closes);
-        a.close(); b.close();
+        publication.close(); a.close(); b.close();
     }
 
-    private static ModelPipeLine<Object, Resource, String, String, String> pipeline(Adapter adapter, TestBackend a, TestBackend b) {
+    @Test
+    void publicationsRejectConflictsWithoutChangingEitherPipeline() throws Exception {
+        TestBackend a = new TestBackend(), b = new TestBackend();
+        Adapter adapter = new Adapter(ignored -> new Resource());
+        var first = pipeline(adapter, a, b);
+        var second = pipeline(adapter, a, b);
+        var owner = new ModelPublicationBatch<String>();
+        var other = new ModelPublicationBatch<String>();
+        Model original = instance().getModel(), replacement = instance().getModel();
+        try {
+            owner.put(first, Map.of("shared", original));
+            assertThrows(IllegalStateException.class, () -> other.publish(
+                    Map.of(first, Map.of("shared", replacement), second, Map.of("new", replacement))));
+            assertSame(original, first.getModel("shared"));
+            assertNull(second.getModel("new"));
+            assertThrows(IllegalStateException.class, () -> other.put(first, Map.of("shared", original)));
+            assertThrows(IllegalStateException.class, () -> other.remove(first, "shared"));
+            owner.close();
+            other.put(first, Map.of("shared", replacement));
+            assertSame(replacement, first.getModel("shared"));
+            other.close();
+            assertNull(first.getModel("shared"));
+        } finally {
+            owner.close(); other.close(); a.close(); b.close();
+        }
+    }
+
+    @Test
+    void pinnedSnapshotsObserveOneGenerationAcrossConcurrentCommits() throws Exception {
+        TestBackend a = new TestBackend(), b = new TestBackend();
+        Adapter adapter = new Adapter(ignored -> new Resource());
+        var first = pipeline(adapter, a, b);
+        var second = pipeline(adapter, a, b);
+        var owner = new ModelPublicationBatch<String>();
+        var coordinator = ModelPublicationCoordinator.global();
+        Model old = instance().getModel(), fresh = instance().getModel();
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            owner.publish(Map.of(first, Map.of("model", old), second, Map.of("model", old)));
+            try (var pinned = coordinator.pin()) {
+                long revision = pinned.modelRevision(first, "model");
+                owner.publish(Map.of(first, Map.of("model", fresh), second, Map.of("model", fresh)));
+                assertSame(old, pinned.getModel(first, "model"));
+                assertSame(old, pinned.getModel(second, "model"));
+                assertEquals(revision, pinned.modelRevision(first, "model"));
+            }
+            Future<?> reads = executor.submit(() -> {
+                for (int i = 0; i < 5000; i++) {
+                    try (var pinned = coordinator.pin()) {
+                        assertSame(pinned.getModel(first, "model"), pinned.getModel(second, "model"));
+                    }
+                }
+            });
+            for (int i = 0; i < 200; i++) {
+                Model model = i % 2 == 0 ? old : fresh;
+                owner.publish(Map.of(first, Map.of("model", model), second, Map.of("model", model)));
+            }
+            reads.get(10, TimeUnit.SECONDS);
+            var closed = coordinator.pin();
+            closed.close();
+            assertThrows(IllegalStateException.class, closed::generationNumber);
+        } finally {
+            owner.close(); a.close(); b.close();
+        }
+    }
+
+    @Test
+    void preparationFailureLeavesGenerationAndOwnershipUnchanged() throws Exception {
+        TestBackend a = new TestBackend(), b = new TestBackend();
+        var pipeline = pipeline(new Adapter(ignored -> new Resource()), a, b);
+        var publication = new ModelPublicationBatch<String>();
+        Model old = instance().getModel(), fresh = instance().getModel();
+        try {
+            publication.put(pipeline, Map.of("model", old));
+            long generation;
+            try (var pin = ModelPublicationCoordinator.global().pin()) { generation = pin.generationNumber(); }
+            try (var registration = ModelPublicationCoordinator.global().onPrepare(preparation -> {
+                throw new IllegalStateException("preparation");
+            })) {
+                assertThrows(IllegalStateException.class, () -> publication.put(pipeline, Map.of("model", fresh)));
+            }
+            assertSame(old, pipeline.getModel("model"));
+            try (var pin = ModelPublicationCoordinator.global().pin()) { assertEquals(generation, pin.generationNumber()); }
+            publication.put(pipeline, Map.of("model", fresh));
+            assertSame(fresh, pipeline.getModel("model"));
+        } finally {
+            publication.close(); a.close(); b.close();
+        }
+    }
+
+    @Test
+    void notificationFailureReportsCommittedGenerationAndRejectsReentrantPublication() throws Exception {
+        TestBackend a = new TestBackend(), b = new TestBackend();
+        var pipeline = pipeline(new Adapter(ignored -> new Resource()), a, b);
+        var publication = new ModelPublicationBatch<String>();
+        Model old = instance().getModel(), fresh = instance().getModel();
+        try {
+            publication.put(pipeline, Map.of("model", old));
+            int[] notifications = {0};
+            try (var listener = pipeline.onModelChanged(change -> {
+                notifications[0]++;
+                assertThrows(IllegalStateException.class, () -> publication.put(pipeline, Map.of("model", old)));
+                throw new IllegalStateException("listener");
+            })) {
+                var failure = assertThrows(ModelPublicationCoordinator.PublicationCommittedException.class,
+                        () -> publication.put(pipeline, Map.of("model", fresh)));
+                try (var pin = ModelPublicationCoordinator.global().pin()) {
+                    assertEquals(pin.generationNumber(), failure.generationNumber());
+                    assertSame(fresh, pin.getModel(pipeline, "model"));
+                }
+                assertEquals(1, notifications[0]);
+            }
+        } finally {
+            publication.close(); a.close(); b.close();
+        }
+    }
+
+    private static ModelPipeLine<String, String> pipeline(Adapter adapter, TestBackend a, TestBackend b) {
         adapter.allowLegacyRegistry = true;
         ModelLoader<Object, String, String> loader = new ModelLoader<>() {
             public Map<String, Model> load(String key, Object input) { throw new UnsupportedOperationException(); }

@@ -11,7 +11,7 @@ import java.util.function.Supplier;
 
 public interface PipeLineRouter {
     
-    void registerRoute(Predicate<ResourceLocation> matcher, Supplier<ModelPipeLine> pipelineSupplier);
+    void registerRoute(Predicate<ResourceLocation> matcher, Supplier<ModelPipeLine<ResourceLocation, ResourceLocation>> pipelineSupplier);
     
-    Map<ModelPipeLine, List<ResourceLocation>> route(Collection<ResourceLocation> resources);
+    Map<ModelPipeLine<ResourceLocation, ResourceLocation>, List<ResourceLocation>> route(Collection<ResourceLocation> resources);
 }

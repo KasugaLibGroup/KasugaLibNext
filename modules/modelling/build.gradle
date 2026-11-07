@@ -263,6 +263,8 @@ neoForge {
             if (windowSmoke.isPresent()) systemProperty 'kasuga.testFrameWindows', windowSmoke.get()
             def headlessSmoke = providers.gradleProperty('kasugaTestHeadless')
             if (headlessSmoke.isPresent()) systemProperty 'kasuga.testHeadless', headlessSmoke.get()
+            def skeletonRelaxationSmoke = providers.gradleProperty('kasugaTestSkeletonRelaxation')
+            if (skeletonRelaxationSmoke.isPresent()) systemProperty 'kasuga.smokeSkeletonRelaxation', skeletonRelaxationSmoke.get()
             def graalShaderSmoke = providers.gradleProperty('kasugaTestGraalShader')
             if (graalShaderSmoke.isPresent()) {
                 systemProperty 'kasuga.testGraalShader', graalShaderSmoke.get()

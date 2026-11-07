@@ -1,12 +1,8 @@
 package lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler;
 
-import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
-import lib.kasuga.rendering.models.uml.dynamic.physics.core.Frames;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.ModelTickLoop;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.PendingTransform;
 import lib.kasuga.rendering.models.uml.structure.Model;
-import org.joml.Quaternionf;
-import org.joml.Vector3f;
 
 import java.util.Collection;
 import java.util.Objects;
@@ -17,7 +13,7 @@ import java.util.Set;
  *
  * <p>This is an active-ragdoll controller, not a second physics solver: it
  * computes spring forces and torques against the freshly evaluated kinematic
- * targets, then Box3D performs all integration, collision and joint solving
+ * targets, each fixed step, then Box3D performs all integration, collision and joint solving
  * during the physics stage. An empty body-name set controls every dynamic
  * body; otherwise only the named bone bodies are affected.</p>
  *
@@ -60,48 +56,24 @@ public final class ActiveRagdollModule implements ModelTickLoopModule {
 
     @Override
     public void tick(Model model, PendingTransform[] transforms, ModelTickLoop loop, float deltaTime) {
-        Settings value = settings;
         if (!enabled) return;
-        SkeletonRagdoll physics = loop.getInstance().getRagdoll();
+        var physics = loop.getInstance().getSkeletonInstance().getRelaxation();
+        if (physics != null && physics.enabled()) physics.captureAnimationTarget();
+    }
+
+    @Override
+    public void beforePhysicsStep(Model model, ModelTickLoop loop) {
+        if (!enabled) return;
+        var physics = loop.getInstance().getSkeletonInstance().getRelaxation();
         if (physics == null || !physics.enabled()) return;
-        // Refresh the kinematic targets so forces chase THIS tick's post-IK pose,
-        // not a stale snapshot from the previous step.
-        physics.evaluateAnimationTarget();
-
-        float omega = (float)(2.0 * Math.PI) * value.frequencyHz;
-        float spring = omega * omega;
-        float damping = 2f * value.dampingRatio * omega;
-        for (SkeletonRagdoll.Body body : physics.bodies()) {
-            if (body.inverseLinearMass() <= 0f || body.bone() == null
-                    || (!bodyBones.isEmpty() && !bodyBones.contains(body.bone().getName()))) continue;
-            float mass = 1f / body.inverseLinearMass();
-            Frames.Pose target = physics.animationTarget(body);
-
-            Vector3f force = new Vector3f(target.position).sub(body.position())
-                    .mul(spring).fma(-damping, body.linearVelocity())
-                    .mul(mass * value.weight);
-            clampLength(force, value.maximumForce);
-            physics.applyForce(body, force);
-
-            Quaternionf rotationError = new Quaternionf(target.rotation)
-                    .mul(new Quaternionf(body.rotation()).invert()).normalize();
-            Vector3f angularError = Frames.quaternionAxis(rotationError)
-                    .mul(Frames.quaternionAngle(rotationError));
-            Vector3f torque = angularError.mul(spring)
-                    .fma(-damping, body.angularVelocity())
-                    .mul(mass * value.weight);
-            clampLength(torque, value.maximumTorque);
-            physics.applyTorque(body, torque);
-        }
+        Settings value = settings;
+        if (value.weight <= 0f) return;
+        lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonPoseDrive.apply(physics, bodyBones,
+                value.frequencyHz, value.dampingRatio, value.maximumForce, value.maximumTorque, value.weight);
     }
 
     @Override
     public void destroy(Model model) {}
-
-    private static void clampLength(Vector3f value, float maximum) {
-        float lengthSquared = value.lengthSquared();
-        if (lengthSquared > maximum * maximum) value.mul(maximum / (float)Math.sqrt(lengthSquared));
-    }
 
     public record Settings(float frequencyHz, float dampingRatio,
                            float maximumForce, float maximumTorque, float weight) {
