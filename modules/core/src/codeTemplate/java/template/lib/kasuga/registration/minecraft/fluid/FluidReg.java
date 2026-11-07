@@ -47,7 +47,6 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
     private final String name;
     private final String flowingName;
     private final FluidTypeReg<?> type;
-    private final FluidType.Properties properties = FluidType.Properties.create();
 
     private DeferredHolder<Fluid, Fluid> sourceHolder;
     private DeferredHolder<Fluid, Fluid> flowingHolder;
@@ -77,8 +76,8 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
     /* ---------------------------------------------------------------- fluid instances */
 
     /**
-     * @param sourceFactory  builds the source fluid from the shared properties.
-     * @param flowingFactory builds the flowing fluid from the shared properties.
+     * @param sourceFactory  builds the source fluid from {@link BaseFlowingFluid.Properties}.
+     * @param flowingFactory builds the flowing fluid from {@link BaseFlowingFluid.Properties}.
      */
     public FluidReg<S, F> instances(Function<BaseFlowingFluid.Properties, S> sourceFactory,
                                     Function<BaseFlowingFluid.Properties, F> flowingFactory) {
@@ -116,9 +115,31 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
 
     /* ---------------------------------------------------------------- fluid type */
 
-    public FluidReg<S, F> properties(Consumer<FluidType.Properties> consumer) {
-        consumer.accept(this.properties);
+    /**
+     * Configures the underlying {@link FluidTypeReg}: density, viscosity, light level, sounds and
+     * the client sprites.
+     * <p>
+     * This is the single entry point for {@code FluidType.Properties} so there is exactly one place
+     * that mutates them, instead of the two overlapping channels the 1.0 API exposed.
+     *
+     * <pre>{@code
+     * FluidReg.create("crude_oil")
+     *     .instances(BaseFlowingFluid.Source::new, BaseFlowingFluid.Flowing::new)
+     *     .numericProperties(2, 3, 10, 100f)
+     *     .type(t -> t.viscosity(3000).density(1400).defaultBucketSounds()
+     *                 .still("block/crude_oil_still").flowing("block/crude_oil_flow"));
+     * }</pre>
+     *
+     * @param configurer receives this registration's fluid type registration.
+     */
+    public FluidReg<S, F> type(Function<FluidTypeReg<?>, FluidTypeReg<?>> configurer) {
+        configurer.apply(this.type);
         return this;
+    }
+
+    /** @return the source fluid id, resolved lazily against the parent registry namespace. */
+    public ResourceLocation typeId() {
+        return this.type.getResourceLocation();
     }
 
     public FluidTypeReg<?> getFluidTypeReg() {
