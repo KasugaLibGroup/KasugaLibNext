@@ -2,6 +2,7 @@ package lib.kasuga.registration.data_driven.property;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import lib.kasuga.utils.json.GsonBindings;
 import com.mojang.logging.LogUtils;
 import lib.kasuga.registration.data_driven.property.compiler.PropertyCompiler;
 import lib.kasuga.registration.data_driven.property.compiler.RLCompiler;
@@ -58,24 +59,22 @@ public class JsonPropertyParser {
     }
 
     private static boolean bool(JsonElement value) {
-        return value.getAsBoolean();
+        return GsonBindings.GSON.fromJson(value, Boolean.class);
     }
 
     private Function<BlockBehaviour.Properties, BlockBehaviour.Properties> parseStrength(JsonElement value) {
         if (value.isJsonArray()) {
-            var arr = value.getAsJsonArray();
-            if (arr.size() == 2) {
-                float destroyTime = arr.get(0).getAsFloat();
-                float explosionResistance = arr.get(1).getAsFloat();
-                return props -> { props.strength(destroyTime, explosionResistance); return props; };
+            float[] values = GsonBindings.GSON.fromJson(value, float[].class);
+            if (values.length == 2) {
+                return props -> { props.strength(values[0], values[1]); return props; };
             }
         }
-        float strength = value.getAsFloat();
+        float strength = GsonBindings.GSON.fromJson(value, Float.class);
         return props -> { props.strength(strength); return props; };
     }
 
     private Function<BlockBehaviour.Properties, BlockBehaviour.Properties> parseMapColor(JsonElement value) {
-        String name = value.getAsString();
+        String name = GsonBindings.GSON.fromJson(value, String.class);
         DyeColor dye = DyeColor.byName(name, null);
         if (dye == null) {
             LOGGER.warn("Unknown map color: {}", name);
@@ -85,7 +84,7 @@ public class JsonPropertyParser {
     }
 
     private Function<BlockBehaviour.Properties, BlockBehaviour.Properties> parseSoundType(JsonElement value) {
-        String name = value.getAsString();
+        String name = GsonBindings.GSON.fromJson(value, String.class);
         SoundType type = soundTypes.get(name);
         if (type == null) {
             LOGGER.warn("Unknown sound type: {}", name);
@@ -160,15 +159,15 @@ public class JsonPropertyParser {
         addCompiler(compilers, "force_solid_on", constructFunction(JsonPropertyParser::bool, props -> { props.forceSolidOn(); return props; }, null));
         addCompiler(compilers, "air", constructFunction(JsonPropertyParser::bool, props -> { props.air(); return props; }, null));
         addCompiler(compilers, "no_terrain_particles", constructFunction(JsonPropertyParser::bool, props -> { props.noTerrainParticles(); return props; }, null));
-        addCompiler(compilers, "friction", (k, v) -> { float f = v.getAsFloat(); return props -> { props.friction(f); return props; }; });
-        addCompiler(compilers, "speed_factor", (k, v) -> { float f = v.getAsFloat(); return props -> { props.speedFactor(f); return props; }; });
-        addCompiler(compilers, "jump_factor", (k, v) -> { float f = v.getAsFloat(); return props -> { props.jumpFactor(f); return props; }; });
-        addCompiler(compilers, "destroy_time", (k, v) -> { float f = v.getAsFloat(); return props -> { props.destroyTime(f); return props; }; });
-        addCompiler(compilers, "explosion_resistance", (k, v) -> { float f = v.getAsFloat(); return props -> { props.explosionResistance(f); return props; }; });
+        addCompiler(compilers, "friction", (k, v) -> { float f = GsonBindings.GSON.fromJson(v, Float.class); return props -> { props.friction(f); return props; }; });
+        addCompiler(compilers, "speed_factor", (k, v) -> { float f = GsonBindings.GSON.fromJson(v, Float.class); return props -> { props.speedFactor(f); return props; }; });
+        addCompiler(compilers, "jump_factor", (k, v) -> { float f = GsonBindings.GSON.fromJson(v, Float.class); return props -> { props.jumpFactor(f); return props; }; });
+        addCompiler(compilers, "destroy_time", (k, v) -> { float f = GsonBindings.GSON.fromJson(v, Float.class); return props -> { props.destroyTime(f); return props; }; });
+        addCompiler(compilers, "explosion_resistance", (k, v) -> { float f = GsonBindings.GSON.fromJson(v, Float.class); return props -> { props.explosionResistance(f); return props; }; });
         addCompiler(compilers, "strength", (k, v) -> parseStrength(v));
         addCompiler(compilers, "map_color", (k, v) -> parseMapColor(v));
         addCompiler(compilers, "sound_type", (k, v) -> parseSoundType(v));
-        addCompiler(compilers, "light_emission", (k, v) -> { int level = v.getAsInt(); return props -> { props.lightLevel(state -> level); return props; }; });
+        addCompiler(compilers, "light_emission", (k, v) -> { int level = GsonBindings.GSON.fromJson(v, Integer.class); return props -> { props.lightLevel(state -> level); return props; }; });
         // TODO: 这里应该加入一个事件，使得其他用户可以在这里加入自己的编译器类型
         return compilers;
     }

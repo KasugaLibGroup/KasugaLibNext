@@ -1,6 +1,8 @@
 package lib.kasuga.registration.data_driven.handler;
 
 import com.google.gson.JsonObject;
+import lib.kasuga.registration.data_driven.json.DataJson;
+import java.util.Objects;
 import com.mojang.logging.LogUtils;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.data_driven.TypeHandler;
@@ -31,13 +33,14 @@ public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
 
     @Override
     public List<JsonObject> extractEmbedded(JsonObject blockJson) {
-        if (!blockJson.has("block_entity")) return null;
-        JsonObject be = blockJson.getAsJsonObject("block_entity").deepCopy();
-        be.addProperty("_parent_block", blockJson.get("id").getAsString());
-        // Top-level state_machine is forwarded to the block entity factory via params (like model/model_name); non-string values are ignored.
-        if (blockJson.has("state_machine") && blockJson.get("state_machine").isJsonPrimitive()) {
-            JsonObject params = be.has("params") ? be.getAsJsonObject("params") : new JsonObject();
-            params.addProperty("state_machine", blockJson.get("state_machine").getAsString());
+        EmbeddedInput input = DataJson.GSON.fromJson(blockJson, EmbeddedInput.class);
+        if (input.blockEntity == null) return null;
+        JsonObject be = input.blockEntity.deepCopy();
+        be.addProperty("_parent_block", Objects.requireNonNull(input.id, "id"));
+        if (input.stateMachine != null && input.stateMachine.isJsonPrimitive()) {
+            ParamsInput definition = DataJson.GSON.fromJson(be, ParamsInput.class);
+            JsonObject params = definition.params == null ? new JsonObject() : definition.params;
+            params.addProperty("state_machine", DataJson.GSON.fromJson(input.stateMachine, String.class));
             be.add("params", params);
         }
         return List.of(be);
@@ -45,11 +48,10 @@ public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
 
     @Override
     public BlockEntityDef parse(JsonObject json) {
-        return new BlockEntityDef(
-            json.get("type").getAsString(),
-            json.get("_parent_block").getAsString(),
-            json.has("params") ? json.getAsJsonObject("params") : null
-        );
+        BlockEntityDef definition = DataJson.GSON.fromJson(json, BlockEntityDef.class);
+        Objects.requireNonNull(definition.beType(), "beType");
+        Objects.requireNonNull(definition.parentBlockId(), "parentBlockId");
+        return definition;
     }
 
     /**
@@ -99,4 +101,10 @@ public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
             LOGGER.debug("Full stack trace", e);
         }
     }
+    private static final class EmbeddedInput {
+        String id;
+        JsonObject blockEntity;
+        com.google.gson.JsonElement stateMachine;
+    }
+    private static final class ParamsInput { JsonObject params; }
 }

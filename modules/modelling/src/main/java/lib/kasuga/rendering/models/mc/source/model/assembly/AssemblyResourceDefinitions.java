@@ -1,8 +1,11 @@
 package lib.kasuga.rendering.models.mc.source.model.assembly;
 
 import com.google.gson.*;
+import com.google.gson.annotations.JsonAdapter;
 import lib.kasuga.rendering.models.mc.api.McModelAssemblies;
 import lib.kasuga.rendering.models.uml.loaders.assembly.ModelAssemblyDefinition;
+import lib.kasuga.utils.json.GsonBindings;
+import lib.kasuga.utils.json.JsonFieldPolicy.NonNullFields;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 
@@ -11,6 +14,10 @@ import java.util.*;
 
 /** Resource-pack JSON adapter; source model format selection stays in the existing resource pipelines. */
 public final class AssemblyResourceDefinitions {
+    private static final Gson GSON = GsonBindings.builder()
+            .registerTypeAdapter(Boolean.class, new GsonBindings.BooleanAdapter())
+            .registerTypeAdapter(int.class, new GsonBindings.IntegerAdapter())
+            .create();
     public static final String DIRECTORY = "model_assemblies";
     private AssemblyResourceDefinitions() {}
 
@@ -22,7 +29,7 @@ public final class AssemblyResourceDefinitions {
             String path = location.getPath().substring(DIRECTORY.length() + 1, location.getPath().length() - 5);
             ResourceLocation id = ResourceLocation.fromNamespaceAndPath(location.getNamespace(), path);
             try (var reader = entry.getValue().openAsReader()) {
-                output.put(id, parse(JsonParser.parseReader(reader).getAsJsonObject()));
+                output.put(id, build(GSON.fromJson(reader, Definition.class)));
             } catch (IOException | RuntimeException failure) {
                 throw new IllegalArgumentException("Invalid model assembly resource " + location, failure);
             }
@@ -31,54 +38,48 @@ public final class AssemblyResourceDefinitions {
     }
 
     public static ModelAssemblyDefinition<McModelAssemblies.Reference> parse(JsonObject json) {
-        JsonObject body = json.getAsJsonObject("body");
-        if (body == null) throw new IllegalArgumentException("assembly body required");
-        var builder = ModelAssemblyDefinition.builder(text(body, "id", "body"), reference(body), part -> configure(body, part));
-        if (json.has("parts")) {
-            for (JsonElement value : json.getAsJsonArray("parts")) {
-                JsonObject component = value.getAsJsonObject();
-                builder.part(text(component, "id", null), reference(component), part -> configure(component, part));
-            }
+        return build(GSON.fromJson(Objects.requireNonNull(json), Definition.class));
+    }
+
+    private static ModelAssemblyDefinition<McModelAssemblies.Reference> build(Definition definition) {
+        if (definition == null || definition.body == null) throw new IllegalArgumentException("assembly body required");
+        Part body = definition.body;
+        var builder = ModelAssemblyDefinition.builder(body.id == null ? "body" : body.id,
+                reference(body), part -> configure(body, part));
+        for (Part component : Objects.requireNonNull(definition.parts, "parts")) {
+            builder.part(component.id, reference(component), part -> configure(component, part));
         }
-        if (json.has("bind_tolerance")) builder.bindTolerance(json.get("bind_tolerance").getAsFloat());
+        if (definition.bindTolerance != null) builder.bindTolerance(definition.bindTolerance);
         return builder.build();
     }
 
-    private static McModelAssemblies.Reference reference(JsonObject json) {
-        String model = text(json, "model", null);
-        if (model == null || model.isBlank()) throw new IllegalArgumentException("model resource required");
-        return new McModelAssemblies.Reference(ResourceLocation.parse(model), text(json, "model_name", null));
+    private static McModelAssemblies.Reference reference(Part part) {
+        if (part.model == null || part.model.isBlank()) throw new IllegalArgumentException("model resource required");
+        return new McModelAssemblies.Reference(ResourceLocation.parse(part.model), part.modelName);
     }
-    private static void configure(JsonObject json, ModelAssemblyDefinition.PartBuilder part) {
-        if (json.has("bone_mappings")) json.getAsJsonObject("bone_mappings").entrySet()
-                .forEach(entry -> part.mapBone(entry.getKey(), entry.getValue().getAsString()));
-        if (json.has("regions")) json.getAsJsonObject("regions").entrySet()
-                .forEach(entry -> part.region(entry.getKey(), indices(entry.getValue().getAsJsonArray())));
-        if (json.has("hide_regions")) {
-            for (var name : json.getAsJsonArray("hide_regions")) part.hideRegions(name.getAsString());
-        }
-        if (json.has("hide_meshes")) part.hideMeshes(indices(json.getAsJsonArray("hide_meshes")));
-        if (json.has("match_body_bones")) part.matchBodyBones(flag(json, "match_body_bones"));
-        if (json.has("include_dynamics")) part.includeDynamics(flag(json, "include_dynamics"));
+    private static void configure(Part input, ModelAssemblyDefinition.PartBuilder part) {
+        input.boneMappings.forEach(part::mapBone);
+        input.regions.forEach(part::region);
+        part.hideRegions(input.hideRegions);
+        part.hideMeshes(input.hideMeshes);
+        if (input.matchBodyBones != null) part.matchBodyBones(input.matchBodyBones);
+        if (input.includeDynamics != null) part.includeDynamics(input.includeDynamics);
     }
-    private static boolean flag(JsonObject json, String name) {
-        JsonPrimitive value = json.getAsJsonPrimitive(name);
-        if (!value.isBoolean()) throw new IllegalArgumentException(name + " must be boolean");
-        return value.getAsBoolean();
+
+    @NonNullFields
+    private static final class Definition {
+        Part body;
+        List<Part> parts = List.of();
+        Float bindTolerance;
     }
-    private static int[] indices(JsonArray json) {
-        int[] indices = new int[json.size()];
-        for (int i = 0; i < indices.length; i++) {
-            JsonPrimitive value = json.get(i).getAsJsonPrimitive();
-            if (!value.isNumber()) throw new IllegalArgumentException("mesh indices must be integers");
-            indices[i] = value.getAsBigDecimal().intValueExact();
-        }
-        return indices;
-    }
-    private static String text(JsonObject json, String name, String fallback) {
-        if (!json.has(name)) return fallback;
-        JsonPrimitive value = json.getAsJsonPrimitive(name);
-        if (!value.isString()) throw new IllegalArgumentException(name + " must be a string");
-        return value.getAsString();
+
+    @NonNullFields
+    private static final class Part {
+        @JsonAdapter(GsonBindings.StringAdapter.class) String id, model, modelName;
+        Map<String, String> boneMappings = Map.of();
+        Map<String, int[]> regions = Map.of();
+        String[] hideRegions = new String[0];
+        int[] hideMeshes = new int[0];
+        Boolean matchBodyBones, includeDynamics;
     }
 }

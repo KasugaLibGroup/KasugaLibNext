@@ -3,6 +3,10 @@ package lib.kasuga.registration.data_driven.builder;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import lib.kasuga.utils.json.GsonBindings;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.annotations.JsonAdapter;
+import com.google.gson.annotations.SerializedName;
 import com.mojang.logging.LogUtils;
 import lib.kasuga.content.graph.GraphCycleDetector;
 import lib.kasuga.registration.data_driven.TypeHandler;
@@ -233,11 +237,12 @@ public class JsonTreeBuilder {
             addLoadingError(modId, new IllegalStateException(msg));
         }
 
-        List<String> onRegisterPaths = readPathArray(modId, label, document, ON_REGISTER);
-        List<String> onReloadPaths = readPathArray(modId, label, document, ON_RELOAD);
+        IndexInput input = GSON.fromJson(document, IndexInput.class);
+        List<String> onRegisterPaths = readPathArray(modId, label, input.onRegister, ON_REGISTER);
+        List<String> onReloadPaths = readPathArray(modId, label, input.onReload, ON_RELOAD);
 
-        boolean declaredOnRegister = document.has(ON_REGISTER) && document.get(ON_REGISTER).isJsonArray();
-        boolean declaredOnReload = document.has(ON_RELOAD) && document.get(ON_RELOAD).isJsonArray();
+        boolean declaredOnRegister = input.onRegister.array;
+        boolean declaredOnReload = input.onReload.array;
 
         if (!declaredOnRegister && !declaredOnReload) {
             String msg = "Index file '" + label + "' for mod '" + modId
@@ -255,28 +260,45 @@ public class JsonTreeBuilder {
      * Reads one of the two path arrays of a manifest. A field that is present but not an array, or an
      * entry that is not a string, is reported without aborting the sibling field (D3).
      */
-    private static List<String> readPathArray(String modId, String label, JsonObject document, String field) {
-        if (!document.has(field)) return List.of();
-        JsonElement element = document.get(field);
-        if (!element.isJsonArray()) {
+    private static List<String> readPathArray(String modId, String label, PathList input, String field) {
+        if (!input.present) return List.of();
+        if (!input.array) {
             String msg = "Index file '" + label + "' for mod '" + modId
                     + "': field '" + field + "' must be an array of content-file paths";
             LOGGER.error(msg);
             addLoadingError(modId, new IllegalStateException(msg));
             return List.of();
         }
-        List<String> paths = new ArrayList<>();
-        for (JsonElement entry : element.getAsJsonArray()) {
-            if (!entry.isJsonPrimitive() || !entry.getAsJsonPrimitive().isString()) {
-                String msg = "Index file '" + label + "' for mod '" + modId
-                        + "': every '" + field + "' entry must be a string path";
-                LOGGER.error(msg);
-                addLoadingError(modId, new IllegalStateException(msg));
-                continue;
-            }
-            paths.add(entry.getAsString());
+        for (int index = 0; index < input.invalidEntries; index++) {
+            String msg = "Index file '" + label + "' for mod '" + modId
+                    + "': every '" + field + "' entry must be a string path";
+            LOGGER.error(msg);
+            addLoadingError(modId, new IllegalStateException(msg));
         }
-        return paths;
+        return input.paths;
+    }
+
+    private record PathList(boolean present, boolean array, List<String> paths, int invalidEntries) {
+        static PathList absent() { return new PathList(false, false, List.of(), 0); }
+    }
+    private static final class IndexInput {
+        @SerializedName("on_register") @JsonAdapter(value = PathListAdapter.class, nullSafe = false)
+        PathList onRegister = PathList.absent();
+        @SerializedName("on_reload") @JsonAdapter(value = PathListAdapter.class, nullSafe = false)
+        PathList onReload = PathList.absent();
+    }
+    private static final class PathListAdapter implements JsonDeserializer<PathList> {
+        @Override public PathList deserialize(JsonElement json, java.lang.reflect.Type type,
+                com.google.gson.JsonDeserializationContext context) {
+            if (!json.isJsonArray()) return new PathList(true, false, List.of(), 0);
+            List<String> paths = new ArrayList<>();
+            int invalid = 0;
+            for (JsonElement entry : json.getAsJsonArray()) {
+                try { paths.add(GsonBindings.STRICT.fromJson(entry, String.class)); }
+                catch (com.google.gson.JsonParseException failure) { invalid++; }
+            }
+            return new PathList(true, true, List.copyOf(paths), invalid);
+        }
     }
 
     /**

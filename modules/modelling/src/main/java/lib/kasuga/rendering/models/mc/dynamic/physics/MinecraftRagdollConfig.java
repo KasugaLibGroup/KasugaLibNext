@@ -1,9 +1,9 @@
 package lib.kasuga.rendering.models.mc.dynamic.physics;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
+import lib.kasuga.utils.json.GsonBindings;
+import lib.kasuga.utils.json.JsonFieldPolicy.NonNullFields;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import lib.kasuga.rendering.models.uml.dynamic.physics.ModelPhysicsScene;
@@ -57,141 +57,179 @@ public record MinecraftRagdollConfig(
         Resource resource = manager.getResource(location)
                 .orElseThrow(() -> new IOException("Missing ragdoll config: " + location));
         try (Reader reader = resource.openAsReader()) {
-            return fromJson(com.google.gson.JsonParser.parseReader(reader).getAsJsonObject());
+            return build(GsonBindings.GSON.fromJson(reader, Input.class));
         } catch (RuntimeException exception) {
             throw new IOException("Invalid ragdoll config: " + location, exception);
         }
     }
 
     public static MinecraftRagdollConfig fromJson(JsonObject root) {
-        Objects.requireNonNull(root, "root");
-        JsonArray bodyArray = requiredArray(root, "bodies");
-        if (bodyArray.isEmpty()) throw new JsonParseException("bodies must not be empty");
-        Map<SkeletonRagdoll.BodyRole, SkeletonRagdoll.SwingTwistLimit> roleLimits = roleLimits(root);
-        List<SkeletonRagdoll.Registration> registrations = new ArrayList<>(bodyArray.size());
-        for (JsonElement element : bodyArray) {
-            if (!element.isJsonObject()) throw new JsonParseException("body entry must be an object");
-            JsonObject body = element.getAsJsonObject();
-            int rigidBody = requiredInt(body, "rigid_body");
-            int parent = integer(body, "parent", -1);
-            SkeletonRagdoll.BodyRole role;
-            try {
-                role = SkeletonRagdoll.BodyRole.valueOf(requiredString(body, "role")
-                        .toUpperCase(Locale.ROOT));
-            } catch (IllegalArgumentException exception) {
-                throw new JsonParseException("Unknown body role in entry " + rigidBody, exception);
-            }
-            JsonElement minimum = body.get("rotation_min_degrees");
-            JsonElement maximum = body.get("rotation_max_degrees");
-            if ((minimum == null) != (maximum == null)) {
-                throw new JsonParseException("custom rotation limits require both min and max");
-            }
-            boolean hasSwing = body.has("max_swing_degrees")
-                    || body.has("min_twist_degrees") || body.has("max_twist_degrees");
-            if (hasSwing && (minimum != null || maximum != null)) {
-                throw new JsonParseException("body limit must use either swing/twist or Euler fields");
-            }
-            if (hasSwing) {
-                if (!body.has("max_swing_degrees") || !body.has("min_twist_degrees")
-                        || !body.has("max_twist_degrees")) {
-                    throw new JsonParseException("swing/twist limit requires max swing and both twist bounds");
-                }
-                registrations.add(new SkeletonRagdoll.Registration(rigidBody, parent, role,
-                        new SkeletonRagdoll.SwingTwistLimit(
-                                radians(requiredDecimal(body, "max_swing_degrees")),
-                                radians(requiredDecimal(body, "min_twist_degrees")),
-                                radians(requiredDecimal(body, "max_twist_degrees")),
-                                decimal(body, "limit_stiffness", 0.58f))));
-            } else if (minimum == null) {
-                SkeletonRagdoll.SwingTwistLimit roleLimit = roleLimits.get(role);
-                registrations.add(roleLimit == null
-                        ? new SkeletonRagdoll.Registration(rigidBody, parent, role)
-                        : new SkeletonRagdoll.Registration(rigidBody, parent, role, roleLimit));
-            } else {
-                registrations.add(new SkeletonRagdoll.Registration(rigidBody, parent, role,
-                        radians(vector(minimum, "rotation_min_degrees")),
-                        radians(vector(maximum, "rotation_max_degrees"))));
-            }
-        }
-
-        JsonObject simulation = object(root, "simulation");
-        JsonObject collision = object(root, "collision");
-        JsonObject environment = object(root, "environment");
-        JsonObject initial = object(root, "initial_state");
-        JsonObject dragging = object(root, "dragging");
-        JsonObject sleeping = object(root, "sleeping");
-        return new MinecraftRagdollConfig(
-                new SkeletonRagdoll.Profile(registrations,
-                        bool(root, "include_secondary_bodies", false)),
-                new Simulation(
-                        decimal(simulation, "hertz", 120f),
-                        integer(simulation, "substeps", RigidBodyWorld.PROFILE_SUBSTEP_COUNT),
-                        integer(simulation, "solver_iterations", 12),
-                        decimal(simulation, "constraint_hertz", 60f),
-                        decimal(simulation, "constraint_damping_ratio", 2f),
-                        decimal(simulation, "max_linear_speed", 100f),
-                        decimal(simulation, "max_angular_speed", 50f),
-                        integer(simulation, "max_fixed_steps_per_update", 12),
-                        vector(simulation, "gravity", new Vector3f(0f, -9.80665f, 0f))),
-                new Collision(
-                        bool(collision, "enabled", true),
-                        bool(collision, "self_collision", false),
-                        bool(collision, "continuous", true)),
-                new Environment(
-                        bool(environment, "enabled", true),
-                        integer(environment, "refresh_interval_ticks", 1),
-                        decimal(environment, "padding", 0.25f),
-                        decimal(environment, "friction", 0.8f),
-                        decimal(environment, "restitution", 0f),
-                        integer(environment, "max_scanned_blocks", 4096)),
-                new InitialState(
-                        vector(initial, "offset", new Vector3f()),
-                        vector(initial, "root_linear_velocity", new Vector3f()),
-                        vector(initial, "root_angular_velocity", new Vector3f())),
-                new Dragging(
-                        bool(dragging, "enabled", true),
-                        integer(dragging, "mouse_button", 0),
-                        decimal(dragging, "max_distance", 16f),
-                        new DragSettings(
-                                decimal(dragging, "position_slop", 0.002f),
-                                decimal(dragging, "position_stiffness", 0.16f),
-                                decimal(dragging, "max_position_correction", 0.012f),
-                                decimal(dragging, "bias_rate", 7f),
-                                decimal(dragging, "max_bias_speed", 4f),
-                                decimal(dragging, "max_target_speed", 6f),
-                                decimal(dragging, "max_velocity_impulse", 0.65f),
-                                decimal(dragging, "relative_linear_damping", 12.643f),
-                                decimal(dragging, "relative_angular_damping", 4.899f))),
-                updateMode(simulation, "update_mode", UpdateMode.RENDER_FRAME),
-                new Sleeping(
-                        bool(sleeping, "enabled", true),
-                        decimal(sleeping, "linear_speed", 0.04f),
-                        decimal(sleeping, "angular_speed", 0.25f),
-                        decimal(sleeping, "delay_seconds", 0.75f)));
+        return build(GsonBindings.GSON.fromJson(Objects.requireNonNull(root, "root"), Input.class));
     }
 
-    private static Map<SkeletonRagdoll.BodyRole, SkeletonRagdoll.SwingTwistLimit> roleLimits(JsonObject root) {
-        EnumMap<SkeletonRagdoll.BodyRole, SkeletonRagdoll.SwingTwistLimit> result =
-                new EnumMap<>(SkeletonRagdoll.BodyRole.class);
-        JsonObject limits = object(root, "limits");
-        for (Map.Entry<String, JsonElement> entry : limits.entrySet()) {
-            if (!entry.getValue().isJsonObject()) {
-                throw new JsonParseException("limit for " + entry.getKey() + " must be an object");
+    private static MinecraftRagdollConfig build(Input input) {
+        Objects.requireNonNull(input, "ragdoll config");
+        if (input.bodies == null || input.bodies.isEmpty()) throw new JsonParseException("bodies must not be empty");
+        Map<SkeletonRagdoll.BodyRole, SkeletonRagdoll.SwingTwistLimit> limits = new EnumMap<>(SkeletonRagdoll.BodyRole.class);
+        input.limits.forEach((role, limit) -> limits.put(role(role), limit.build(0.7f)));
+        List<SkeletonRagdoll.Registration> registrations = new ArrayList<>(input.bodies.size());
+        for (BodyInput body : input.bodies) {
+            int rigidBody = Objects.requireNonNull(body.rigidBody, "rigid_body");
+            SkeletonRagdoll.BodyRole role = role(body.role);
+            boolean euler = body.rotationMinDegrees != null || body.rotationMaxDegrees != null;
+            boolean swing = body.maxSwingDegrees != null || body.minTwistDegrees != null || body.maxTwistDegrees != null;
+            if (euler && swing) throw new JsonParseException("body limit must use either swing/twist or Euler fields");
+            if (swing) {
+                registrations.add(new SkeletonRagdoll.Registration(rigidBody, body.parent, role, body.build(0.58f)));
+            } else if (euler) {
+                registrations.add(new SkeletonRagdoll.Registration(rigidBody, body.parent, role,
+                        radians(vector(body.rotationMinDegrees, "rotation_min_degrees")),
+                        radians(vector(body.rotationMaxDegrees, "rotation_max_degrees"))));
+            } else {
+                var limit = limits.get(role);
+                registrations.add(limit == null ? new SkeletonRagdoll.Registration(rigidBody, body.parent, role)
+                        : new SkeletonRagdoll.Registration(rigidBody, body.parent, role, limit));
             }
-            SkeletonRagdoll.BodyRole role;
-            try {
-                role = SkeletonRagdoll.BodyRole.valueOf(entry.getKey().toUpperCase(Locale.ROOT));
-            } catch (IllegalArgumentException exception) {
-                throw new JsonParseException("Unknown body role limit: " + entry.getKey(), exception);
-            }
-            JsonObject limit = entry.getValue().getAsJsonObject();
-            result.put(role, new SkeletonRagdoll.SwingTwistLimit(
-                    radians(requiredDecimal(limit, "max_swing_degrees")),
-                    radians(requiredDecimal(limit, "min_twist_degrees")),
-                    radians(requiredDecimal(limit, "max_twist_degrees")),
-                    decimal(limit, "limit_stiffness", 0.7f)));
         }
-        return result;
+        return new MinecraftRagdollConfig(
+                new SkeletonRagdoll.Profile(registrations,
+                        input.includeSecondaryBodies),
+                new Simulation(
+                        input.simulation.hertz,
+                        input.simulation.substeps,
+                        input.simulation.solverIterations,
+                        input.simulation.constraintHertz,
+                        input.simulation.constraintDampingRatio,
+                        input.simulation.maxLinearSpeed,
+                        input.simulation.maxAngularSpeed,
+                        input.simulation.maxFixedStepsPerUpdate,
+                        vector(input.simulation.gravity, "gravity")),
+                new Collision(
+                        input.collision.enabled,
+                        input.collision.selfCollision,
+                        input.collision.continuous),
+                new Environment(
+                        input.environment.enabled,
+                        input.environment.refreshIntervalTicks,
+                        input.environment.padding,
+                        input.environment.friction,
+                        input.environment.restitution,
+                        input.environment.maxScannedBlocks),
+                new InitialState(
+                        vector(input.initialState.offset, "offset"),
+                        vector(input.initialState.rootLinearVelocity, "root_linear_velocity"),
+                        vector(input.initialState.rootAngularVelocity, "root_angular_velocity")),
+                new Dragging(
+                        input.dragging.enabled,
+                        input.dragging.mouseButton,
+                        input.dragging.maxDistance,
+                        new DragSettings(
+                                input.dragging.positionSlop,
+                                input.dragging.positionStiffness,
+                                input.dragging.maxPositionCorrection,
+                                input.dragging.biasRate,
+                                input.dragging.maxBiasSpeed,
+                                input.dragging.maxTargetSpeed,
+                                input.dragging.maxVelocityImpulse,
+                                input.dragging.relativeLinearDamping,
+                                input.dragging.relativeAngularDamping)),
+                UpdateMode.valueOf(input.simulation.updateMode.toUpperCase(Locale.ROOT)),
+                new Sleeping(
+                        input.sleeping.enabled,
+                        input.sleeping.linearSpeed,
+                        input.sleeping.angularSpeed,
+                        input.sleeping.delaySeconds));
+    }
+
+    private static SkeletonRagdoll.BodyRole role(String role) {
+        try { return SkeletonRagdoll.BodyRole.valueOf(Objects.requireNonNull(role, "role").toUpperCase(Locale.ROOT)); }
+        catch (IllegalArgumentException failure) { throw new JsonParseException("Unknown body role: " + role, failure); }
+    }
+
+    @NonNullFields
+    private static class LimitInput {
+        Float maxSwingDegrees, minTwistDegrees, maxTwistDegrees, limitStiffness;
+        SkeletonRagdoll.SwingTwistLimit build(float defaultStiffness) {
+            return new SkeletonRagdoll.SwingTwistLimit(
+                    radians(Objects.requireNonNull(maxSwingDegrees, "max_swing_degrees")),
+                    radians(Objects.requireNonNull(minTwistDegrees, "min_twist_degrees")),
+                    radians(Objects.requireNonNull(maxTwistDegrees, "max_twist_degrees")),
+                    limitStiffness == null ? defaultStiffness : limitStiffness);
+        }
+    }
+    @NonNullFields
+    private static final class BodyInput extends LimitInput {
+        Integer rigidBody, parent = -1;
+        String role;
+        float[] rotationMinDegrees, rotationMaxDegrees;
+    }
+    @NonNullFields
+    private static final class Input {
+        List<BodyInput> bodies;
+        Map<String, LimitInput> limits = Map.of();
+        Boolean includeSecondaryBodies = false;
+        SimulationInput simulation = new SimulationInput();
+        CollisionInput collision = new CollisionInput();
+        EnvironmentInput environment = new EnvironmentInput();
+        InitialInput initialState = new InitialInput();
+        DraggingInput dragging = new DraggingInput();
+        SleepingInput sleeping = new SleepingInput();
+    }
+    @NonNullFields
+    private static final class SimulationInput {
+        Float hertz = 120f;
+        Integer substeps = RigidBodyWorld.PROFILE_SUBSTEP_COUNT;
+        Integer solverIterations = 12;
+        Float constraintHertz = 60f;
+        Float constraintDampingRatio = 2f;
+        Float maxLinearSpeed = 100f;
+        Float maxAngularSpeed = 50f;
+        Integer maxFixedStepsPerUpdate = 12;
+        float[] gravity = new float[]{0f, -9.80665f, 0f};
+        String updateMode = "RENDER_FRAME";
+    }
+    @NonNullFields
+    private static final class CollisionInput {
+        Boolean enabled = true;
+        Boolean selfCollision = false;
+        Boolean continuous = true;
+    }
+    @NonNullFields
+    private static final class EnvironmentInput {
+        Boolean enabled = true;
+        Integer refreshIntervalTicks = 1;
+        Float padding = 0.25f;
+        Float friction = 0.8f;
+        Float restitution = 0f;
+        Integer maxScannedBlocks = 4096;
+    }
+    @NonNullFields
+    private static final class InitialInput {
+        float[] offset = new float[]{0f, 0f, 0f};
+        float[] rootLinearVelocity = new float[]{0f, 0f, 0f};
+        float[] rootAngularVelocity = new float[]{0f, 0f, 0f};
+    }
+    @NonNullFields
+    private static final class DraggingInput {
+        Boolean enabled = true;
+        Integer mouseButton = 0;
+        Float maxDistance = 16f;
+        Float positionSlop = 0.002f;
+        Float positionStiffness = 0.16f;
+        Float maxPositionCorrection = 0.012f;
+        Float biasRate = 7f;
+        Float maxBiasSpeed = 4f;
+        Float maxTargetSpeed = 6f;
+        Float maxVelocityImpulse = 0.65f;
+        Float relativeLinearDamping = 12.643f;
+        Float relativeAngularDamping = 4.899f;
+    }
+    @NonNullFields
+    private static final class SleepingInput {
+        Boolean enabled = true;
+        Float linearSpeed = 0.04f;
+        Float angularSpeed = 0.25f;
+        Float delaySeconds = 0.75f;
     }
 
     /**
@@ -358,76 +396,9 @@ public record MinecraftRagdollConfig(
         }
     }
 
-    private static JsonObject object(JsonObject parent, String name) {
-        JsonElement value = parent.get(name);
-        if (value == null) return new JsonObject();
-        if (!value.isJsonObject()) throw new JsonParseException(name + " must be an object");
-        return value.getAsJsonObject();
-    }
-
-    private static JsonArray requiredArray(JsonObject parent, String name) {
-        JsonElement value = parent.get(name);
-        if (value == null || !value.isJsonArray()) throw new JsonParseException(name + " must be an array");
-        return value.getAsJsonArray();
-    }
-
-    private static int requiredInt(JsonObject parent, String name) {
-        JsonElement value = parent.get(name);
-        if (value == null || !value.isJsonPrimitive()) throw new JsonParseException(name + " must be an integer");
-        return value.getAsInt();
-    }
-
-    private static String requiredString(JsonObject parent, String name) {
-        JsonElement value = parent.get(name);
-        if (value == null || !value.isJsonPrimitive()) throw new JsonParseException(name + " must be a string");
-        return value.getAsString();
-    }
-
-    private static int integer(JsonObject parent, String name, int fallback) {
-        JsonElement value = parent.get(name);
-        return value == null ? fallback : value.getAsInt();
-    }
-
-    private static float decimal(JsonObject parent, String name, float fallback) {
-        JsonElement value = parent.get(name);
-        return value == null ? fallback : value.getAsFloat();
-    }
-
-    private static float requiredDecimal(JsonObject parent, String name) {
-        JsonElement value = parent.get(name);
-        if (value == null || !value.isJsonPrimitive()) {
-            throw new JsonParseException(name + " must be a number");
-        }
-        return value.getAsFloat();
-    }
-
-    private static boolean bool(JsonObject parent, String name, boolean fallback) {
-        JsonElement value = parent.get(name);
-        return value == null ? fallback : value.getAsBoolean();
-    }
-
-    private static UpdateMode updateMode(JsonObject parent, String name, UpdateMode fallback) {
-        JsonElement value = parent.get(name);
-        if (value == null) return fallback;
-        try {
-            return UpdateMode.valueOf(value.getAsString().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException exception) {
-            throw new JsonParseException("Unknown simulation update mode: " + value, exception);
-        }
-    }
-
-    private static Vector3f vector(JsonObject parent, String name, Vector3f fallback) {
-        JsonElement value = parent.get(name);
-        return value == null ? new Vector3f(fallback) : vector(value, name);
-    }
-
-    private static Vector3f vector(JsonElement element, String name) {
-        if (!element.isJsonArray() || element.getAsJsonArray().size() != 3) {
-            throw new JsonParseException(name + " must contain exactly three numbers");
-        }
-        JsonArray array = element.getAsJsonArray();
-        return new Vector3f(array.get(0).getAsFloat(), array.get(1).getAsFloat(),
-                array.get(2).getAsFloat());
+    private static Vector3f vector(float[] values, String name) {
+        if (values == null || values.length != 3) throw new JsonParseException(name + " must contain exactly three numbers");
+        return new Vector3f(values);
     }
 
     private static Vector3f radians(Vector3f degrees) {

@@ -1,6 +1,6 @@
 package lib.kasuga.rendering.models.mc.typo.bbmodel;
 
-import com.google.gson.JsonArray;
+import lib.kasuga.rendering.models.mc.util.ModelJson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
@@ -139,17 +139,13 @@ public record BbModelAnimation(
 
         static DataPoint parse(JsonElement element) {
             if (element.isJsonArray()) {
-                JsonArray array = element.getAsJsonArray();
-                String x = String.valueOf(array.get(0).getAsFloat());
-                String y = String.valueOf(array.get(1).getAsFloat());
-                String z = String.valueOf(array.get(2).getAsFloat());
-                return new DataPoint(new Vector3f(Float.parseFloat(x), Float.parseFloat(y), Float.parseFloat(z)), x, y, z);
+                float[] values = ModelJson.GSON.fromJson(element, float[].class);
+                String x = String.valueOf(values[0]), y = String.valueOf(values[1]), z = String.valueOf(values[2]);
+                return new DataPoint(new Vector3f(values), x, y, z);
             }
             if (element.isJsonObject()) {
-                JsonObject object = element.getAsJsonObject();
-                String x = getString(object, "x", "0");
-                String y = getString(object, "y", "0");
-                String z = getString(object, "z", "0");
+                PointInput input = ModelJson.GSON.fromJson(element, PointInput.class);
+                String x = input.x == null ? "0" : input.x, y = input.y == null ? "0" : input.y, z = input.z == null ? "0" : input.z;
                 return new DataPoint(new Vector3f(parseValue(x), parseValue(y), parseValue(z)), x, y, z);
             }
             return ZERO;
@@ -170,66 +166,52 @@ public record BbModelAnimation(
     }
 
     static BbModelAnimation parse(JsonObject json) {
-        String name = getString(json, "name", "");
-        Loop loop = Loop.get(getString(json, "loop", "once"));
-        float length = json.has("length") ? json.get("length").getAsFloat() : 0f;
-        int snapping = json.has("snapping") ? json.get("snapping").getAsInt() : 24;
-        String animTimeUpdate = getString(json, "anim_time_update", "");
-
+        Input input = ModelJson.GSON.fromJson(json, Input.class);
         List<BoneAnim> bones = new ArrayList<>();
-        if (json.has("animators")) {
-            JsonObject animators = json.getAsJsonObject("animators");
-            for (Map.Entry<String, JsonElement> entry : animators.entrySet()) {
-                JsonObject animator = entry.getValue().getAsJsonObject();
-                String bone = getString(animator, "name", "");
-                if (bone.isEmpty()) continue;
-                Map<Channel, List<Keyframe>> byChannel = new HashMap<>();
-                if (animator.has("keyframes")) {
-                    for (JsonElement keyframeElement : animator.getAsJsonArray("keyframes")) {
-                        JsonObject keyframeObject = keyframeElement.getAsJsonObject();
-                        Channel channel = Channel.get(getString(keyframeObject, "channel", ""));
-                        if (channel == null) continue;
-                        byChannel.computeIfAbsent(channel, ignored -> new ArrayList<>()).add(parseKeyframe(keyframeObject));
-                    }
-                }
-                for (List<Keyframe> keyframes : byChannel.values()) {
-                    keyframes.sort(Comparator.comparingDouble(Keyframe::time));
-                }
-                if (byChannel.isEmpty()) continue;
-                Map<Channel, List<Keyframe>> channels = new HashMap<>();
-                byChannel.forEach((channel, keyframes) -> channels.put(channel, List.copyOf(keyframes)));
-                bones.add(new BoneAnim(bone, Map.copyOf(channels)));
+        for (AnimatorInput animator : input.animators.values()) {
+            if (animator.name == null || animator.name.isEmpty()) continue;
+            Map<Channel, List<Keyframe>> byChannel = new HashMap<>();
+            for (KeyframeInput keyframe : animator.keyframes) {
+                Channel channel = Channel.get(keyframe.channel);
+                if (channel == null) continue;
+                byChannel.computeIfAbsent(channel, ignored -> new ArrayList<>()).add(keyframe.build());
             }
+            if (byChannel.isEmpty()) continue;
+            Map<Channel, List<Keyframe>> channels = new HashMap<>();
+            byChannel.forEach((channel, keyframes) -> {
+                keyframes.sort(Comparator.comparingDouble(Keyframe::time));
+                channels.put(channel, List.copyOf(keyframes));
+            });
+            bones.add(new BoneAnim(animator.name, Map.copyOf(channels)));
         }
-        return new BbModelAnimation(name, loop, length, snapping, animTimeUpdate, List.copyOf(bones));
+        return new BbModelAnimation(input.name == null ? "" : input.name, Loop.get(input.loop), input.length,
+                input.snapping, input.animTimeUpdate == null ? "" : input.animTimeUpdate, List.copyOf(bones));
     }
 
-    private static Keyframe parseKeyframe(JsonObject json) {
-        float time = json.has("time") ? json.get("time").getAsFloat() : 0f;
-        Interpolation interpolation = Interpolation.get(getString(json, "interpolation", ""));
-        List<DataPoint> points = new ArrayList<>(2);
-        if (json.has("data_points")) {
-            for (JsonElement point : json.getAsJsonArray("data_points")) {
-                points.add(DataPoint.parse(point));
-            }
+    private static final class Input {
+        String name = "", loop = "once", animTimeUpdate = "";
+        Float length = 0f;
+        Integer snapping = 24;
+        Map<String, AnimatorInput> animators = Map.of();
+    }
+    private static final class AnimatorInput {
+        String name = "";
+        List<KeyframeInput> keyframes = List.of();
+    }
+    private static final class PointInput { String x = "0", y = "0", z = "0"; }
+    private static final class KeyframeInput {
+        String channel = "", interpolation = "";
+        Float time = 0f;
+        List<JsonElement> dataPoints = List.of();
+        Vector3f bezierLeftTime, bezierLeftValue, bezierRightTime, bezierRightValue;
+        Keyframe build() {
+            List<DataPoint> points = new ArrayList<>(2);
+            dataPoints.forEach(point -> points.add(DataPoint.parse(point)));
+            if (points.isEmpty()) points.add(DataPoint.ZERO);
+            if (points.size() == 1) points.add(points.get(0));
+            BezierHandle left = bezierLeftTime == null || bezierLeftValue == null ? null : new BezierHandle(bezierLeftTime, bezierLeftValue);
+            BezierHandle right = bezierRightTime == null || bezierRightValue == null ? null : new BezierHandle(bezierRightTime, bezierRightValue);
+            return new Keyframe(time, Interpolation.get(interpolation), points.get(0), points.get(1), left, right);
         }
-        if (points.isEmpty()) points.add(DataPoint.ZERO);
-        if (points.size() == 1) points.add(points.get(0));
-        BezierHandle left = parseHandle(json, "bezier_left_time", "bezier_left_value");
-        BezierHandle right = parseHandle(json, "bezier_right_time", "bezier_right_value");
-        return new Keyframe(time, interpolation, points.get(0), points.get(1), left, right);
-    }
-
-    private static @Nullable BezierHandle parseHandle(JsonObject json, String timeKey, String valueKey) {
-        if (!json.has(timeKey) || !json.has(valueKey)) return null;
-        return new BezierHandle(vector3(json.getAsJsonArray(timeKey)), vector3(json.getAsJsonArray(valueKey)));
-    }
-
-    private static Vector3f vector3(JsonArray values) {
-        return new Vector3f(values.get(0).getAsFloat(), values.get(1).getAsFloat(), values.get(2).getAsFloat());
-    }
-
-    private static String getString(JsonObject object, String key, String fallback) {
-        return object.has(key) && !object.get(key).isJsonNull() ? object.get(key).getAsString() : fallback;
     }
 }

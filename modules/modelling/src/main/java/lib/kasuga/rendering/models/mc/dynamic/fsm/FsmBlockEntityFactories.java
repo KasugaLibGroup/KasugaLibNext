@@ -6,6 +6,10 @@ import lib.kasuga.rendering.models.uml.dynamic.fsm.sync.*;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.codec.*;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.function.*;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.annotations.JsonAdapter;
+import lib.kasuga.utils.json.GsonBindings;
 import com.mojang.logging.LogUtils;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.factory.FactoryRegistry;
@@ -57,16 +61,17 @@ public final class FsmBlockEntityFactories {
     }
 
     private static Reg<?, ?> createFsmBeReg(String id, Supplier<Block[]> validBlocks, @Nullable JsonObject params) {
-        Id machineId = readId(params, "state_machine");
+        Params input = params == null ? new Params() : GsonBindings.GSON.fromJson(params, Params.class);
+        Id machineId = input.stateMachine == null ? null : Id.tryParse(input.stateMachine);
         if (machineId == null) {
             LOGGER.warn("[fsm_be] '{}' has no valid 'state_machine' param; its block entity will not run a machine", id);
         }
-        ResourceLocation modelLoc = readResourceLocation(params, "model");
+        ResourceLocation modelLoc = input.model == null ? null : ResourceLocation.tryParse(input.model);
         // Logic-only machines intentionally omit a model. A supplied but invalid id is still a warning.
         if (modelLoc == null && params != null && params.has("model")) {
             LOGGER.warn("[fsm_be] '{}' has no valid 'model' param; its block entity will not load a model", id);
         }
-        String modelName = readString(params, "model_name");
+        String modelName = input.modelName;
         BlockEntityReg<AnimationBlockEntity> reg = new BlockEntityReg<>(id,
                 r -> (pos, state) -> new AnimationBlockEntity(r.getEntry(), pos, state, machineId, modelLoc, modelName));
         reg.withProperty(Collection.class,
@@ -74,27 +79,15 @@ public final class FsmBlockEntityFactories {
         return reg;
     }
 
-    @Nullable
-    private static Id readId(@Nullable JsonObject params, String key) {
-        if (params == null || !params.has(key) || !params.get(key).isJsonPrimitive()) {
-            return null;
-        }
-        return Id.tryParse(params.get(key).getAsString());
+    private static final class Params {
+        @JsonAdapter(PrimitiveString.class) String stateMachine;
+        @JsonAdapter(PrimitiveString.class) String model;
+        @JsonAdapter(PrimitiveString.class) String modelName;
     }
-
-    @Nullable
-    private static ResourceLocation readResourceLocation(@Nullable JsonObject params, String key) {
-        if (params == null || !params.has(key) || !params.get(key).isJsonPrimitive()) {
-            return null;
+    private static final class PrimitiveString implements JsonDeserializer<String> {
+        @Override public String deserialize(JsonElement json, java.lang.reflect.Type type,
+                com.google.gson.JsonDeserializationContext context) {
+            return json.isJsonPrimitive() ? context.deserialize(json, String.class) : null;
         }
-        return ResourceLocation.tryParse(params.get(key).getAsString());
-    }
-
-    @Nullable
-    private static String readString(@Nullable JsonObject params, String key) {
-        if (params == null || !params.has(key) || !params.get(key).isJsonPrimitive()) {
-            return null;
-        }
-        return params.get(key).getAsString();
     }
 }
