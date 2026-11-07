@@ -1,7 +1,10 @@
 package template.lib.kasuga.registration.minecraft.fluid;
 
 import lib.kasuga.internal.generator.annotations.CodeTemplate;
+import lib.kasuga.registration.core.RegisterContext;
 import lib.kasuga.registration.minecraft.common.MinecraftDeferRegistryReg;
+import lib.kasuga.registration.stages.FluidClientExtensionsStage;
+import lib.kasuga.registration.stages.RegistrationStage;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
@@ -55,6 +58,18 @@ public class FluidTypeReg<T extends FluidType> extends MinecraftDeferRegistryReg
     public FluidTypeReg(String name, Function<FluidTypeReg<T>, Function<FluidType.Properties, T>> supplier) {
         super(name, NeoForgeRegistries.Keys.FLUID_TYPES);
         this.supplier = supplier;
+    }
+
+    @Override
+    public void register(RegisterContext<?> context) {
+        super.register(context);
+        context.onStage(RegistrationStage.REGISTER_CLIENT_EXTENSIONS, this::onClientExtensions);
+    }
+
+    private void onClientExtensions(Object stage) {
+        if (stage instanceof FluidClientExtensionsStage client) {
+            client.register(this);
+        }
     }
 
     /**

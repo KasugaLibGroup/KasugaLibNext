@@ -36,8 +36,8 @@ public class AllFluidTestEntries {
                             .lightLevel(1)
                             .defaultBucketSounds()
                             .tint(0xFF3FA7D6)
-                            .still("block/texture")
-                            .flowing("block/texture"))
+                            .still("block/test_fluid_still")
+                            .flowing("block/test_fluid_flow"))
                     .block(FluidBlockReg.of("test_fluid_block", fluid -> props -> new LiquidBlock(fluid, props)))
                     .bucket("test_fluid_bucket")
                     .setParent(CoreTestApplication.registry);
@@ -55,8 +55,8 @@ public class AllFluidTestEntries {
                             .density(1100)
                             .defaultBucketSounds()
                             .tint(0xFF7A3B12)
-                            .still("block/texture")
-                            .flowing("block/texture"))
+                            .still("block/cola_still")
+                            .flowing("block/cola_flow"))
                     .block(FluidBlockReg.of("cola_fluid_block", fluid -> props -> new LiquidBlock(fluid, props)))
                     .bucket(ItemReg.of("cola_fluid_bucket", props -> new BucketItem(deferredColaSource(), props)))
                     .setParent(CoreTestApplication.registry);
