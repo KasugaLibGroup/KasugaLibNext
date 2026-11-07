@@ -9,6 +9,7 @@ import net.neoforged.neoforge.common.SoundAction;
 import net.neoforged.neoforge.common.SoundActions;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
+import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -18,8 +19,8 @@ import java.util.function.Function;
  * the client rendering data of a fluid.
  * <p>
  * Client data (still / flowing / overlay sprites, tint, fog) is stored on this registration and
- * read by a {@link FluidType} whose {@code initializeClient} only ever runs on the physical
- * client, so nothing client-only is loaded on a dedicated server.
+ * handed to the client through {@code RegisterClientExtensionsEvent}, which only fires on the
+ * physical client, so nothing client-only is loaded on a dedicated server.
  *
  * @param <T> the fluid type class.
  */
@@ -28,6 +29,8 @@ public class FluidTypeReg<T extends FluidType> extends MinecraftDeferRegistryReg
 
     private final Function<FluidTypeReg<T>, Function<FluidType.Properties, T>> supplier;
     private final FluidType.Properties properties = FluidType.Properties.create();
+
+    private T createdType;
 
     private ResourceLocation stillTexture;
     private ResourceLocation flowingTexture;
@@ -42,7 +45,7 @@ public class FluidTypeReg<T extends FluidType> extends MinecraftDeferRegistryReg
      *             {@code fluid_type.<namespace>.<name>}.
      */
     public static FluidTypeReg<FluidType> of(String name) {
-        return new FluidTypeReg<>(name, reg -> p -> new DefaultFluidType(reg, p));
+        return new FluidTypeReg<>(name, reg -> p -> new DefaultFluidType(p));
     }
 
     public static <T extends FluidType> FluidTypeReg<T> of(String name, Function<FluidType.Properties, T> factory) {
@@ -54,13 +57,37 @@ public class FluidTypeReg<T extends FluidType> extends MinecraftDeferRegistryReg
         this.supplier = supplier;
     }
 
+    /**
+     * Registers the managed client extensions for the type this registration produced.
+     * <p>
+     * Extensions go through {@code RegisterClientExtensionsEvent} rather than
+     * {@code FluidType#initializeClient}, so a type built by a custom factory still receives
+     * the still / flowing / overlay sprites, tint and fog configured on this registration.
+     * NeoForge rejects a type that is registered twice, so this is the only channel.
+     */
+    public void registerClientExtensions(net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent event) {
+        T created = getCreatedType();
+        if (created == null) {
+            return;
+        }
+        event.registerFluidType(new ClientExtensions(this), created);
+    }
+
+    /**
+     * @return the {@link FluidType} this registration produced, or {@code null} before it is registered.
+     */
+    public T getCreatedType() {
+        return this.createdType;
+    }
+
     @Override
     protected T createObject(ResourceLocation id) {
         this.properties.descriptionId("fluid_type." + id.getNamespace() + "." + id.getPath());
         this.stillTexture = prefix(id, this.stillTexture);
         this.flowingTexture = prefix(id, this.flowingTexture);
         this.overlayTexture = prefix(id, this.overlayTexture);
-        return supplier.apply(this).apply(this.properties);
+        this.createdType = supplier.apply(this).apply(this.properties);
+        return this.createdType;
     }
 
     /* ---------------------------------------------------------------- client rendering data */
@@ -185,16 +212,8 @@ public class FluidTypeReg<T extends FluidType> extends MinecraftDeferRegistryReg
      * Default {@link FluidType} used when the consumer does not supply a factory.
      */
     public static class DefaultFluidType extends FluidType {
-        private final FluidTypeReg<?> reg;
-
-        public DefaultFluidType(FluidTypeReg<?> reg, FluidType.Properties properties) {
+        public DefaultFluidType(FluidType.Properties properties) {
             super(properties);
-            this.reg = reg;
-        }
-
-        @Override
-        public void initializeClient(Consumer<net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions> consumer) {
-            consumer.accept(new ClientExtensions(this.reg));
         }
     }
 

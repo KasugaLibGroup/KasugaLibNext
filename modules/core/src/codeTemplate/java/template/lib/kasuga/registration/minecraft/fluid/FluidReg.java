@@ -45,7 +45,8 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
 
     public static final String DEFAULT_FLOWING_SUFFIX = "_flowing";
 
-    private final String name;
+    private final String typeName;
+    private final String sourceName;
     private final String flowingName;
     private final FluidTypeReg<?> type;
 
@@ -55,6 +56,9 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
     private Function<BaseFlowingFluid.Properties, S> sourceFactory;
     private Function<BaseFlowingFluid.Properties, F> flowingFactory;
 
+    private FluidBlockReg<?> blockReg;
+    private lib.kasuga.registration.minecraft.item.ItemReg<?> bucketReg;
+
     private ResourceLocation sourceId;
     private ResourceLocation flowingId;
 
@@ -63,14 +67,24 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
     private int tickRate = 5;
     private float explosionResistance = 100.0F;
 
+    /**
+     * Uses one name for the source fluid and the fluid type, and a derived name for the
+     * flowing fluid ({@code <name>_flowing}).
+     */
     public FluidReg(String name) {
-        this(name, name + DEFAULT_FLOWING_SUFFIX);
+        this(name, name, name + DEFAULT_FLOWING_SUFFIX);
     }
 
-    public FluidReg(String name, String flowingName) {
-        this.name = name;
+    /**
+     * @param typeName    the name of the {@code fluid_type} entry.
+     * @param sourceName  the name of the still {@code fluid} entry.
+     * @param flowingName the name of the flowing {@code fluid} entry.
+     */
+    public FluidReg(String typeName, String sourceName, String flowingName) {
+        this.typeName = typeName;
+        this.sourceName = sourceName;
         this.flowingName = flowingName;
-        this.type = FluidTypeReg.of(name);
+        this.type = FluidTypeReg.of(typeName);
         this.addChild(this.type);
     }
 
@@ -157,8 +171,36 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
      * @param block the block registration to attach.
      */
     public FluidReg<S, F> block(FluidBlockReg<?> block) {
+        this.blockReg = block;
         this.addChild(block);
         return this;
+    }
+
+    /**
+     * Attaches a default {@link net.minecraft.world.item.BucketItem} for this fluid.
+     * <p>
+     * The bucket is registered in the ITEM registry and wired into
+     * {@link BaseFlowingFluid.Properties#bucket} so the fluid can actually be picked up.
+     *
+     * @param name the item registration name, relative to the {@link FluidReg} namespace.
+     */
+    public FluidReg<S, F> bucket(String name) {
+        return bucket(lib.kasuga.registration.minecraft.item.ItemReg.of(name, props -> new net.minecraft.world.item.BucketItem(getSource(), props)));
+    }
+
+    /**
+     * Attaches a custom bucket item and wires it into {@link BaseFlowingFluid.Properties#bucket}.
+     *
+     * @param bucket the item registration to attach.
+     */
+    public FluidReg<S, F> bucket(lib.kasuga.registration.minecraft.item.ItemReg<?> bucket) {
+        this.bucketReg = bucket;
+        this.addChild(bucket);
+        return this;
+    }
+
+    public lib.kasuga.registration.minecraft.item.ItemReg<?> getBucketReg() {
+        return this.bucketReg;
     }
 
     /**
@@ -186,7 +228,7 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
 
     private void registerFluids(RegisterStageContext context) {
         ResourceLocation sid = applyProperties(ResourceLocation.class,
-                ResourceLocation.fromNamespaceAndPath("minecraft", name));
+                ResourceLocation.fromNamespaceAndPath("minecraft", sourceName));
         ResourceLocation fid = applyProperties(ResourceLocation.class,
                 ResourceLocation.fromNamespaceAndPath("minecraft", flowingName));
         this.sourceId = sid;
@@ -213,6 +255,19 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
                     .slopeFindDistance(slopeFindDistance)
                     .tickRate(tickRate)
                     .explosionResistance(explosionResistance);
+
+            // Both suppliers are evaluated lazily by BaseFlowingFluid:
+            // getBucket() and createLegacyBlock() run when a fluid is placed or picked up,
+            // which is always after the BLOCK and ITEM registries are frozen. Without these,
+            // the fluid places air and a bucket returns Items.AIR.
+            if (this.blockReg != null) {
+                FluidBlockReg<?> block = this.blockReg;
+                fluidProperties.block(() -> (net.minecraft.world.level.block.LiquidBlock) block.getEntry());
+            }
+            if (this.bucketReg != null) {
+                lib.kasuga.registration.minecraft.item.ItemReg<?> bucket = this.bucketReg;
+                fluidProperties.bucket(() -> (net.minecraft.world.item.Item) bucket.getEntry());
+            }
 
             stage.register(net.minecraft.core.registries.Registries.FLUID, sid, () -> sourceFactory.apply(fluidProperties));
             stage.register(net.minecraft.core.registries.Registries.FLUID, fid, () -> flowingFactory.apply(fluidProperties));
@@ -259,8 +314,12 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
         return () -> (FlowingFluid) flowingHolder.get();
     }
 
-    public String getName() {
-        return name;
+    public String getTypeName() {
+        return typeName;
+    }
+
+    public String getSourceName() {
+        return sourceName;
     }
 
     public String getFlowingName() {

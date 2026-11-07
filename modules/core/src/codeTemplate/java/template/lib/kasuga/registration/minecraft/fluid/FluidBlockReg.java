@@ -104,9 +104,9 @@ public class FluidBlockReg<T extends LiquidBlock> extends MinecraftDeferRegistry
         try {
             return fluidReg.getSource();
         } catch (IllegalStateException e) {
-            LOGGER.error("Fluid block \"{}\" was constructed before its fluid \"{}\" was registered.", getName(), fluidReg.getName());
+            LOGGER.error("Fluid block \"{}\" was constructed before its fluid \"{}\" was registered.", getName(), fluidReg.getSourceName());
             throw new IllegalStateException(
-                    "Fluid block \"" + getName() + "\" needs the source fluid of \"" + fluidReg.getName()
+                    "Fluid block \"" + getName() + "\" needs the source fluid of \"" + fluidReg.getSourceName()
                             + "\" to exist already, but the FLUID registry has not been dispatched. "
                             + "NeoForge dispatches minecraft:fluid before minecraft:block; if that order changed, "
                             + "fluid blocks can no longer be registered through RegisterEvent.",
