@@ -1,0 +1,49 @@
+{
+  "blocks": [
+    {
+      "id": "kasuga_lib:stateful_fixture",
+      "type": "data_driven_block",
+      "state_properties": {
+        "open": {
+          "type": "vanilla",
+          "property": "OPEN",
+          "default": false
+        },
+        "active": {
+          "type": "boolean",
+          "default": true
+        },
+        "level": {
+          "type": "integer",
+          "min": 0,
+          "max": 3,
+          "default": 2
+        },
+        "mode": {
+          "type": "enum",
+          "values": [
+            "idle",
+            "working",
+            "paused"
+          ],
+          "default": "working"
+        },
+        "facing": {
+          "type": "vanilla",
+          "property": "HORIZONTAL_FACING",
+          "default": "north"
+        }
+      }
+    },
+    {
+      "id": "kasuga_lib:stateful_custom_fixture",
+      "type": "stateful_test_block",
+      "state_properties": {
+        "active": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  ]
+}

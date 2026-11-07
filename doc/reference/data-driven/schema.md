@@ -177,13 +177,14 @@ data/<namespace>/kasuga_lib/data_driven/
 | `type` | string | 是 | — | 工厂名，查 `FactoryRegistry.BlockFactory`（`BlockTypeHandler.createRegistration`，`:59-64`） |
 | `registry_group` | string | 否 | `null` → 挂根组 | 所属分组 id（原串匹配） |
 | `properties` | object | 否 | — | 方块属性，见 §2.6 |
+| `state_properties` | object | 否 | — | Minecraft 方块状态属性，见 [block-state-properties.md](block-state-properties.md) |
 | `item_properties` | object | 否 | — | 方块对应的物品属性；`tab` 决定创造栏（`BlockTypeHandler.resolveCreativeTab`，`:51-57`） |
 | `params` | object | 否 | `null` | 原样传给工厂 `create(path, params)` |
 | `state_machine` | string | 否 | — | 仅当条目内含 `block_entity` 时被转发进 BE params（见 §2.5） |
 
 - `id` 与 `type` 缺失时 `parse` 抛异常（`json.get("id").getAsString()`），该异常被注册期元素级容错捕获 → error + 入桶，**只丢该条目、同文件兄弟条目照常注册**（`JsonTreeBuilder` 产出 `entry <i> in '<key>' failed to parse: <msg>; entry skipped`）。其余字段缺失走默认值。
-- `type` 找不到对应工厂 → 只打 WARN，条目跳过，**不入桶**（`RegTypeHandler.java:70-74`）。
-- 对象的**未知键被静默忽略**（parse 只读已知键），这一点与文件顶层未知键报错相反，见 §2.7。
+- 未声明 `state_properties` 时，`type` 找不到对应工厂 → 只打 WARN，条目跳过，**不入桶**（`RegTypeHandler.java:70-74`）。
+- 方块条目自身的**未知键被静默忽略**，但 `state_properties` 内的属性声明会严格检查字段；见 §2.7。
 
 ### 2.4 `items` 条目
 
@@ -272,7 +273,7 @@ data/<namespace>/kasuga_lib/data_driven/
 两种位置的严格度不同，是最容易踩的差异：
 
 - **文件顶层**未知字段 → error + 入桶（`dispatchContent`，`JsonTreeBuilder.java:475-490`）。拼错 `blokcs` 会被抓住。
-- **对象内**未知键 → 静默忽略（各 handler 的 `parse` 只读已知键），不报错。例如 block 条目里多写一个 `foo` 不产生任何诊断。
+- **条目对象内**未知键 → 静默忽略（各 handler 的 `parse` 只读已知键），不报错。例如 block 条目里多写一个 `foo` 不产生任何诊断。`state_properties` 的属性定义是例外，其内部未知字段报错。
 
 ### 2.8 内嵌类型误写为顶层字段
 
@@ -435,7 +436,7 @@ reload 类型不是硬编码的：继承/实现 `ReloadHandler<T>`，用一个 `
 
 以下情形只打日志、不写桶，因为条目被降级而非格式错误：
 
-- 未知工厂 `type` → 条目跳过（`RegTypeHandler.java:70-74`）。
+- 未声明 `state_properties` 时，未知工厂 `type` → 条目跳过（`RegTypeHandler.java:70-74`）；声明后工厂缺失或不支持状态属性则入错误桶。
 - 未知 `properties` / `item_properties` 键 → 该键忽略（`JsonPropertyParser.java:50-52`；`JsonItemParser.java:63`）。
 - 未知 `map_color` / `sound_type`（`JsonPropertyParser.java:80-82,90-92`）。
 - BE 宿主方块找不到 / 未知 BE 工厂（`BlockEntityTypeHandler.java:77,83`）。

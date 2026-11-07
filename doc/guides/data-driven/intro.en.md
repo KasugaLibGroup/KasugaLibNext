@@ -53,10 +53,10 @@ There can be more than one index. Every `.json` under the same mod's `data_drive
 
 `type` in JSON is a **factory registration key**. Before copying the example below, confirm this key exists in your environment:
 
-- The only block factory built into the library itself is `fsm_block` (modelling module);
+- The library provides `data_driven_block` (supporting [JSON block-state properties](../../reference/data-driven/block-state-properties.en.md)); modelling also supplies the `fsm_block` factory;
 - Keys such as `simple_block` and `simple_item` used in the examples here are registered by this repository's `contentTesting` source set, and are **test fixtures that are not published with the library**.
 
-When `type` finds no factory, the entry gets a WARN and is skipped (it does not go into the error bucket). For how to write a factory for your own mod see [guide-extension.md](guide-extension.md).
+Without `state_properties`, an unknown factory logs a WARN and skips the entry without entering the error bucket. A declared state-property set with an unsupported factory is a loading error. For how to write a factory for your own mod see [guide-extension.md](guide-extension.md).
 
 ### 4.2 Place three files
 

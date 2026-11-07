@@ -1,0 +1,6 @@
+{
+  "multipart": [
+    { "when": { "open": "false" }, "apply": { "model": "minecraft:block/stone" } },
+    { "when": { "open": "true" }, "apply": { "model": "minecraft:block/oak_planks" } }
+  ]
+}

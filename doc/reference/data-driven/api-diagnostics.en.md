@@ -114,7 +114,7 @@ Log only, never the bucket (downgraded to WARN level):
 
 | Case | Source |
 |------|------|
-| Factory not found | `RegTypeHandler:71-73` |
+| Factory not found without `state_properties` | `RegTypeHandler:71-73` |
 | Group reference cycle | `JsonTreeBuilder:823-825` |
 | Unknown block property / illegal value | `JsonPropertyParser:50-57` |
 | Unknown item property | `JsonItemParser:63` |

@@ -15,6 +15,7 @@ import lib.kasuga.registration.data_driven.handler.*;
 import lib.kasuga.registration.data_driven.reload.ReloadHandler;
 import lib.kasuga.registration.data_driven.reload.ReloadHandlerRegistry;
 import lib.kasuga.registration.data_driven.structure.ContentStructure;
+import lib.kasuga.registration.data_driven.state.DataDrivenBlockFactory;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforgespi.language.IModFileInfo;
@@ -52,6 +53,7 @@ public class JsonTreeBuilder {
     private static synchronized void ensureHandlersRegistered() {
         if (handlersRegistered) return;
         handlersRegistered = true;
+        DataDrivenBlockFactory.registerIfAbsent();
         TypeHandlerRegistry.register(new RegistryGroupHandler());
         TypeHandlerRegistry.register(new BlockTypeHandler());
         TypeHandlerRegistry.register(new ItemTypeHandler());

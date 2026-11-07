@@ -73,7 +73,7 @@ The fixed flow of `apply`: split the id into namespace and path (with no `:`, th
 | Handler | getTypeName | getPhase | parse output | Source |
 |---------|-------------|----------|-----------|------|
 | `RegistryGroupHandler` | `registry_groups` | `PHASE_GROUPS` | `RegistryGroupDef(id, parent, properties, item_properties)` | `RegistryGroupHandler.java:20-33` |
-| `BlockTypeHandler` | `blocks` | `PHASE_CONTENT` | `BlockDef(id, type, registry_group, properties, item_properties, params)` | `BlockTypeHandler.java:19-34` |
+| `BlockTypeHandler` | `blocks` | `PHASE_CONTENT` | `BlockDef(id, type, registry_group, properties, item_properties, params, stateProperties)` | `BlockTypeHandler.java:19-34` |
 | `ItemTypeHandler` | `items` | `PHASE_CONTENT` | `ItemDef(id, type, registry_group, properties, params)` | `ItemTypeHandler.java:16-30` |
 | `BlockEntityTypeHandler` | `block_entities` | `PHASE_EMBEDDED` | `BlockEntityDef(type, parentBlockId, params)`, produced by `extractEmbedded` from the `block_entity` key | `BlockEntityTypeHandler.java:21-53` |
 
