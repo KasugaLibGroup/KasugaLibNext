@@ -1,4 +1,4 @@
-package test.kasuga.modelling;
+package test.kasuga.modelling.demo.blackhole;
 
 import lib.kasuga.KasugaLib;
 import lib.kasuga.rendering.effect.builtin.blackhole.BlackHoleEffect;

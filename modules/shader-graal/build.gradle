@@ -35,6 +35,24 @@ test {
     useJUnitPlatform()
 }
 
+// Development-only exporters; these classes do not enter the published library.
+sourceSets {
+    showcase {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+
+tasks.register('exportShowcase', JavaExec) {
+    group = 'application'
+    description = 'Compiles the Prism Scan JavaScript example and exports typed IR and Minecraft shader resources.'
+    mainClass = 'lib.kasuga.shader.showcase.ShowcaseExport'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    classpath = sourceSets.showcase.runtimeClasspath
+    args rootProject.file('examples/shader-dsl/prism-scan.js').absolutePath,
+            rootProject.file(providers.gradleProperty('kasugaShowcaseOutput').getOrElse('build/shader-showcase')).absolutePath
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }

@@ -1,0 +1,197 @@
+{
+  "vertex": "kasuga_demo:nebula_volume",
+  "fragment": "kasuga_demo:nebula_volume",
+  "attributes": [
+    "Position"
+  ],
+  "samplers": [],
+  "uniforms": [
+    {
+      "name": "InverseProjection",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "InverseView",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "Eye",
+      "type": "float",
+      "count": 3,
+      "values": [
+        0,
+        0,
+        -54
+      ]
+    },
+    {
+      "name": "Time",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0
+      ]
+    },
+    {
+      "name": "SegmentCount",
+      "type": "int",
+      "count": 1,
+      "values": [
+        0
+      ]
+    },
+    {
+      "name": "BoltData",
+      "type": "float",
+      "count": 512,
+      "values": [
+        0
+      ]
+    },
+    {
+      "name": "LightData",
+      "type": "float",
+      "count": 16,
+      "values": [
+        0
+      ]
+    },
+    {
+      "name": "CraftPosition",
+      "type": "float",
+      "count": 3,
+      "values": [
+        0,
+        0,
+        -7
+      ]
+    },
+    {
+      "name": "CraftInverse",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "name": "WakeData",
+      "type": "float",
+      "count": 96,
+      "values": [
+        0
+      ]
+    },
+    {
+      "name": "InteractionStrength",
+      "type": "float",
+      "count": 1,
+      "values": [
+        1
+      ]
+    },
+    {
+      "name": "CraftVisible",
+      "type": "float",
+      "count": 1,
+      "values": [
+        1
+      ]
+    },
+    {
+      "name": "CoreStrength",
+      "type": "float",
+      "count": 1,
+      "values": [
+        1
+      ]
+    },
+    {
+      "name": "DetailStrength",
+      "type": "float",
+      "count": 1,
+      "values": [
+        1
+      ]
+    },
+    {
+      "name": "GlobalFlash",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0
+      ]
+    },
+    {
+      "name": "ShipScale",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.58
+      ]
+    },
+    {
+      "name": "CraftVelocity",
+      "type": "float",
+      "count": 3,
+      "values": [
+        0,
+        0,
+        0.4
+      ]
+    }
+  ]
+}

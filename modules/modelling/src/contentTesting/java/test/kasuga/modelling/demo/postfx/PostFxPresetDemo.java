@@ -1,4 +1,4 @@
-package test.kasuga.modelling;
+package test.kasuga.modelling.demo.postfx;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import lib.kasuga.KasugaLib;

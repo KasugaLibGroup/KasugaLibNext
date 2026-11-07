@@ -23,13 +23,6 @@ import java.util.concurrent.atomic.AtomicLong;
  * spawning rigid-body Minecraft blocks and managing configured ragdolls.
  */
 public final class PhysicsCommands {
-    /** Default demo package; mirrors the built-in test MMD deployment. */
-    static final ResourceLocation DEFAULT_MODEL_RESOURCE = ResourceLocation
-            .fromNamespaceAndPath("kasuga_lib", "models/pmx/test3.mmd.zip");
-    static final String DEFAULT_MODEL_NAME = "tda bunny miku 2.0.pmx";
-    static final ResourceLocation DEFAULT_CONFIG = ResourceLocation
-            .fromNamespaceAndPath("kasuga_lib", "ragdolls/tda_bunny_miku.json");
-
     private static final AtomicLong INSTANCE_COUNTER = new AtomicLong();
 
     private PhysicsCommands() {}
@@ -62,7 +55,11 @@ public final class PhysicsCommands {
                         .then(Commands.argument("model", ResourceLocationArgument.id())
                                 .executes(context -> deploy(context,
                                         ResourceLocationArgument.getId(context, "model"), "", null)))
-                        .executes(PhysicsCommands::deployDefault))
+                        .executes(context -> {
+                            context.getSource().sendFailure(Component.literal(
+                                    "Usage: /kasuga_ragdoll deploy <model>"));
+                            return 0;
+                        }))
                 .then(Commands.literal("list").executes(PhysicsCommands::list))
                 .then(Commands.literal("remove")
                         .then(Commands.literal("all").executes(context -> {
@@ -110,13 +107,9 @@ public final class PhysicsCommands {
     // Ragdoll deployments
     // ------------------------------------------------------------------
 
-    private static int deployDefault(CommandContext<CommandSourceStack> context) {
-        return deploy(context, DEFAULT_MODEL_RESOURCE, DEFAULT_MODEL_NAME, DEFAULT_CONFIG);
-    }
-
-    private static int deploy(CommandContext<CommandSourceStack> context,
-                              ResourceLocation modelResource, String modelName,
-                              ResourceLocation configResource) {
+    public static int deploy(CommandContext<CommandSourceStack> context,
+                             ResourceLocation modelResource, String modelName,
+                             ResourceLocation configResource) {
         if (!NativeBox3D.availableOrWarn()) {
             context.getSource().sendFailure(Component.literal(
                     "Box3D native library is unavailable; ragdoll physics is disabled"));
