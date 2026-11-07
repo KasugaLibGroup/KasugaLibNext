@@ -17,6 +17,8 @@ public class RegistrationStage<T> {
 
     public static RegistrationStage<NewRegistryEvent> NEW_REGISTRY = new RegistrationStage<>();
 
+    public static RegistrationStage<FluidClientExtensionsStage> REGISTER_CLIENT_EXTENSIONS = new RegistrationStage<>();
+
     @Override
     public boolean equals(Object obj) {
         return super.equals(obj);
