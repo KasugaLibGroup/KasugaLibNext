@@ -4,6 +4,7 @@ import lib.kasuga.internal.generator.annotations.CodeTemplate;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.core.RegisterContext;
 import lib.kasuga.registration.core.ResourceLocationModifiers;
+import lib.kasuga.registration.minecraft.fluid.FluidBlockReg;
 import lib.kasuga.registration.stages.RegisterStageContext;
 import lib.kasuga.registration.stages.RegistrationStage;
 import net.minecraft.core.Holder;
@@ -146,6 +147,32 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
         return this.type;
     }
 
+    /**
+     * Attaches a liquid block to this fluid.
+     * <p>
+     * The block is registered into {@code minecraft:block}, which NeoForge dispatches after
+     * {@code minecraft:fluid}, so {@link #getSource()} is already bound when the block is
+     * constructed. See {@link FluidBlockReg} for that contract.
+     *
+     * @param block the block registration to attach.
+     */
+    public FluidReg<S, F> block(FluidBlockReg<?> block) {
+        this.addChild(block);
+        return this;
+    }
+
+    /**
+     * @return the registered source fluid. Only call this once the FLUID registry has been
+     *         dispatched; inside a BLOCK registration event it is already bound.
+     */
+    public FlowingFluid getSource() {
+        return (FlowingFluid) sourceHolder.get();
+    }
+
+    public FlowingFluid getFlowing() {
+        return (FlowingFluid) flowingHolder.get();
+    }
+
     /* ---------------------------------------------------------------- registration */
 
     @Override
@@ -189,7 +216,7 @@ public class FluidReg<S extends BaseFlowingFluid.Source, F extends BaseFlowingFl
 
             stage.register(net.minecraft.core.registries.Registries.FLUID, sid, () -> sourceFactory.apply(fluidProperties));
             stage.register(net.minecraft.core.registries.Registries.FLUID, fid, () -> flowingFactory.apply(fluidProperties));
-        });
+        }
     }
 
     @SuppressWarnings("unchecked")
