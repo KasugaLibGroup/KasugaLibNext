@@ -1,4 +1,8 @@
-package lib.kasuga.rendering.models.mc.api;
+package test.kasuga.modelling.demo.wardrobe;
+
+import lib.kasuga.rendering.models.mc.api.McModelAssemblies;
+import lib.kasuga.rendering.models.mc.api.McModelEquipment;
+import lib.kasuga.rendering.models.mc.api.McModelHandle;
 
 import com.google.gson.GsonBuilder;
 import com.mojang.brigadier.arguments.StringArgumentType;

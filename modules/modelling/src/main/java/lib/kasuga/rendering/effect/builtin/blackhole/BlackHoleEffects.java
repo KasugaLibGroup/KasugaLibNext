@@ -124,7 +124,7 @@ public final class BlackHoleEffects {
 
     public static RenderShaderHandle shader() {
         RenderShaderHandle current = shaderHandle;
-        if (current == null) throw new IllegalStateException("Black-hole demo pipelines have not been registered");
+        if (current == null) throw new IllegalStateException("Black-hole render pipelines have not been registered");
         return current;
     }
 
@@ -179,7 +179,7 @@ public final class BlackHoleEffects {
     private static void requireInitialized() {
         synchronized (LOCK) {
             if (shaderRegistration == null || graphRegistration == null) {
-                throw new IllegalStateException("Black-hole demo pipelines have not been registered");
+                throw new IllegalStateException("Black-hole render pipelines have not been registered");
             }
         }
     }

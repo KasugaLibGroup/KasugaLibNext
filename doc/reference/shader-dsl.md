@@ -126,6 +126,8 @@ JavaScript 数字传给 `float` 形参时按 Java 的 float 转换舍入，因�
 
 ## 用户可调 shader 参数
 
+可运行的源码、类型化 IR、GLSL/JSON 和游戏视频演示见 [Prism Scan 多语言示例](../../examples/shader-dsl/README.md)。示例真实执行 GraalJS、Kotlin/JVM 和 Python/JPype 三种宿主，并比较全部生成文件。
+
 shader 不会自动暴露所有 uniform。每个用户可调参数都要逐个注册。参数有固定的 `name`、`description`、`ShaderParameterType`、闭区间的 `range` 和 `defaultValues`。参数名同时就是 GLSL uniform 名，必须是合法且非保留的 GLSL 标识符。
 
 ```java

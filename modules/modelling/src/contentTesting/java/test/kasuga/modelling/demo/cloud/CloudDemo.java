@@ -1,6 +1,9 @@
-package lib.kasuga.rendering.cloud;
+package test.kasuga.modelling.demo.cloud;
 
 import lib.kasuga.KasugaLib;
+import lib.kasuga.rendering.cloud.CloudPose;
+import lib.kasuga.rendering.cloud.CloudSettings;
+import lib.kasuga.rendering.cloud.SkyCloudSettings;
 import lib.kasuga.rendering.effect.EffectHandle;
 import lib.kasuga.rendering.effect.builtin.cloud.CloudEffects;
 import lib.kasuga.rendering.effect.builtin.cloud.CumulonimbusCloud;

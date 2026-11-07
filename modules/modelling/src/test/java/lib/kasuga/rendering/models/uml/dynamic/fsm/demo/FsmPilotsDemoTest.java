@@ -1,24 +1,26 @@
-package lib.kasuga.rendering.models.uml.dynamic.fsm;
+package lib.kasuga.rendering.models.uml.dynamic.fsm.demo;
 
 import com.mojang.serialization.Codec;
+import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
+import lib.kasuga.rendering.models.uml.dynamic.fsm.State;
+import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.state.StateVar;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Pilot factory: builds a small reference-style machine for an owner. Generic (uses trigger +
- * whenComplete, not owner fields) so it works for any {@code Owner}. A living example of the DSL.
+ * Living example / demo of building an FSM machine via the DSL.
  */
-public final class FsmPilots {
+public class FsmPilotsDemoTest {
 
-    /** Tick-scoped trigger fired to start the demo machine. */
     public static final StateVar<Boolean> ACTIVATE = StateVar.builder(
             Id.fromNamespaceAndPath("kasuga_lib", "pilot/activate"),
             Boolean.class,
             Codec.BOOL
     ).defaultValue(Boolean.FALSE).ephemeral().build();
 
-    private FsmPilots() {}
-
-    public static <Owner> StateMachine<Owner> demo(Owner owner) {
+    public static <Owner> StateMachine<Owner> createDemoMachine(Owner owner) {
         return StateMachine.<Owner>builder(owner)
                 .layer("base", layer -> {
                     State<Owner> idle = layer.state("idle");
@@ -28,5 +30,11 @@ public final class FsmPilots {
                     layer.transition("loop", active, idle).whenComplete();
                 })
                 .build();
+    }
+
+    @Test
+    void demoMachineCanBeConstructed() {
+        StateMachine<Object> machine = createDemoMachine(new Object());
+        assertNotNull(machine);
     }
 }

@@ -1,0 +1,13 @@
+{
+  "vertex": "kasuga_demo:nebula_present",
+  "fragment": "kasuga_demo:nebula_present",
+  "attributes": [
+    "Position"
+  ],
+  "samplers": [
+    {
+      "name": "SceneSampler"
+    }
+  ],
+  "uniforms": []
+}

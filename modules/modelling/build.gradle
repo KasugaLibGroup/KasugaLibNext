@@ -111,6 +111,10 @@ tasks.named('processContentTestingResources', ProcessResources) {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
+// Pure simulation checks exercise the development demo without starting Minecraft.
+sourceSets.test.compileClasspath += sourceSets.contentTesting.output
+sourceSets.test.runtimeClasspath += sourceSets.contentTesting.output
+
 
 // Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
@@ -201,6 +205,17 @@ neoForge {
         configureEach {
             systemProperty 'forge.logging.markers', 'REGISTRIES'
 
+            if (providers.gradleProperty('kasugaNebulaAuto').getOrElse('false').toBoolean()) {
+                systemProperty 'kasuga.nebula.auto', 'true'
+            }
+            if (providers.gradleProperty('kasugaTestNebula').getOrElse('false').toBoolean()) {
+                systemProperty 'kasuga.testNebula', 'true'
+                systemProperty 'kasuga.nebula.auto', 'true'
+                systemProperty 'kasuga.nebula.output', rootProject.file(
+                        providers.gradleProperty('kasugaNebulaOutput').getOrElse('build/nebula-sim')).absolutePath
+                systemProperty 'kasuga.nebula.recordFrames', providers.gradleProperty('kasugaNebulaRecordFrames').getOrElse('0')
+            }
+
             if (kasugaTestModel.isPresent()) {
                 systemProperty 'kasuga.testModel', kasugaTestModel.get()
             }
@@ -253,6 +268,15 @@ neoForge {
                 systemProperty 'kasuga.testGraalShader', graalShaderSmoke.get()
                 systemProperty 'kasuga.testGraalShader.script', rootProject.file(
                         'modules/shader-graal/src/test/resources/shaders/screen-tint.js').absolutePath
+            }
+            if (providers.gradleProperty('kasugaShaderShowcase').map { it.toBoolean() }.getOrElse(false)) {
+                systemProperty 'kasuga.shaderShowcase', 'true'
+                systemProperty 'kasuga.shaderShowcase.script', rootProject.file('examples/shader-dsl/prism-scan.js').absolutePath
+                systemProperty 'kasuga.shaderShowcase.output', rootProject.file(
+                        providers.gradleProperty('kasugaShowcaseOutput').getOrElse('build/shader-showcase')).absolutePath
+                systemProperty 'kasuga.shaderShowcase.frames', providers.gradleProperty('kasugaShowcaseFrames').getOrElse('720')
+                systemProperty 'kasuga.shaderShowcase.fps', providers.gradleProperty('kasugaShowcaseFps').getOrElse('30')
+                systemProperty 'kasuga.shaderShowcase.ffmpeg', providers.gradleProperty('kasugaShowcaseFfmpeg').getOrElse('ffmpeg')
             }
             def dualCameraCapture = providers.gradleProperty('kasugaDebugDualCameraCaptureFrames')
             if (dualCameraCapture.isPresent()) systemProperty 'kasuga.debugDualCamera.captureFrames', dualCameraCapture.get()
@@ -337,7 +361,8 @@ configurations {
 
 dependencies {
     contentTestingImplementation project(':modules:shader-graal')
-    if (providers.gradleProperty('kasugaTestGraalShader').map { it.toBoolean() }.getOrElse(false)) {
+    if (providers.gradleProperty('kasugaTestGraalShader').map { it.toBoolean() }.getOrElse(false)
+            || providers.gradleProperty('kasugaShaderShowcase').map { it.toBoolean() }.getOrElse(false)) {
         additionalRuntimeClasspath project(':modules:shader-graal')
     }
 

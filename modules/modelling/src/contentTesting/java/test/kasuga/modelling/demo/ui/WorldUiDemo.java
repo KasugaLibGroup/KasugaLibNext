@@ -1,7 +1,8 @@
-package lib.kasuga.rendering.models.mc.backend.ui;
+package test.kasuga.modelling.demo.ui;
 
 import lib.kasuga.KasugaLib;
 import lib.kasuga.rendering.models.mc.Constants;
+import lib.kasuga.rendering.models.mc.backend.ui.WorldUiInputScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;

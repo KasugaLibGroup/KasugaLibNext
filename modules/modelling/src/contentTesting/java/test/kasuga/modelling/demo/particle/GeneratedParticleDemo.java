@@ -1,4 +1,4 @@
-package test.kasuga.modelling;
+package test.kasuga.modelling.demo.particle;
 
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;

@@ -1,6 +1,6 @@
 # 真实素材换装与 MC 装备示例
 
-开发示例类：`lib.kasuga.rendering.models.mc.api.WardrobeExample`，位于 `contentTesting` source set。
+开发示例类：`test.kasuga.modelling.demo.wardrobe.WardrobeExample`，位于 `contentTesting` source set。
 它通过生产 PMX Reader 加载用户提供的素材，随后只使用通用 `Model`、组装缓存、材质实例、
 Skeleton Anchor 和 MC 装备适配器。示例代码不进入发布包。
 
