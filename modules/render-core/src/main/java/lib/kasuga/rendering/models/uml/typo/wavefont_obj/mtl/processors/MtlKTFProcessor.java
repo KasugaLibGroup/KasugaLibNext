@@ -14,6 +14,9 @@ public class MtlKTFProcessor extends MtlKeyProcessor {
     @Override
     public void process(String[] data, SerialContext<MtlContext> context) {
         switch (data[0]) {
+            case "Ke":
+                context.peek().Ke(new Vector3f(Float.parseFloat(data[1]), Float.parseFloat(data[2]), Float.parseFloat(data[3])));
+                break;
             case "Ka":
                 context.peek().Ka(
                         new Vector3f(
@@ -58,6 +61,7 @@ public class MtlKTFProcessor extends MtlKeyProcessor {
         return data.length > 1 && (
                 data[0].equals("Ka") ||
                 data[0].equals("Kd") ||
+                data[0].equals("Ke") ||
                 data[0].equals("Ks") ||
                 data[0].equals("Tf")
         );

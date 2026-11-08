@@ -1,4 +1,4 @@
-package test.kasuga.modelling.nebula;
+package test.kasuga.modelling.demo.nebula;
 
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL33;

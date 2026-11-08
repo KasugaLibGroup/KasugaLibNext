@@ -214,6 +214,9 @@ neoForge {
                 systemProperty 'kasuga.nebula.output', rootProject.file(
                         providers.gradleProperty('kasugaNebulaOutput').getOrElse('build/nebula-sim')).absolutePath
                 systemProperty 'kasuga.nebula.recordFrames', providers.gradleProperty('kasugaNebulaRecordFrames').getOrElse('0')
+                systemProperty 'kasuga.nebula.captureFps', providers.gradleProperty('kasugaNebulaCaptureFps').getOrElse('30')
+                systemProperty 'kasuga.nebula.enforceGpuBudget', providers.gradleProperty('kasugaNebulaEnforceGpuBudget').getOrElse('true')
+                systemProperty 'kasuga.nebula.timeoutSeconds', providers.gradleProperty('kasugaNebulaTimeoutSeconds').getOrElse('600')
             }
 
             if (kasugaTestModel.isPresent()) {

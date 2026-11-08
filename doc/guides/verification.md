@@ -51,6 +51,7 @@ Quick Play 的存档需预先存在于隔离目录 `saves/` 下，使用专用�
 | MMD/glTF 模型、原生布娃娃 | [模型运行入口](../reference/modelling/README.md)、[配置/部署](../reference/mmd-ragdoll.md) |
 | 完整 GUI 与最终输出逐像素检查 | [Frame Output](../reference/frame-output.md#验证入口) |
 | 摄像机、共享时间轴与窗口 | [Camera Animation](../reference/camera-animation.md)、[多机位](../reference/multi-camera-output.md) |
+| Nebula OBJ/PBR、MRT、体积烟尘与固定帧录制 | [Nebula demo](nebula-demo.md)，`scripts/nebula-sim.py --test`；检查输出目录的 `report.json` |
 | Alpha/OIT 提交顺序与调试缓冲 | [Alpha/OIT](../reference/render-alpha-passes.md#可视化验收场景contenttesting) |
 | 世界 UI 自由光标、文本、滚轮和拖拽 | [World UI Input](../reference/world-ui-input.md#开发验收) |
 | GraalJS shader 生成、真实世界像素与参数面板 | [Shader DSL](../reference/shader-dsl.md#graaljs-脚本入口)，`-PkasugaTestGraalShader=true`；检查 `debug/graal-shader/report.json` |

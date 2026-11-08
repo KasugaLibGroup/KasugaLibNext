@@ -302,6 +302,29 @@ PostProcessGraph graph = PostProcessGraph.builder(graphId)
 PostProcessGraphRegistration graphRegistration = pipelines.graph(graph, 100);
 ```
 
+### Multiple color attachments and buffer samplers
+
+Targets default to one `RGBA8` color attachment. The original constructor and builder defaults remain available. Declare HDR or G-buffer attachments explicitly:
+
+```java
+PostProcessTargetDescriptor gbuffer = PostProcessTargetDescriptor.builder(scene.id())
+        .screenScale(1).useDepth(true)
+        .colorAttachments(PostProcessTargetDescriptor.ColorFormat.RGBA16F,
+                PostProcessTargetDescriptor.ColorFormat.RGBA16F,
+                PostProcessTargetDescriptor.ColorFormat.RGBA16F)
+        .build();
+```
+
+Formats are `RGBA8`, `RGBA16F` and `RGBA32F`, with 1–8 attachments per descriptor, subject to driver limits. One default `RGBA8` attachment retains the original `TextureTarget` path. Other layouts use a pool-owned `MultiAttachmentRenderTarget` backed by Kasuga `FrameBuffer`, with a sampleable depth texture when requested. Graph ID scoping and resize preserve the attachment formats.
+
+Within a pass that declares a read, `fullscreen(...).colorSampler("NormalSampler", context.read(scene), 1)` selects the second attachment. Omitting the index selects attachment zero. Invalid indices fail; sampling any attachment of the output target still fails feedback validation. Use `depthSampler` for depth.
+
+`fullscreen(...).bufferSampler("DataSampler", tbo)` binds an existing `TBOBuffer` after shader apply, uploads the actual sampler location and uses the buffer's configured texture unit. Declare a GLSL `samplerBuffer` and read linear indices with `texelFetch`. Reserve a unit that does not collide with the shader's 2D samplers. The caller retains buffer ownership. A sampler JSON entry is not an ordinary `ShaderInstance.getUniform` value.
+
+`graph.allocatedTargetId(logicalTarget)` returns the physical ID of a declared managed target for diagnostics or explicit pool release while the graph is inactive. MAIN and undeclared targets fail. Normal cleanup uses graph-registration reference counts.
+
+See the [Nebula demo](../guides/nebula-demo.md) for a complete geometry/volume/presentation graph.
+
 ## Ready-to-Run PostFX Presets
 
 `PostFxPresetDemo` uses one generated shader registration that stays active across reloads. Parameter blocks select different color settings. Preset selection does not register or compile the shader again.

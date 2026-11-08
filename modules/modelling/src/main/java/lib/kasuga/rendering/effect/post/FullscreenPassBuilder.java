@@ -3,6 +3,7 @@ package lib.kasuga.rendering.effect.post;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import net.minecraft.client.renderer.ShaderInstance;
 import lib.kasuga.rendering.effect.shader.ShaderParameterBlock;
+import lib.kasuga.rendering.models.uml.backend.gpu.buf.tbo.TBOBuffer;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -26,9 +27,18 @@ public final class FullscreenPassBuilder {
     }
 
     public FullscreenPassBuilder colorSampler(String name, RenderTarget input) {
+        return colorSampler(name, input, 0);
+    }
+
+    /** Samples a declared MRT color attachment; attachment zero also accepts ordinary targets. */
+    public FullscreenPassBuilder colorSampler(String name, RenderTarget input, int attachment) {
         Objects.requireNonNull(input, "input");
+        int texture;
+        if (input instanceof MultiAttachmentRenderTarget mrt) texture = mrt.colorTexture(attachment);
+        else if (attachment == 0) texture = input.getColorTextureId();
+        else throw new IllegalArgumentException("Render target has no color attachment " + attachment);
         samplesOutput |= input == output;
-        samplers.put(Objects.requireNonNull(name, "name"), input.getColorTextureId());
+        samplers.put(Objects.requireNonNull(name, "name"), texture);
         return this;
     }
 
@@ -43,6 +53,12 @@ public final class FullscreenPassBuilder {
     /** Adds an externally owned texture ID. The caller is responsible for feedback safety. */
     public FullscreenPassBuilder textureSampler(String name, int textureId) {
         samplers.put(Objects.requireNonNull(name, "name"), textureId);
+        return this;
+    }
+
+    /** Binds a Kasuga texture-buffer object to a samplerBuffer uniform. */
+    public FullscreenPassBuilder bufferSampler(String name, TBOBuffer buffer) {
+        samplers.put(Objects.requireNonNull(name, "name"), Objects.requireNonNull(buffer, "buffer"));
         return this;
     }
 

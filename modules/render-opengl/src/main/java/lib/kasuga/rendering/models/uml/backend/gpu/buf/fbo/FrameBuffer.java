@@ -3,6 +3,7 @@ package lib.kasuga.rendering.models.uml.backend.gpu.buf.fbo;
 import lib.kasuga.rendering.models.uml.backend.gpu.buf.GpuBuffer;
 import lombok.Getter;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL30;
 
 import java.nio.ByteBuffer;
@@ -32,7 +33,15 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
     @Getter
     private final boolean hasDepth;
 
+    @Getter
+    private final boolean depthTexture;
+
     public FrameBuffer(int width, int height, int numColorAttach, int[] formats, int[] internalFormats, int[] type, boolean hasDepth) {
+        this(width, height, numColorAttach, formats, internalFormats, type, hasDepth, false);
+    }
+
+    public FrameBuffer(int width, int height, int numColorAttach, int[] formats, int[] internalFormats,
+                       int[] type, boolean hasDepth, boolean depthTexture) {
         super(0, 0, TYPE, new FrameBufferContext());
         if (width <= 0 || height <= 0) throw new IllegalArgumentException("Framebuffer dimensions must be positive.");
         this.width = width;
@@ -44,6 +53,7 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
         this.internalFormats = internalFormats;
         this.types = type;
         this.hasDepth = hasDepth;
+        this.depthTexture = hasDepth && depthTexture;
 
         this.fboId = GL30.glGenFramebuffers();
         this.depthAttachment = -1;
@@ -60,11 +70,17 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
             }
 
             if (hasDepth) {
-                depthAttachment = createDepthRendererBuffer(width, height);
-                GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER,
-                        GL30.GL_DEPTH_ATTACHMENT,
-                        GL30.GL_RENDERBUFFER,
-                        depthAttachment);
+                if (this.depthTexture) {
+                    depthAttachment = createDepthTexture(width, height);
+                    GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
+                            GL11.GL_TEXTURE_2D, depthAttachment, 0);
+                } else {
+                    depthAttachment = createDepthRendererBuffer(width, height);
+                    GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER,
+                            GL30.GL_DEPTH_ATTACHMENT,
+                            GL30.GL_RENDERBUFFER,
+                            depthAttachment);
+                }
             }
 
             setDrawBuffers();
@@ -97,12 +113,21 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
             }
 
             if (hasDepth) {
-                if (depthAttachment >= 0) GL30.glDeleteRenderbuffers(depthAttachment);
-                depthAttachment = createDepthRendererBuffer(newWidth, newHeight);
-                GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER,
-                        GL30.GL_DEPTH_ATTACHMENT,
-                        GL30.GL_RENDERBUFFER,
-                        depthAttachment);
+                if (depthAttachment >= 0) {
+                    if (depthTexture) GL11.glDeleteTextures(depthAttachment);
+                    else GL30.glDeleteRenderbuffers(depthAttachment);
+                }
+                if (depthTexture) {
+                    depthAttachment = createDepthTexture(newWidth, newHeight);
+                    GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
+                            GL11.GL_TEXTURE_2D, depthAttachment, 0);
+                } else {
+                    depthAttachment = createDepthRendererBuffer(newWidth, newHeight);
+                    GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER,
+                            GL30.GL_DEPTH_ATTACHMENT,
+                            GL30.GL_RENDERBUFFER,
+                            depthAttachment);
+                }
             }
 
             setDrawBuffers();
@@ -135,6 +160,23 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
             return rboId;
         } finally {
             GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, previous);
+        }
+    }
+
+    protected int createDepthTexture(int w, int h) {
+        int previous = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        int texture = GL11.glGenTextures();
+        try {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture);
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_DEPTH_COMPONENT24, w, h, 0,
+                    GL11.GL_DEPTH_COMPONENT, GL11.GL_UNSIGNED_INT, (ByteBuffer) null);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+            return texture;
+        } finally {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, previous);
         }
     }
 
@@ -209,7 +251,10 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
         if (isClosed) return;
         if (!context.isEmpty()) context.exit(this);
         for (int texture : colorAttachments) if (texture != 0) GL11.glDeleteTextures(texture);
-        if (depthAttachment >= 0) GL30.glDeleteRenderbuffers(depthAttachment);
+        if (depthAttachment >= 0) {
+            if (depthTexture) GL11.glDeleteTextures(depthAttachment);
+            else GL30.glDeleteRenderbuffers(depthAttachment);
+        }
         GL30.glDeleteFramebuffers(fboId);
         super.close();
     }
@@ -221,6 +266,7 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
         private final List<Integer> formats, internalFormats, textureTypes;
 
         private boolean hasDepth;
+        private boolean depthTexture;
 
         public Builder(int width, int height) {
             this.hasDepth = false;
@@ -243,6 +289,12 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
             return this;
         }
 
+        public Builder setDepthTexture(boolean depthTexture) {
+            this.depthTexture = depthTexture;
+            if (depthTexture) this.hasDepth = true;
+            return this;
+        }
+
         public FrameBuffer build() {
             if (formats.isEmpty()) {
                 throw new IllegalStateException("At least one color attachment must be added.");
@@ -257,7 +309,8 @@ public class FrameBuffer extends GpuBuffer<FrameBuffer> {
             internalFormats.clear();
             textureTypes.clear();
 
-            return new FrameBuffer(width, height, numColorAttach, formatArray, internalFormatArray, textureTypeArray, hasDepth);
+            return new FrameBuffer(width, height, numColorAttach, formatArray, internalFormatArray,
+                    textureTypeArray, hasDepth, depthTexture);
         }
     }
 }

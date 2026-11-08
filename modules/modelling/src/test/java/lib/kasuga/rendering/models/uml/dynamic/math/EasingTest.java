@@ -7,6 +7,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Easing contract tests: endpoints, known values, overshoot, parameter effects, extrema. */
 class EasingTest {
+    @Test void quinticHermitePreservesEndpointDerivativesAndSmoothReveal() {
+        var linear = Easing.quinticHermite(1, 1, 0, 0);
+        var smooth = Easing.quinticHermite(0, 0, 0, 0);
+        assertEquals(.25f, linear.apply(.25f), 1e-6);
+        assertEquals(.103515625f, smooth.apply(.25f), 1e-6);
+        var ease = Easing.quinticHermite(.4, .8, .2, -.3);
+        float h = .01f;
+        assertEquals(.4, (-3 * ease.apply(0) + 4 * ease.apply(h) - ease.apply(2*h)) / (2*h), .003);
+        assertEquals(.8, (3 * ease.apply(1) - 4 * ease.apply(1-h) + ease.apply(1-2*h)) / (2*h), .003);
+        assertEquals(.2, (2*ease.apply(0)-5*ease.apply(h)+4*ease.apply(2*h)-ease.apply(3*h))/(h*h), .02);
+        assertEquals(-.3, (2*ease.apply(1)-5*ease.apply(1-h)+4*ease.apply(1-2*h)-ease.apply(1-3*h))/(h*h), .03);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> Easing.quinticHermite(Double.NaN, 0, 0, 0));
+    }
 
     private static final float EPS = 1e-4f;
 

@@ -22,6 +22,16 @@ public class MtlMapProcessor extends MtlKeyProcessor {
             case "map_Ks":
                 context.peek().map_Ks(removeCtrlCodes(data[1]));
                 break;
+            case "map_Bump":
+            case "bump":
+                context.peek().map_Bump(removeCtrlCodes(data[1]));
+                break;
+            case "map_Pr":
+                context.peek().map_Pr(removeCtrlCodes(data[1]));
+                break;
+            case "map_Ke":
+                context.peek().map_Ke(removeCtrlCodes(data[1]));
+                break;
         }
     }
 
@@ -32,6 +42,10 @@ public class MtlMapProcessor extends MtlKeyProcessor {
                         data[0].equals("map_Ka") ||
                         data[0].equals("map_Kd") ||
                         data[0].equals("map_Ks")
+                        || data[0].equals("map_Bump")
+                        || data[0].equals("bump")
+                        || data[0].equals("map_Pr")
+                        || data[0].equals("map_Ke")
                 );
     }
 

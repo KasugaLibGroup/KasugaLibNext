@@ -1,6 +1,8 @@
-package test.kasuga.modelling.nebula;
+package test.kasuga.modelling.demo.nebula;
 
 import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationTimeline;
+import lib.kasuga.rendering.output.WorldCameraView;
+import lib.kasuga.rendering.output.camera.CameraAnimationPlayer;
 import org.joml.Vector3f;
 
 import java.util.ArrayList;
@@ -15,6 +17,9 @@ public final class NebulaSimulation {
     public static final float DEFAULT_FREQUENCY = .25f;
     public static final float LIFETIME = .95f;
     private final AnimationTimeline timeline = new AnimationTimeline();
+    private WorldCameraView cameraBase;
+    private final CameraAnimationPlayer lensPlayer = new CameraAnimationPlayer(() -> cameraBase);
+    private NebulaWarpSequence warpSequence;
     private final ArrayList<Bolt> bolts = new ArrayList<>();
     private final List<Bolt> view = java.util.Collections.unmodifiableList(bolts);
     private final long seed;
@@ -22,6 +27,7 @@ public final class NebulaSimulation {
     private float frequency = DEFAULT_FREQUENCY;
     private double credit;
     private long emitted;
+    private float warpPhaseOffset;
 
     public NebulaSimulation(long seed) { this.seed = seed; reset(); }
 
@@ -30,8 +36,11 @@ public final class NebulaSimulation {
         bolts.clear();
         credit = 0;
         emitted = 0;
+        warpPhaseOffset = 0;
         frequency = DEFAULT_FREQUENCY;
         timeline.play(86_400, true);
+        lensPlayer.follow(NebulaFlight.ENDING_LENS, timeline);
+        warpSequence = new NebulaWarpSequence(this::warpCycleTime);
     }
 
     public void frequency(float hz) {
@@ -44,20 +53,51 @@ public final class NebulaSimulation {
     public long emitted() { return emitted; }
     public List<Bolt> bolts() { return view; }
     public float time(float partialTick) { return timeline.snapshot().sampleTime(partialTick); }
+    public float warpTime(float partialTick) { return time(partialTick) + warpPhaseOffset; }
+
+    WorldCameraView camera(NebulaFlight.Pose craft, NebulaFlight.WarpState warp, int width, int height,
+                           float azimuth, float elevation, float partialTick) {
+        cameraBase = NebulaFlight.cameraBase(craft, warp, time(partialTick), width, height, azimuth, elevation);
+        return lensPlayer.sample(partialTick);
+    }
+
+    public boolean triggerWarp() {
+        warpSequence.update(0);
+        var phase = warpSequence.phase();
+        if (!phase.canTrigger) return false;
+        double skip = Math.nextUp(5.15f) - warpCycleTime();
+        if (phase == NebulaWarpSequence.Phase.READY) skip += NebulaFlight.WARP_CYCLE_SECONDS;
+        warpPhaseOffset += (float) skip;
+        warpSequence.update(0);
+        return true;
+    }
+
+    private double warpCycleTime() { return warpTime(1) % NebulaFlight.WARP_CYCLE_SECONDS; }
+    NebulaWarpSequence.Phase warpPhase() { return warpSequence.phase(); }
+
     public void paused(boolean paused) { if (paused) timeline.pause(); else timeline.resume(); }
 
     public void tick() {
         advance(.05f,1.0/20);
     }
 
-    /** Offline capture owns this clock instead of client ticks, preserving real animation seconds at 30 FPS. */
+    /** Offline capture owns this clock instead of client ticks; the no-argument form keeps the 30 FPS default. */
     public void captureFrame() {
-        advance(1f/30f,1.0/30);
+        captureFrame(30);
+    }
+
+    /** Advance one offline capture frame at the requested output frame rate. */
+    public void captureFrame(float frameRate) {
+        if (!Float.isFinite(frameRate) || frameRate <= 0) {
+            throw new IllegalArgumentException("Capture frame rate must be finite and positive");
+        }
+        advance(1f / frameRate, 1.0 / frameRate);
     }
 
     private void advance(float delta, double seconds) {
         if (!timeline.isPlaying()) return;
         timeline.tick(delta);
+        warpSequence.update(delta);
         float now = time(1);
         bolts.removeIf(bolt -> now - bolt.born() > LIFETIME + .05f);
         credit += frequency * seconds;
