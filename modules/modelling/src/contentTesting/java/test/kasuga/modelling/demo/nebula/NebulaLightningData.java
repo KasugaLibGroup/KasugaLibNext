@@ -1,4 +1,4 @@
-package test.kasuga.modelling.nebula;
+package test.kasuga.modelling.demo.nebula;
 
 import java.util.Arrays;
 import java.util.List;

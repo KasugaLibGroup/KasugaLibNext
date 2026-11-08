@@ -1,5 +1,8 @@
 package lib.kasuga.rendering.output;
 
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
+
 /** Immutable world-space camera pose, vertical FOV in degrees, and output size. */
 public record WorldCameraView(double x, double y, double z, float yaw, float pitch, float roll,
                               float verticalFov, int width, int height) {
@@ -13,6 +16,25 @@ public record WorldCameraView(double x, double y, double z, float yaw, float pit
     }
 
     public float aspectRatio() { return (float) width / height; }
+
+    public Vector3f forward(Vector3f out) {
+        double yawRadians = Math.toRadians(yaw), pitchRadians = Math.toRadians(pitch);
+        return out.set((float) (-Math.sin(yawRadians) * Math.cos(pitchRadians)),
+                (float) -Math.sin(pitchRadians), (float) (Math.cos(yawRadians) * Math.cos(pitchRadians)));
+    }
+
+    /** Camera-to-world transform, including Minecraft Euler roll. Coordinates are in the view's frame. */
+    public Matrix4f inverseView(Matrix4f out) {
+        var eye = new Vector3f((float) x, (float) y, (float) z);
+        return out.identity().lookAt(eye, forward(new Vector3f()).add(eye), new Vector3f(0, 1, 0))
+                .rotateLocalZ((float) Math.toRadians(roll)).invert();
+    }
+
+    public Matrix4f projection(float near, float far, Matrix4f out) {
+        if (!Float.isFinite(near) || !Float.isFinite(far) || near <= 0 || far <= near)
+            throw new IllegalArgumentException("Projection requires finite 0 < near < far");
+        return out.identity().perspective((float) Math.toRadians(verticalFov), aspectRatio(), near, far);
+    }
 
     public WorldCameraView withPosition(double x, double y, double z) {
         return new WorldCameraView(x, y, z, yaw, pitch, roll, verticalFov, width, height);

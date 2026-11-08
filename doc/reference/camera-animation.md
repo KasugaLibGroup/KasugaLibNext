@@ -151,6 +151,14 @@ camera.animation().follow(scene, "main_shot", modelPlayer.timeline());
 `ClipSampler` / FSM 的模型姿态出口仍只应用模型通道；摄像机通道通过显式的目标绑定应用，
 当前共享时间轴不接管 FSM 的分层权重或状态切换。
 
+### 连续速度与加速度
+
+Java 构造的轨道可用 `Easing.quinticHermite(v0, v1, a0, a1)`，指定归一化段首尾的一阶、二阶导数。
+若实际段时长为 `dt`、值差为 `dv`，速度参数为 `velocity * dt / dv`，加速度参数为
+`acceleration * dt * dt / dv`；零值差应单独保持常量。邻段共享实际节点速度/加速度时，运镜可连续通过节点。
+参数必须有限；曲线可超调。四个参数为零时为五次平滑曲线。当前 codec 没有该参数化缓动的持久化表示，
+不要依赖 JSON 往返保留它。轨道与共享 player 的实际组合见 [Nebula demo](../guides/nebula-demo.md)。
+
 ## JSON
 
 通过 `CameraAnimationClip.CODEC` 读取和写出，与模型动画采用相同的 easing 名称。

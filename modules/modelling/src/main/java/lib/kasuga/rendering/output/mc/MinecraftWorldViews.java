@@ -158,7 +158,7 @@ public final class MinecraftWorldViews {
 
     public static Matrix4f projection(float farPlane) {
         WorldCameraView view = currentView();
-        return new Matrix4f().perspective((float) Math.toRadians(view.verticalFov()), view.aspectRatio(), 0.05f, farPlane);
+        return view.projection(.05f, farPlane, new Matrix4f());
     }
 
     /** Drop world references and camera attachments on disconnect/dimension change; retain subscriptions. */

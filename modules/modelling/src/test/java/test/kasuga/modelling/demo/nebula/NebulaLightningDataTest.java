@@ -1,4 +1,4 @@
-package test.kasuga.modelling.nebula;
+package test.kasuga.modelling.demo.nebula;
 
 import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;

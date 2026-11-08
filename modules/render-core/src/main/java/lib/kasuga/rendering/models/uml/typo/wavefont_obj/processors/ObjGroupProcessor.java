@@ -12,8 +12,10 @@ public class ObjGroupProcessor extends ObjKeyProcessor {
 
     @Override
     public void process(String[] data, SerialContext<ObjContextData> context) {
+        String material = context.isEmpty() ? null : context.peek().getMtlName();
         ((ObjModelLoader) context.getLoader()).endHighestGroup(context);
         ObjContextData contextData = new ObjContextData(data[1], true);
+        contextData.useMtl(material);
         context.push(contextData);
     }
 }

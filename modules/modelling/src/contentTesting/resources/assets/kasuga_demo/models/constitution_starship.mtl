@@ -1,0 +1,157 @@
+# Nebula standalone Constitution-inspired starship materials
+
+newmtl hull_dark
+Kd 0.036000 0.044000 0.057000
+Ke 0.000000 0.000000 0.000000
+Ks 0.100000 0.120000 0.150000
+Ns 17.280
+Pr 0.820
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl hull_mid
+Kd 0.076000 0.089000 0.109000
+Ke 0.000000 0.000000 0.000000
+Ks 0.100000 0.120000 0.150000
+Ns 25.920
+Pr 0.730
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl hull_light
+Kd 0.118000 0.133000 0.158000
+Ke 0.000000 0.000000 0.000000
+Ks 0.100000 0.120000 0.150000
+Ns 30.720
+Pr 0.680
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl trim_dark
+Kd 0.015000 0.021000 0.029000
+Ke 0.000000 0.000000 0.000000
+Ks 0.100000 0.120000 0.150000
+Ns 11.520
+Pr 0.880
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl coil_blue
+Kd 0.032000 0.190000 0.590000
+Ke 0.025000 0.135000 0.390000
+Ks 0.250000 0.330000 0.420000
+Ns 51.840
+Pr 0.460
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl collector_red
+Kd 0.430000 0.055000 0.010000
+Ke 0.085000 0.010000 0.001000
+Ks 0.250000 0.330000 0.420000
+Ns 44.160
+Pr 0.540
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl impulse_red
+Kd 0.340000 0.035000 0.007000
+Ke 0.060000 0.004000 0.001000
+Ks 0.250000 0.330000 0.420000
+Ns 41.280
+Pr 0.570
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl window_warm
+Kd 0.380000 0.300000 0.155000
+Ke 0.120000 0.085000 0.032000
+Ks 0.100000 0.120000 0.150000
+Ns 36.480
+Pr 0.620
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl window_cool
+Kd 0.080000 0.185000 0.265000
+Ke 0.018000 0.060000 0.105000
+Ks 0.250000 0.330000 0.420000
+Ns 40.320
+Pr 0.580
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl hangar_dark
+Kd 0.006000 0.009000 0.014000
+Ke 0.004000 0.012000 0.025000
+Ks 0.100000 0.120000 0.150000
+Ns 8.640
+Pr 0.910
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl deflector_copper
+Kd 0.285000 0.112000 0.027000
+Ke 0.035000 0.012000 0.002000
+Ks 0.250000 0.330000 0.420000
+Ns 45.120
+Pr 0.530
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl deflector_blue
+Kd 0.033000 0.168000 0.455000
+Ke 0.014000 0.080000 0.220000
+Ks 0.250000 0.330000 0.420000
+Ns 54.720
+Pr 0.430
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png
+
+newmtl nozzle_dark
+Kd 0.014000 0.020000 0.028000
+Ke 0.005000 0.018000 0.040000
+Ks 0.100000 0.120000 0.150000
+Ns 24.000
+Pr 0.750
+d 1.0
+map_Kd constitution_starship_imagegen_basecolor.png
+map_Bump constitution_starship_normal.png
+map_Pr constitution_starship_metallic_roughness.png
+map_Ke constitution_starship_emissive.png

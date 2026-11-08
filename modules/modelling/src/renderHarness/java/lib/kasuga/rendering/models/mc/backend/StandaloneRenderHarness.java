@@ -75,6 +75,8 @@ public final class StandaloneRenderHarness {
             run(results, "production-alpha-passes", suite::alphaPasses);
             run(results, "target-resize-and-failure", suite::targetLifecycle);
             run(results, "gpu-buffer-lifecycle", GpuBufferLifecycleRegression::run);
+            run(results, "mrt-depth-texture", NebulaGpuResourceRegression::mrtDepthTexture);
+            run(results, "gpu-texture-binding", NebulaGpuResourceRegression::textureBinding);
             run(results, "production-transform-feedback", SkinningRegression::run);
             run(results, "assembled-garment-skinning", AssemblySkinningRegression::run);
             run(results, "fenced-upload-ring", UploadRingRegression::run);

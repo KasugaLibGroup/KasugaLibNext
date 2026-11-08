@@ -32,6 +32,26 @@ public interface Easing {
         return LINEAR;
     }
 
+    /**
+     * Quintic segment joining 0 to 1 with prescribed normalized endpoint velocity/acceleration.
+     * Multiply physical derivatives by segment duration (or its square) and divide by value delta.
+     * Shared knot derivatives give continuous velocity and acceleration across adjacent segments.
+     */
+    static Easing quinticHermite(double startVelocity, double endVelocity,
+                                 double startAcceleration, double endAcceleration) {
+        if (!Double.isFinite(startVelocity) || !Double.isFinite(endVelocity)
+                || !Double.isFinite(startAcceleration) || !Double.isFinite(endAcceleration))
+            throw new IllegalArgumentException("Hermite derivatives must be finite");
+        double a1 = startVelocity, a2 = .5 * startAcceleration;
+        double position = 1 - a1 - a2;
+        double velocity = endVelocity - a1 - 2 * a2;
+        double acceleration = endAcceleration - 2 * a2;
+        double a3 = 10 * position - 4 * velocity + .5 * acceleration;
+        double a4 = -15 * position + 7 * velocity - acceleration;
+        double a5 = 6 * position - 3 * velocity + .5 * acceleration;
+        return t -> (float) (t * (a1 + t * (a2 + t * (a3 + t * (a4 + t * a5)))));
+    }
+
     static Easing easeInQuad() {
         return EASE_IN_QUAD;
     }

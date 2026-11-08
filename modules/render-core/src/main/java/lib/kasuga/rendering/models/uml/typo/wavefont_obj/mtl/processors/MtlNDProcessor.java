@@ -13,6 +13,9 @@ public class MtlNDProcessor extends MtlKeyProcessor {
     @Override
     public void process(String[] data, SerialContext<MtlContext> context) {
         switch (data[0]) {
+            case "Pr":
+                context.peek().Pr(Float.parseFloat(data[1]));
+                break;
             case "Ns":
                 context.peek().Ns(Float.parseFloat(data[1]));
                 break;
@@ -35,6 +38,7 @@ public class MtlNDProcessor extends MtlKeyProcessor {
     public boolean isValidInput(String[] data) {
         return data.length > 1 && (
                 data[0].equals("Ns") ||
+                data[0].equals("Pr") ||
                 data[0].equals("Ni") ||
                 data[0].equals("d") ||
                 data[0].equals("illum") ||

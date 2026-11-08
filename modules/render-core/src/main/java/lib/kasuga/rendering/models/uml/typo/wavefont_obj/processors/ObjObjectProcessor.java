@@ -13,6 +13,7 @@ public class ObjObjectProcessor extends ObjKeyProcessor {
     @Override
     public void process(String[] data, SerialContext<ObjContextData> context) {
         ObjContextData contextData = new ObjContextData(data[1], false);
+        if (!context.isEmpty()) contextData.useMtl(context.peek().getMtlName());
         context.push(contextData);
     }
 }

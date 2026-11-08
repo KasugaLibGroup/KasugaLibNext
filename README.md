@@ -46,6 +46,9 @@ World-space UI panels and transparent free-cursor input are documented in
 Optional world-wide volumetric skies, placeable cumulonimbus volumes and standalone previews are documented in
 [doc/reference/volumetric-clouds.md](doc/reference/volumetric-clouds.md).
 
+The [Nebula demo](doc/guides/nebula-demo.md) combines graph-managed MRT, OBJ/PBR assets,
+volumetric warp effects and shared camera animation, with deterministic 4K60 recording.
+
 Run the focused release gate with:
 
 ```bash

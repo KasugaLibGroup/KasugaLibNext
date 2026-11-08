@@ -302,6 +302,29 @@ PostProcessGraph graph = PostProcessGraph.builder(graphId)
 PostProcessGraphRegistration graphRegistration = pipelines.graph(graph, 100);
 ```
 
+### 多颜色附件与 buffer sampler
+
+目标默认是一张 `RGBA8` 颜色附件；旧构造方法与 builder 的默认行为保留。需要 HDR 或 G-buffer 时显式声明附件列表：
+
+```java
+PostProcessTargetDescriptor gbuffer = PostProcessTargetDescriptor.builder(scene.id())
+        .screenScale(1).useDepth(true)
+        .colorAttachments(PostProcessTargetDescriptor.ColorFormat.RGBA16F,
+                PostProcessTargetDescriptor.ColorFormat.RGBA16F,
+                PostProcessTargetDescriptor.ColorFormat.RGBA16F)
+        .build();
+```
+
+支持 `RGBA8`、`RGBA16F`、`RGBA32F`，每个目标 1–8 张附件，并受当前驱动能力限制。默认单张 `RGBA8` 使用原有 `TextureTarget`；其他组合由目标池创建 `MultiAttachmentRenderTarget`，复用 Kasuga `FrameBuffer`，深度存在时为可采样纹理。附件格式在 graph 物理 ID 转换和 resize 后保持。
+
+在声明读取该目标的 pass 中，`fullscreen(...).colorSampler("NormalSampler", context.read(scene), 1)` 选择第二张附件；省略索引等价于附件 0。索引越界失败，从输出目标任意附件采样仍按 feedback 拒绝。`depthSampler` 读取深度。
+
+`fullscreen(...).bufferSampler("DataSampler", tbo)` 绑定已有 `TBOBuffer`，在 shader apply 后上传真实 sampler location 并使用该 buffer 配置的纹理单元；GLSL 声明为 `samplerBuffer`，按线性索引 `texelFetch`。调用方应为 TBO 保留不与 2D samplers 冲突的纹理单元；此调用不接管 buffer 生命周期。sampler JSON 条目不是普通 uniform，不能通过 `ShaderInstance.getUniform` 获取。
+
+`graph.allocatedTargetId(logicalTarget)` 返回已声明 managed target 的物理 ID，用于诊断或在暂停图执行时显式交还目标池；传入 MAIN 或未声明目标失败。常规清理由 graph registration 的引用计数处理。
+
+完整的三阶段几何/体积/呈现示例见 [Nebula demo](../guides/nebula-demo.md)。
+
 ## 开箱即用的 PostFX 预设
 
 `PostFxPresetDemo` 只用一条生成的 shader 注册，且该注册跨重载保持有效。参数块选择不同的调色设置，切换预设不会重新注册或重新编译 shader。
