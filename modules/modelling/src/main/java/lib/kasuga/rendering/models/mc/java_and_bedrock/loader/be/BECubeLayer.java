@@ -6,34 +6,32 @@ import com.google.gson.JsonObject;
 import lib.kasuga.rendering.models.mc.java_and_bedrock.loader.CubeVerticesMapper;
 import lib.kasuga.rendering.models.mc.util.Direction;
 import lib.kasuga.rendering.models.mc.util.RotHelper;
-import lib.kasuga.rendering.models.mc.util.JsonHelper;
+import lib.kasuga.rendering.models.mc.util.ModelJson;
+import lib.kasuga.utils.json.JsonFieldPolicy.DefaultOnMismatch;
 import lib.kasuga.rendering.models.uml.loaders.structural.Context;
 import lib.kasuga.rendering.models.uml.loaders.structural.Layer;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.uml.structure.basic.Mesh;
 import lib.kasuga.rendering.models.uml.structure.basic.Vertex;
-import lib.kasuga.rendering.models.uml.util.TransformStack;
 import lib.kasuga.structure.Pair;
 import org.joml.Vector3f;
 
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.Stack;
 
 public class BECubeLayer extends Layer<JsonObject> {
 
     @Override
     @SuppressWarnings("unchecked")
     public void process(JsonObject input, Context context) {
+        Input definition = ModelJson.GSON.fromJson(input, Input.class);
         HashMap<String, Vector3f> map = (HashMap<String, Vector3f>) context.getData("pivot_map");
         HashMap<String, Pair<Transform, Transform>> transformMap = (HashMap<String, Pair<Transform, Transform>>) context.getData("transform_map");
-        Vector3f origin = JsonHelper.jsonToV3f(input.get("origin")).mul(1 / 16f);
-        Vector3f size = JsonHelper.jsonToV3f(input.get("size")).mul(1 / 16f);
+        Vector3f origin = new Vector3f(definition.origin).mul(1 / 16f);
+        Vector3f size = new Vector3f(definition.size).mul(1 / 16f);
 
         origin.x = -1 * (origin.x() + size.x());
-        Vector3f pivot = input.has("pivot") ?
-                JsonHelper.jsonToV3f(input.get("pivot")) :
-                new Vector3f(0, 0, 0);
+        Vector3f pivot = new Vector3f(definition.pivot);
         pivot.mul(-1/16f, 1/16f, 1/16f);
 
         String parent = (String) context.getData("bone_name");
@@ -44,19 +42,17 @@ public class BECubeLayer extends Layer<JsonObject> {
 
         context.setTemp("pivot", pivot);
 
-        Vector3f rotation = input.has("rotation") ?
-                JsonHelper.jsonToV3f(input.get("rotation")) :
-                new Vector3f(0, 0, 0);
+        Vector3f rotation = new Vector3f(definition.rotation);
 
 
         Transform transform = new Transform();
         transform.translate(transformPivot);
         RotHelper.rotation(transform, rotation);
 
-        boolean mirror = JsonHelper.jsonToBool(input, "mirror", false);
-        boolean visible = JsonHelper.jsonToBool(input, "visible", true);
-        boolean emissive = JsonHelper.jsonToBool(input, "emissive", false);
-        float inflate = JsonHelper.jsonToFloat(input, "inflate", 0) / 16f;
+        boolean mirror = definition.mirror;
+        boolean visible = definition.visible;
+        boolean emissive = definition.emissive;
+        float inflate = definition.inflate / 16f;
 
         // transform.scale(1 + inflate / size.x(), 1 + inflate / size.y(), 1 + inflate / size.z());
         float sx = size.x() == 0 ? 1f : 1f + inflate / size.x();
@@ -68,7 +64,7 @@ public class BECubeLayer extends Layer<JsonObject> {
         Transform absTransform = parentAbs.copy().mul(transform);
         context.setTemp("abs_transform", absTransform);
 
-        JsonElement uvElement = input.get("uv");
+        JsonElement uvElement = definition.uv;
         CubeVerticesMapper mapper = new CubeVerticesMapper(origin, size);
         context.setTemp("mapper", mapper);
         HashMap<String, Object> data = context.getData();
@@ -107,5 +103,11 @@ public class BECubeLayer extends Layer<JsonObject> {
             }
         }
         context.getLoader().getVertices().addAll(meshesAndVertices.getSecond());
+    }
+    private static final class Input {
+        Vector3f origin, size, pivot = new Vector3f(), rotation = new Vector3f();
+        @DefaultOnMismatch Boolean mirror = false, visible = true, emissive = false;
+        @DefaultOnMismatch Float inflate = 0f;
+        JsonElement uv;
     }
 }

@@ -33,14 +33,53 @@ class McModelAssembliesTest {
     private static final ResourceLocation BODY = id("body.bbmodel"), CLOTH = id("cloth.glb"), SUMMER = id("summer"), WINTER = id("winter");
 
     @Test
+    void cacheIsInvalidatedBeforeEitherSourceOrDerivedNotifications() throws Exception {
+        for (int order = 0; order < 32; order++) {
+            try (Fixture f = new Fixture()) {
+                f.publish(Map.of(BODY, model(1, 2)));
+                f.service.register(SUMMER, recipe(false));
+                f.service.resolve(SUMMER);
+                assertEquals(1, f.service.cacheStats().entries());
+                java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+                try (var source = f.sources.onModelChanged(change -> {
+                    assertEquals(0, f.service.cacheStats().entries()); calls.incrementAndGet();
+                }); var derived = f.output.onModelChanged(change -> {
+                    assertEquals(0, f.service.cacheStats().entries()); calls.incrementAndGet();
+                })) {
+                    f.publish(Map.of(BODY, model(4, 4)));
+                    assertEquals(2, calls.get());
+                }
+            }
+        }
+    }
+
+    @Test
+    void abortedPreparationDoesNotInvalidateTheLiveAssemblyCache() throws Exception {
+        try (Fixture f = new Fixture()) {
+            var original = model(1, 2);
+            f.publish(Map.of(BODY, original));
+            f.service.register(SUMMER, recipe(false));
+            var derived = f.service.resolve(SUMMER).model();
+            try (var failure = ModelPublicationCoordinator.global().onPrepare(ignored -> {
+                throw new IllegalStateException("abort before commit");
+            })) {
+                assertThrows(IllegalStateException.class, () -> f.publish(Map.of(BODY, model(4, 4))));
+            }
+            assertEquals(1, f.service.cacheStats().entries());
+            assertSame(original, f.sources.getModel(BODY));
+            assertSame(derived, f.output.getModel(SUMMER));
+        }
+    }
+
+    @Test
     void lazyRecipesResolveOnlyWhenAllSourcesPublishAndShareGeometryAcrossOwners() {
         try (Fixture f = new Fixture()) {
             f.service.register(WINTER, recipe(true));
             var first = f.service.handle(WINTER, id("owner-1"));
             assertFalse(first.mount()); assertEquals(0, f.service.cacheStats().builds());
-            f.sources.publishModels(Map.of(BODY, model(1, 2)));
+            f.publish(Map.of(BODY, model(1, 2)));
             assertFalse(first.mount()); assertEquals(0, f.service.cacheStats().builds());
-            f.sources.publishModels(Map.of(CLOTH, model(1, 2)));
+            f.publish(Map.of(CLOTH, model(1, 2)));
             assertTrue(first.mount());
             var second = f.service.handle(WINTER, id("owner-2")); assertTrue(second.mount());
             assertSame(first.instance().getModel(), second.instance().getModel());
@@ -53,7 +92,7 @@ class McModelAssembliesTest {
     @Test
     void outfitSwitchIsPerOwnerAndPreservesExactRootAnimationMorphAndVisibility() {
         try (Fixture f = new Fixture()) {
-            f.sources.publishModels(Map.of(BODY, model(1, 2)));
+            f.publish(Map.of(BODY, model(1, 2)));
             f.service.register(SUMMER, recipe(false)); f.service.register(WINTER, recipe(true));
             var first = f.service.handle(SUMMER, id("owner-1")); var other = f.service.handle(SUMMER, id("owner-2"));
             assertTrue(first.mount()); assertTrue(other.mount());
@@ -66,7 +105,7 @@ class McModelAssembliesTest {
             var clock = posing.timeline(); Vec3 position = first.getPos();
             assertFalse(first.switchAssembly(f.service, WINTER));
             assertSame(previous, first.instance()); assertTrue(f.backend.contains(previous));
-            f.sources.publishModels(Map.of(CLOTH, model(1, 2)));
+            f.publish(Map.of(CLOTH, model(1, 2)));
             assertTrue(first.switchAssembly(f.service, WINTER));
             ModelInstance fresh = first.instance();
             assertNotSame(previous, fresh); assertSame(unaffected, other.instance());
@@ -85,24 +124,24 @@ class McModelAssembliesTest {
     @Test
     void publicationRetiresBorrowedAssembliesAndHandleRemountsWithFreshNamedClip() {
         try (Fixture f = new Fixture()) {
-            f.sources.publishModels(Map.of(BODY, model(1, 2)));
+            f.publish(Map.of(BODY, model(1, 2)));
             f.service.register(SUMMER, recipe(false));
             var handle = f.service.handle(SUMMER, id("owner")); assertTrue(handle.mount());
             var old = handle.instance(); var posing = old.getPosing(); posing.play("walk", true);
             old.animate(0.5f); old.sample(1); var clock = posing.timeline();
             old.getSkeletonInstance().enableFloatingOrigin(new Vector3d(50_000_000.25, 0, 0));
             handle.setPos(50_000_000.5, 0, 0);
-            f.sources.publishModels(Map.of(BODY, model(4, 4)));
+            f.publish(Map.of(BODY, model(4, 4)));
             assertFalse(handle.isMounted()); assertFalse(f.backend.contains(old));
             assertEquals(0, f.service.cacheStats().entries());
             assertEquals(new Vec3(50_000_000.5, 0, 0), handle.getPos());
             assertTrue(handle.mount()); var fresh = handle.instance(); fresh.sample(1);
             assertSame(clock, fresh.getPosing().timeline()); assertEquals(4, clock.snapshot().duration());
             assertEquals(2, fresh.getSkeletonInstance().getTransforms().get(fresh.getModel().getBones()[1]).getPosition().x, 1e-6);
-            f.sources.replaceModels(Map.of());
+            f.publications.publish(Map.of());
             assertFalse(handle.isMounted()); assertFalse(handle.mount());
             handle.setPos(50_000_001.125, 1, 0);
-            f.sources.publishModels(Map.of(BODY, model(1, 2)));
+            f.publish(Map.of(BODY, model(1, 2)));
             assertTrue(handle.mount()); assertEquals(new Vec3(50_000_001.125, 1, 0), handle.getPos());
             handle.destroy();
         }
@@ -111,7 +150,7 @@ class McModelAssembliesTest {
     @Test
     void equivalentOutfitIdsHaveIndependentInstanceRegistries() {
         try (Fixture f = new Fixture()) {
-            f.sources.publishModels(Map.of(BODY, model(1, 2)));
+            f.publish(Map.of(BODY, model(1, 2)));
             f.service.register(SUMMER, recipe(false)); f.service.register(WINTER, recipe(false));
             var a = f.service.handle(SUMMER, id("same-owner"));
             var b = f.service.handle(WINTER, id("same-owner"));
@@ -127,7 +166,7 @@ class McModelAssembliesTest {
     @Test
     void failedSetupOrBackendMountDoesNotLeakOrReplaceCurrentOutfit() {
         try (Fixture f = new Fixture()) {
-            f.sources.publishModels(Map.of(BODY, model(1, 2), CLOTH, model(1, 2)));
+            f.publish(Map.of(BODY, model(1, 2), CLOTH, model(1, 2)));
             f.service.register(SUMMER, recipe(false)); f.service.register(WINTER, recipe(true));
             var handle = f.service.handle(SUMMER, id("owner")); assertTrue(handle.mount());
             var old = handle.instance();
@@ -147,7 +186,7 @@ class McModelAssembliesTest {
     @Test
     void resourceDefinitionsReloadRetainsProgrammaticOverridesAndClosesOldInstances() {
         try (Fixture f = new Fixture()) {
-            f.sources.publishModels(Map.of(BODY, model(1, 2), CLOTH, model(1, 2)));
+            f.publish(Map.of(BODY, model(1, 2), CLOTH, model(1, 2)));
             f.service.register(SUMMER, recipe(false));
             f.service.replaceResourceDefinitions(Map.of(SUMMER, recipe(true), WINTER, recipe(true)));
             var h = f.service.handle(SUMMER, id("owner")); assertTrue(h.mount());
@@ -182,13 +221,75 @@ class McModelAssembliesTest {
     void resourceBatchDropsRemovedAssetsAndKeepsModelsOwnedByOtherPublishers() {
         try (Fixture f = new Fixture()) {
             var external = id("external"); var own = model(1, 2);
-            f.sources.publishModels(Map.of(external, own));
+            f.publish(Map.of(external, own));
             var publisher = new ModelPublicationBatch<ResourceLocation>();
             publisher.publish(Map.of(f.sources, Map.of(BODY, model(1, 2))));
             f.service.register(SUMMER, recipe(false)); var h = f.service.handle(SUMMER, id("owner")); assertTrue(h.mount());
             publisher.publish(Map.of());
             assertFalse(h.isMounted()); assertNull(f.sources.getModel(BODY)); assertSame(own, f.sources.getModel(external));
-            h.destroy();
+            h.destroy(); publisher.close();
+        }
+    }
+
+    @Test
+    void sourceAndDerivedModelsSwitchTogetherAndPinsKeepPreviousGeneration() throws Exception {
+        try (Fixture f = new Fixture()) {
+            Model original = model(1, 2), replacement = model(4, 4);
+            f.publish(Map.of(BODY, original));
+            f.service.register(SUMMER, recipe(false));
+            var derived = f.service.resolve(SUMMER).model();
+            try (var before = ModelPublicationCoordinator.global().pin();
+                 var subscription = f.sources.onModelChanged(change -> {
+                     if (change.key().equals(BODY)) {
+                         try (var current = ModelPublicationCoordinator.global().pin()) {
+                             assertSame(replacement, current.getModel(f.sources, BODY));
+                             assertNull(current.getModel(f.output, SUMMER));
+                         }
+                     }
+                 })) {
+                f.publications.publish(Map.of(f.sources, Map.of(BODY, replacement)));
+                assertSame(original, before.getModel(f.sources, BODY));
+                assertSame(derived, before.getModel(f.output, SUMMER));
+                assertNull(f.output.getModel(SUMMER));
+            }
+        }
+    }
+
+    @Test
+    void conflictingReloadDoesNotChangeDefinitionsOrPublishedModels() {
+        try (Fixture f = new Fixture(); var other = new ModelPublicationBatch<ResourceLocation>()) {
+            Model old = model(1, 2), conflict = model(1, 2);
+            f.publish(Map.of(BODY, old));
+            other.put(f.sources, Map.of(CLOTH, conflict));
+            f.service.replaceResourceDefinitions(Map.of(SUMMER, recipe(false)));
+            var derived = f.service.resolve(SUMMER).model();
+            assertThrows(IllegalStateException.class, () -> f.service.publishResourceGeneration(
+                    Map.of(WINTER, recipe(true)), f.publications,
+                    Map.of(f.sources, Map.of(BODY, model(4, 4), CLOTH, model(4, 4)))));
+            assertSame(old, f.sources.getModel(BODY));
+            assertSame(conflict, f.sources.getModel(CLOTH));
+            assertSame(derived, f.output.getModel(SUMMER));
+            assertTrue(f.service.definitions().containsKey(SUMMER));
+            assertFalse(f.service.definitions().containsKey(WINTER));
+        }
+    }
+
+    @Test
+    void definitionReloadRemovesDerivedModelsBeforeNotifyingSources() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.publish(Map.of(BODY, model(1, 2)));
+            f.service.replaceResourceDefinitions(Map.of(SUMMER, recipe(false)));
+            f.service.resolve(SUMMER);
+            try (var subscription = f.sources.onModelChanged(change -> {
+                if (change.key().equals(BODY)) {
+                    assertNull(f.output.getModel(SUMMER));
+                    assertFalse(f.service.definitions().containsKey(SUMMER));
+                    assertTrue(f.service.definitions().containsKey(WINTER));
+                }
+            })) {
+                f.service.publishResourceGeneration(Map.of(WINTER, recipe(false)), f.publications,
+                        Map.of(f.sources, Map.of(BODY, model(4, 4))));
+            }
         }
     }
 
@@ -202,18 +303,20 @@ class McModelAssembliesTest {
     private static final class Fixture implements AutoCloseable {
         final TestBackend backend = new TestBackend();
         final Adapter bridge = new Adapter();
-        final ModelPipeLine<Object, Object, ResourceLocation, ResourceLocation, Object> sources = pipeline(bridge, backend);
-        final ModelPipeLine<Object, Object, ResourceLocation, ResourceLocation, Object> output = pipeline(bridge, backend);
+        final ModelPipeLine<ResourceLocation, ResourceLocation> sources = pipeline(bridge, backend);
+        final ModelPipeLine<ResourceLocation, ResourceLocation> output = pipeline(bridge, backend);
+        final ModelPublicationBatch<ResourceLocation> publications = new ModelPublicationBatch<>();
         final McModelAssemblies service = new McModelAssemblies(output,
                 ref -> new McModelAssemblies.PublishedSource(sources, ref.model()), new ModelAssemblyCache());
+        void publish(Map<ResourceLocation, Model> models) { publications.put(sources, models); }
         public void close() {
-            service.close(); sources.replaceModels(Map.of());
+            service.close(); publications.close();
             try { backend.close(); } catch (Exception failure) { throw new IllegalStateException(failure); }
         }
     }
-    private static ModelPipeLine<Object, Object, ResourceLocation, ResourceLocation, Object> pipeline(Adapter bridge, TestBackend backend) {
-        return new ModelPipeLine.Builder<Object, Object, ResourceLocation, ResourceLocation, Object>()
-                .withBridge("mc_bridge", bridge).withBackend("mc_backend", backend).buildForPublishedModels();
+    private static ModelPipeLine<ResourceLocation, ResourceLocation> pipeline(Adapter bridge, TestBackend backend) {
+        return new ModelPipeLine.PublishedBuilder<ResourceLocation, ResourceLocation, Object>()
+                .withBridge("mc_bridge", bridge).withBackend("mc_backend", backend).build();
     }
     private static final class TestBackend extends Backend<Adapter, Object, Void, Void> {
         boolean fail;

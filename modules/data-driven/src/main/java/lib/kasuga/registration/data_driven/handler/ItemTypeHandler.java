@@ -1,6 +1,8 @@
 package lib.kasuga.registration.data_driven.handler;
 
 import com.google.gson.JsonObject;
+import lib.kasuga.registration.data_driven.json.DataJson;
+import java.util.Objects;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.data_driven.property.JsonItemParser;
 import lib.kasuga.registration.factory.FactoryRegistry;
@@ -20,13 +22,10 @@ public class ItemTypeHandler extends RegTypeHandler<ItemDef> {
 
     @Override
     public ItemDef parse(JsonObject json) {
-        return new ItemDef(
-            json.get("id").getAsString(),
-            json.get("type").getAsString(),
-            json.has("registry_group") ? json.get("registry_group").getAsString() : null,
-            json.has("properties") ? json.getAsJsonObject("properties") : null,
-            json.has("params") ? json.getAsJsonObject("params") : null
-        );
+        ItemDef definition = DataJson.GSON.fromJson(json, ItemDef.class);
+        Objects.requireNonNull(definition.id(), "id");
+        Objects.requireNonNull(definition.type(), "type");
+        return definition;
     }
 
     @Override
@@ -46,10 +45,8 @@ public class ItemTypeHandler extends RegTypeHandler<ItemDef> {
 
     @Override
     protected ResourceLocation resolveCreativeTab(ItemDef definition) {
-        if (definition.properties() != null && definition.properties().has("tab")) {
-            return ResourceLocation.parse(definition.properties().get("tab").getAsString());
-        }
-        return null;
+        String tab = DataJson.creativeTab(definition.properties());
+        return tab == null ? null : ResourceLocation.parse(tab);
     }
 
     @Override

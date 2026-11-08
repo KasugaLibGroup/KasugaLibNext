@@ -60,8 +60,8 @@ public final class McModelHandle {
     private final ResourceLocation instanceLoc;
 
     private Binder binder;
-    private Function<ResourceLocation, @Nullable ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?>> pipelineResolver;
-    @Nullable private ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> boundPipeline;
+    private Function<ResourceLocation, @Nullable ModelPipeLine<ResourceLocation, ResourceLocation>> pipelineResolver;
+    @Nullable private ModelPipeLine<ResourceLocation, ResourceLocation> boundPipeline;
     @Nullable private ResourceLocation boundKey;
     @Nullable private AutoCloseable publicationSubscription;
     @Nullable private RebindState pendingRebind;
@@ -84,7 +84,7 @@ public final class McModelHandle {
     private McModelHandle(ResourceLocation modelLoc, @Nullable String modelName,
                           ResourceLocation instanceLoc,
                           Binder binder,
-                          Function<ResourceLocation, @Nullable ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?>> pipelineResolver) {
+                          Function<ResourceLocation, @Nullable ModelPipeLine<ResourceLocation, ResourceLocation>> pipelineResolver) {
         this.modelLoc = Objects.requireNonNull(modelLoc, "modelLoc");
         this.modelName = modelName;
         this.instanceLoc = Objects.requireNonNull(instanceLoc, "instanceLoc");
@@ -127,7 +127,7 @@ public final class McModelHandle {
                 McModelHandle::globalPipeline);
     }
 
-    private static ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> globalPipeline(ResourceLocation id) {
+    private static ModelPipeLine<ResourceLocation, ResourceLocation> globalPipeline(ResourceLocation id) {
         return PipelineRegistry.isInitialized() ? PipelineRegistry.resolve(id) : null;
     }
 
@@ -149,7 +149,7 @@ public final class McModelHandle {
     public static McModelHandle custom(ResourceLocation modelLoc, @Nullable String modelName,
                                        ResourceLocation instanceLoc,
                                        Binder binder,
-                                       Function<ResourceLocation, @Nullable ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?>> pipelineResolver) {
+                                       Function<ResourceLocation, @Nullable ModelPipeLine<ResourceLocation, ResourceLocation>> pipelineResolver) {
         return new McModelHandle(modelLoc, modelName, instanceLoc, binder, pipelineResolver);
     }
 
@@ -334,7 +334,7 @@ public final class McModelHandle {
             syncedFsm.model(null, null, null);
             syncedFsm = null;
         }
-        if (pipeline != null) {
+        if (pipeline != null && key != null) {
             pipeline.removeInstance(key, instanceLoc);
         }
         instance = null;

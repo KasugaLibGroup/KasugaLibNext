@@ -4,7 +4,6 @@ import lib.kasuga.rendering.models.uml.dynamic.morph.MorphInstance;
 import lib.kasuga.rendering.models.uml.dynamic.morph.MorphResult;
 import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import lib.kasuga.rendering.models.uml.dynamic.physics.ModelPhysicsScene;
-import lib.kasuga.rendering.models.uml.dynamic.physics.box3d.NativeBox3D;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.ModelTickLoop;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.AnchorModule;
 import lib.kasuga.rendering.models.uml.math.Transform;
@@ -64,8 +63,8 @@ public class ModelInstance implements AutoCloseable {
     private PoseDriver poseDriver;
     private ModelPosing posing;
 
-    @Nullable
-    private SkeletonRagdoll ragdoll;
+    private boolean closed;
+    private Object sampledRenderFrame;
 
     /**
      * The single ordered pipeline driving this instance's procedural stages
@@ -77,6 +76,8 @@ public class ModelInstance implements AutoCloseable {
 
     /** True when the physics runtime already sampled the pose for this render frame. */
     private boolean frameSamplePrepared;
+    private boolean framePipelinePrepared;
+    private long framePipelineVersion;
 
     private boolean shouldUpdate;
     /** Last skeleton result consumed by {@link #update()}. */
@@ -165,71 +166,36 @@ public class ModelInstance implements AutoCloseable {
         }
     }
 
-    /**
-     * Creates and enables the ragdoll from this skeleton's common physics definitions.
-     * Returns {@code null} when this distribution has no Box3D native library.
-     */
+    /** Compatibility access to the physical state owned by the standard skeleton. */
     @Nullable
-    public SkeletonRagdoll enablePhysics() {
-        if (!NativeBox3D.availableOrWarn()) return null;
-        if (ragdoll != null && ragdoll.physicsScene() != null) {
-            ragdoll.moveTo(null);
-        } else if (ragdoll == null) {
-            ragdoll = new SkeletonRagdoll(this);
-        }
-        ragdoll.setEnabled(true);
-        return ragdoll;
-    }
+    public SkeletonRagdoll getRagdoll() { return skeletonInstance.getRelaxation(); }
 
-    /**
-     * Creates a primary-bone PMX/PMD or glTF ragdoll from an explicit asset
-     * registration. Returns {@code null} when Box3D is unavailable.
-     */
+    @Nullable
+    public SkeletonRagdoll enablePhysics() { return skeletonInstance.relaxStandalone(); }
+
     @Nullable
     public SkeletonRagdoll enablePhysics(SkeletonRagdoll.Profile profile) {
-        if (!NativeBox3D.availableOrWarn()) return null;
-        if (ragdoll != null && !java.util.Objects.equals(ragdoll.profile(), profile)) {
-            ragdoll.close();
-            ragdoll = null;
-        }
-        if (ragdoll != null && ragdoll.physicsScene() != null) {
-            ragdoll.moveTo(null);
-        } else if (ragdoll == null) {
-            ragdoll = new SkeletonRagdoll(this, profile);
-        }
-        ragdoll.setEnabled(true);
-        return ragdoll;
+        return skeletonInstance.relaxStandalone(profile);
     }
 
-    /** Registers this model in a shared Box3D scene for cross-model contact and joints. */
     @Nullable
     public SkeletonRagdoll enablePhysics(ModelPhysicsScene scene, @Nullable SkeletonRagdoll.Profile profile) {
-        if (!NativeBox3D.availableOrWarn()) return null;
-        java.util.Objects.requireNonNull(scene, "scene");
-        if (ragdoll != null && !java.util.Objects.equals(ragdoll.profile(), profile)) {
-            ragdoll.close();
-            ragdoll = null;
-        }
-        if (ragdoll != null && ragdoll.physicsScene() != scene) {
-            ragdoll.moveTo(scene);
-        } else if (ragdoll == null) {
-            ragdoll = new SkeletonRagdoll(this, profile, scene);
-        }
-        ragdoll.setEnabled(true);
-        return ragdoll;
+        return skeletonInstance.relax(scene, profile);
     }
 
-    /** Disables physics and restores the current animation/IK pose. */
-    public void disablePhysics() {
-        if (ragdoll != null) ragdoll.setEnabled(false);
+    public void disablePhysics() { skeletonInstance.resumeAnimation(); }
+
+    public void detachPhysics() { skeletonInstance.detachRelaxation(); }
+
+    public void invalidatePreparedFrame() {
+        frameSamplePrepared = false;
+        framePipelinePrepared = false;
+        sampledRenderFrame = null;
+        preparedRenderFrame = null;
     }
 
-    /** Detaches physics from any scene and tears down the ragdoll adapter. */
-    public void detachPhysics() {
-        if (ragdoll != null) {
-            ragdoll.close();
-            ragdoll = null;
-        }
+    public void requireOpen() {
+        if (closed) throw new IllegalStateException("model instance is closed");
     }
 
     /**
@@ -239,12 +205,14 @@ public class ModelInstance implements AutoCloseable {
      * their mounted modules.
      */
     public void tick(float deltaTime) {
+        requireOpen();
         tickLoop.tick(deltaTime);
     }
 
     /** Advances physics through the tick loop without requiring an attached pose driver. */
     public void simulatePhysics(float dt) {
-        if (ragdoll == null || !ragdoll.enabled()) return;
+        SkeletonRagdoll relaxation = skeletonInstance.getRelaxation();
+        if (relaxation == null || !relaxation.enabled()) return;
         tickLoop.tick(dt);
     }
 
@@ -255,26 +223,41 @@ public class ModelInstance implements AutoCloseable {
      * consumes the prepared marker instead of sampling over that result.
      */
     public void evaluatePhysicsFrame(float partialTick, float deltaSeconds) {
-        if (ragdoll == null || !ragdoll.enabled()) return;
-        if (!Float.isFinite(partialTick)) {
-            throw new IllegalArgumentException("partialTick must be finite");
-        }
-        if (poseDriver != null) {
-            poseDriver.sample(partialTick);
-            frameSamplePrepared = true;
-        }
-        tickLoop.tick(deltaSeconds);
+        SkeletonRagdoll relaxation = skeletonInstance.getRelaxation();
+        if (relaxation == null || !relaxation.enabled()) return;
+        evaluateFrame(partialTick, deltaSeconds);
     }
 
-    /** Samples animation for a scene that will advance several models in one shared step. */
-    public void prepareSharedPhysicsFrame(float partialTick) {
-        if (!Float.isFinite(partialTick)) {
-            throw new IllegalArgumentException("partialTick must be finite");
-        }
-        if (poseDriver != null) {
-            poseDriver.sample(partialTick);
-            frameSamplePrepared = true;
-        }
+    /** Standard frame entry for animated, relaxed and pose-driven skeletons alike. */
+    public void evaluateFrame(float partialTick, float deltaSeconds) {
+        requireOpen();
+        if (!(deltaSeconds > 0f) || !Float.isFinite(deltaSeconds)) return;
+        prepareFrameSample(partialTick);
+        tickLoop.tick(deltaSeconds);
+        markFrameEvaluated();
+    }
+
+    public void markFrameEvaluated() {
+        framePipelinePrepared = true;
+        framePipelineVersion = skeletonInstance.getVersion();
+    }
+
+    /** Compatibility entry for sampling a member before a standard shared-world batch. */
+    public void prepareSharedPhysicsFrame(float partialTick) { prepareFrameSample(partialTick); }
+
+    public void prepareFrameSample(float partialTick) {
+        requireOpen();
+        if (!Float.isFinite(partialTick)) throw new IllegalArgumentException("partialTick must be finite");
+        if (poseDriver != null) poseDriver.sample(partialTick);
+        frameSamplePrepared = true;
+    }
+
+    /** Cross-backend/view sampling is keyed by the standard render frame identity. */
+    public void sample(float partialTick, Object frameToken) {
+        java.util.Objects.requireNonNull(frameToken, "frameToken");
+        if (sampledRenderFrame == frameToken) return;
+        sample(partialTick);
+        sampledRenderFrame = frameToken;
     }
 
     /**
@@ -287,6 +270,7 @@ public class ModelInstance implements AutoCloseable {
             frameSamplePrepared = false;
             return;
         }
+        framePipelinePrepared = false;
         if (poseDriver != null) {
             poseDriver.sample(partialTick);
         }
@@ -298,8 +282,11 @@ public class ModelInstance implements AutoCloseable {
         // skeleton version. Re-evaluating it here would solve PMX IK a second
         // time and, more importantly, is not required before uploading that
         // already-complete result.
-        boolean physicsOwnsPose = ragdoll != null && ragdoll.enabled();
-        if (!physicsOwnsPose && (skeletonInstance.checkShouldUpdate() || tickLoop.hasProceduralModules())) {
+        SkeletonRagdoll relaxation = skeletonInstance.getRelaxation();
+        boolean physicsOwnsPose = relaxation != null && relaxation.enabled();
+        boolean poseDirty = skeletonInstance.checkShouldUpdate();
+        boolean prepared = framePipelinePrepared && !poseDirty && framePipelineVersion == skeletonInstance.getVersion();
+        if (!physicsOwnsPose && !prepared && (poseDirty || tickLoop.hasProceduralModules())) {
             tickLoop.tick(0f);
         }
         flushedSkeletonVersion = skeletonInstance.getVersion();
@@ -410,11 +397,14 @@ public class ModelInstance implements AutoCloseable {
 
     @Override
     public void close() {
+        if (closed) return;
+        closed = true;
         poseDriver = null;
-        tickLoop.destroy();
-        if (ragdoll != null) {
-            ragdoll.close();
-            ragdoll = null;
+        frameSamplePrepared = false;
+        try {
+            tickLoop.destroy();
+        } finally {
+            skeletonInstance.detachRelaxation();
         }
     }
 }

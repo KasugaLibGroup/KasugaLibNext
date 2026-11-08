@@ -1,7 +1,10 @@
 package lib.kasuga.rendering.models.mc.java_and_bedrock.data.je;
 
 import com.google.gson.JsonObject;
-import lib.kasuga.rendering.models.mc.util.JsonHelper;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.annotations.JsonAdapter;
+import lib.kasuga.rendering.models.mc.util.ModelJson;
+import lib.kasuga.utils.json.JsonFieldPolicy.DefaultOnMismatch;
 import lombok.Getter;
 import org.joml.Vector3f;
 
@@ -59,26 +62,29 @@ public class JERotation {
     }
 
     public static JERotation fromJson(JsonObject input) {
-        Objects.requireNonNull(input, "input must not be null");
+        return ModelJson.GSON.fromJson(Objects.requireNonNull(input), Input.class).build();
+    }
 
-        if (!input.has("origin")) {
-            throw new IllegalArgumentException("Rotation must have 'origin' field");
-        }
-        Vector3f origin = JsonHelper.jsonToV3f(input.get("origin")).mul(1/16f);
-        boolean rescale = JsonHelper.jsonToBool(input, "rescale", false);
-
-        if (input.has("angle")) {
-            float angle = input.get("angle").getAsFloat();
-            String axis = input.get("axis").getAsString();
-            return new JERotation(origin, rescale, axis, angle);
-        } else if (input.has("x") || input.has("y") || input.has("z")) {
-            float x = JsonHelper.jsonToFloat(input, "x", 0f);
-            float y = JsonHelper.jsonToFloat(input, "y", 0f);
-            float z = JsonHelper.jsonToFloat(input, "z", 0f);
-            Vector3f multiAxis = new Vector3f(x, y, z);
-            return new JERotation(origin, rescale, multiAxis);
-        } else {
+    static final class Input {
+        Vector3f origin;
+        @DefaultOnMismatch Boolean rescale = false;
+        Float angle;
+        @JsonAdapter(value = AxisValueAdapter.class, nullSafe = false) Float x, y, z;
+        String axis;
+        JERotation build() {
+            if (origin == null) throw new IllegalArgumentException("Rotation must have 'origin' field");
+            origin.div(16f);
+            if (angle != null) return new JERotation(origin, rescale, Objects.requireNonNull(axis, "axis"), angle);
+            if (x != null || y != null || z != null)
+                return new JERotation(origin, rescale, new Vector3f(x == null ? 0f : x, y == null ? 0f : y, z == null ? 0f : z));
             throw new IllegalArgumentException("One of rotation method should be specified");
+        }
+    }
+    private static final class AxisValueAdapter implements JsonDeserializer<Float> {
+        @Override public Float deserialize(com.google.gson.JsonElement json, java.lang.reflect.Type type,
+                com.google.gson.JsonDeserializationContext context) {
+            return json.isJsonPrimitive() && json.getAsJsonPrimitive().isNumber()
+                    ? context.deserialize(json, Float.class) : 0f;
         }
     }
 }

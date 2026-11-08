@@ -15,6 +15,7 @@ import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
 import lib.kasuga.rendering.models.mc.dynamic.fsm.KasugaModelPipelines;
 import lib.kasuga.rendering.models.mc.registry.PipelineRegistry;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPublicationBatch;
 import lib.kasuga.rendering.models.uml.loaders.assembly.*;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.uml.structure.Model;
@@ -188,7 +189,8 @@ public final class WardrobeExample {
     private static final class Session implements AutoCloseable {
         final ClientLevel level = Minecraft.getInstance().level;
         final Path output = Minecraft.getInstance().gameDirectory.toPath().resolve("debug/wardrobe-example");
-        final ModelPipeLine<Object, BackendInstance, ResourceLocation, ResourceLocation, Object> sources;
+        final ModelPipeLine<ResourceLocation, ResourceLocation> sources;
+        final ModelPublicationBatch<ResourceLocation> publication = new ModelPublicationBatch<>();
         final McModelAssemblies assemblies;
         final McModelHandle handle;
         final McModelEquipment gear;
@@ -217,12 +219,12 @@ public final class WardrobeExample {
             skeleton.defineAnchor("left_grip", Objects.requireNonNull(skeleton.getBoneMap().get("左手首")),
                     new Transform().translate(.035f, -.03f, 0).rotate(0, 0, 38, true));
             Model shirt = textureVariants(source("short"), source("short_rose"));
-            sources = new ModelPipeLine.Builder<Object, BackendInstance, ResourceLocation, ResourceLocation, Object>()
-                    .withBridge("mc_bridge", new MCBridge()).withBackend("mc_backend", PipelineRegistry.backend()).buildForPublishedModels();
-            sources.publishModels(Map.of(id("body"), body, id("short"), shirt,
+            sources = new ModelPipeLine.PublishedBuilder<ResourceLocation, ResourceLocation, BackendInstance>()
+                    .withBridge("mc_bridge", new MCBridge()).withBackend("mc_backend", PipelineRegistry.backend()).build();
+            publication.put(sources, Map.of(id("body"), body, id("short"), shirt,
                     id("long"), source("long"), id("ayuchan"), source("ayuchan"), id("hair"), source("hair")));
-            var outputPipeline = new ModelPipeLine.Builder<Object, BackendInstance, ResourceLocation, ResourceLocation, Object>()
-                    .withBridge("mc_bridge", new MCBridge()).withBackend("mc_backend", PipelineRegistry.backend()).buildForPublishedModels();
+            var outputPipeline = new ModelPipeLine.PublishedBuilder<ResourceLocation, ResourceLocation, BackendInstance>()
+                    .withBridge("mc_bridge", new MCBridge()).withBackend("mc_backend", PipelineRegistry.backend()).build();
             assemblies = new McModelAssemblies(outputPipeline,
                     reference -> new McModelAssemblies.PublishedSource(sources, reference.model()), new ModelAssemblyCache());
             for (String cloth : List.of("short", "long", "ayuchan")) assemblies.register(id(cloth),
@@ -371,7 +373,7 @@ public final class WardrobeExample {
         }
         @Override public void close() {
             for (AutoCloseable resource : new AutoCloseable[]{window, camera, gear, handle::destroy, assemblies,
-                    () -> sources.replaceModels(Map.of())}) {
+                    publication}) {
                 try { if (resource != null) resource.close(); }
                 catch (Exception failure) { LogUtils.getLogger().error("Wardrobe cleanup", failure); }
             }

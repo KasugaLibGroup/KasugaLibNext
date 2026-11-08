@@ -2,7 +2,8 @@ package lib.kasuga.rendering.models.mc.java_and_bedrock.loader.je;
 
 import com.google.gson.JsonObject;
 import lib.kasuga.rendering.models.mc.java_and_bedrock.data.je.JEModelData;
-import lib.kasuga.rendering.models.mc.util.JsonHelper;
+import lib.kasuga.rendering.models.mc.util.ModelJson;
+import lib.kasuga.utils.json.JsonFieldPolicy.DefaultOnMismatch;
 import lib.kasuga.rendering.models.uml.loaders.SkeletonBuilder;
 import lib.kasuga.rendering.models.uml.loaders.sources.SourceManager;
 import lib.kasuga.rendering.models.uml.loaders.structural.Loader;
@@ -127,7 +128,7 @@ public class JEModelLoader extends Loader<JsonObject, ResourceLocation, String> 
 
         HashMap<ResourceLocation, Model> resultMap = new HashMap<>();
 
-        String parentPath = JsonHelper.jsonToString(input, "parent", null);
+        String parentPath = ModelJson.GSON.fromJson(input, ParentInput.class).parent;
         if (parentPath != null) {
             ResourceLocation parentLoc = ResourceLocation.parse(parentPath);
 
@@ -193,4 +194,5 @@ public class JEModelLoader extends Loader<JsonObject, ResourceLocation, String> 
     public void clear() {
         super.clear();
     }
+    private static final class ParentInput { @DefaultOnMismatch String parent; }
 }

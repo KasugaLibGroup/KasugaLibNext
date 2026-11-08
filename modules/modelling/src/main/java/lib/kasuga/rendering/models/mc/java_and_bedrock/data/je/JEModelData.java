@@ -1,8 +1,9 @@
 package lib.kasuga.rendering.models.mc.java_and_bedrock.data.je;
 
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import lib.kasuga.rendering.models.mc.util.JsonHelper;
+import lib.kasuga.utils.json.JsonFieldPolicy.NonNullFields;
+import lib.kasuga.rendering.models.mc.util.ModelJson;
+import lib.kasuga.utils.json.JsonFieldPolicy.DefaultOnMismatch;
 import lib.kasuga.rendering.models.uml.structure.data.ModelData;
 import lombok.Getter;
 import lombok.Setter;
@@ -71,38 +72,22 @@ public class JEModelData implements ModelData {
     }
 
     public static JEModelData fromJson(JsonObject json) {
-        Objects.requireNonNull(json, "json must not be null");
-
+        Input input = ModelJson.GSON.fromJson(Objects.requireNonNull(json), Input.class);
         JEModelData data = new JEModelData();
-
-        if (json.has("elements")) {
-            for (JsonElement element : json.getAsJsonArray("elements")) {
-                data.elements.add(JEElement.fromJson(element.getAsJsonObject()));
-            }
-        }
-
-        if (json.has("textures")) {
-            JsonObject texturesObj = json.getAsJsonObject("textures");
-            for (String key : texturesObj.keySet()) {
-                data.textures.put(key, texturesObj.get(key).getAsString());
-            }
-        }
-
-        if (json.has("ambientocclusion")) {
-            data.ambientOcclusion = JsonHelper.jsonToBool(json, "ambientocclusion", true);
-        }
-
-        if (json.has("gui_light")) {
-            data.guiLight = JsonHelper.jsonToString(json, "gui_light", "side");
-        }
-
-        if (json.has("display")) {
-            JsonObject displayObj = json.getAsJsonObject("display");
-            for (String key : displayObj.keySet()) {
-                data.display.put(key, JEDisplay.fromJson(displayObj.getAsJsonObject(key)));
-            }
-        }
-
+        input.elements.forEach(element -> data.elements.add(element.build()));
+        data.textures.putAll(input.textures);
+        input.display.forEach((name, display) -> data.display.put(name, display.build()));
+        data.ambientOcclusion = input.ambientocclusion;
+        data.guiLight = input.guiLight;
         return data;
+    }
+
+    @NonNullFields
+    private static final class Input {
+        List<JEElement.Input> elements = List.of();
+        Map<String, String> textures = Map.of();
+        Map<String, JEDisplay.Input> display = Map.of();
+        @DefaultOnMismatch Boolean ambientocclusion = true;
+        @DefaultOnMismatch String guiLight = "side";
     }
 }

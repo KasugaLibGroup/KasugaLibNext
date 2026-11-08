@@ -121,7 +121,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
             // physics is advanced by MinecraftRagdollRuntime independently of
             // render visibility; tying it to this method froze culled instances.
             if (sampledThisFrame.firstSample(model)) {
-                model.sample(context.getPartialTickFraction());
+                model.sample(context.getPartialTickFraction(), renderFrameToken);
             }
 
             LightData lightData;

@@ -1,7 +1,8 @@
 package lib.kasuga.rendering.models.mc.source.model;
 
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.reflect.TypeToken;
+import lib.kasuga.utils.json.GsonBindings;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.*;
@@ -19,24 +20,14 @@ public class ModelProxyConfig {
     }
     
     public static ModelProxyConfig fromJson(JsonObject json) {
-        Map<String, List<String>> namespaces = new HashMap<>();
-        
-        for (Map.Entry<String, JsonElement> entry : json.entrySet()) {
-            String namespace = entry.getKey();
-            JsonElement value = entry.getValue();
-            
-            if (value.isJsonArray()) {
-                List<String> patterns = new ArrayList<>();
-                for (JsonElement element : value.getAsJsonArray()) {
-                    patterns.add(element.getAsString());
-                }
-                namespaces.put(namespace, patterns);
-            }
-        }
-        
-        return new ModelProxyConfig(namespaces);
+        // Namespace metadata is allowed alongside pattern arrays.
+        JsonObject patterns = new JsonObject();
+        json.entrySet().stream().filter(entry -> entry.getValue().isJsonArray())
+                .forEach(entry -> patterns.add(entry.getKey(), entry.getValue()));
+        return new ModelProxyConfig(GsonBindings.GSON.fromJson(patterns,
+                new TypeToken<Map<String, List<String>>>() {}.getType()));
     }
-    
+
     public boolean matches(ResourceLocation resource) {
         String namespace = resource.getNamespace();
         String path = resource.getPath();

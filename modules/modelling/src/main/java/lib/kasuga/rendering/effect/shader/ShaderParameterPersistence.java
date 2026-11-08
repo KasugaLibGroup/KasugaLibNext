@@ -1,11 +1,13 @@
 package lib.kasuga.rendering.effect.shader;
 
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.google.gson.annotations.JsonAdapter;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.reflect.TypeToken;
+import lib.kasuga.utils.json.GsonBindings;
 import com.mojang.logging.LogUtils;
 import lib.kasuga.shader.ShaderParameter;
 import net.minecraft.resources.ResourceLocation;
@@ -31,7 +33,7 @@ import java.util.concurrent.TimeUnit;
 public final class ShaderParameterPersistence {
     private static final int FORMAT_VERSION = 1;
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON = GsonBindings.builder().setPrettyPrinting().create();
     private static final Object LOCK = new Object();
     private static final Object WRITE_LOCK = new Object();
     private static final long WRITE_DELAY_MILLIS = 200L;
@@ -188,32 +190,39 @@ public final class ShaderParameterPersistence {
 
     static Map<String, Map<String, double[]>> decode(String source) {
         Objects.requireNonNull(source, "source");
-        JsonObject root = JsonParser.parseString(source).getAsJsonObject();
-        int version = root.has("version") ? root.get("version").getAsInt() : FORMAT_VERSION;
-        if (version != FORMAT_VERSION) {
-            throw new IllegalArgumentException("Unsupported shader parameter format version: " + version);
-        }
-        JsonElement shaderElement = root.get("shaders");
-        if (shaderElement == null || !shaderElement.isJsonObject()) return new LinkedHashMap<>();
-        LinkedHashMap<String, Map<String, double[]>> result = new LinkedHashMap<>();
-        for (Map.Entry<String, JsonElement> shader : shaderElement.getAsJsonObject().entrySet()) {
-            if (!shader.getValue().isJsonObject()) continue;
-            LinkedHashMap<String, double[]> parameters = new LinkedHashMap<>();
-            for (Map.Entry<String, JsonElement> parameter : shader.getValue().getAsJsonObject().entrySet()) {
-                if (!parameter.getValue().isJsonArray()) continue;
-                JsonArray array = parameter.getValue().getAsJsonArray();
-                double[] components = new double[array.size()];
-                for (int index = 0; index < components.length; index++) {
-                    components[index] = array.get(index).getAsDouble();
-                    if (!Double.isFinite(components[index])) {
+        SavedInput input = Objects.requireNonNull(GSON.fromJson(source, SavedInput.class), "settings");
+        if (input.version != FORMAT_VERSION)
+            throw new IllegalArgumentException("Unsupported shader parameter format version: " + input.version);
+        return input.shaders == null ? new LinkedHashMap<>() : input.shaders;
+    }
+
+    private static final class SavedInput {
+        Integer version = FORMAT_VERSION;
+        @JsonAdapter(ShaderValuesAdapter.class) Map<String, Map<String, double[]>> shaders = new LinkedHashMap<>();
+    }
+
+    /** Old files may contain non-parameter metadata; preserve entry-level isolation. */
+    private static final class ShaderValuesAdapter implements JsonDeserializer<Map<String, Map<String, double[]>>> {
+        @Override public Map<String, Map<String, double[]>> deserialize(JsonElement json, java.lang.reflect.Type type,
+                com.google.gson.JsonDeserializationContext context) {
+            LinkedHashMap<String, Map<String, double[]>> result = new LinkedHashMap<>();
+            if (!json.isJsonObject()) return result;
+            Map<String, JsonElement> shaders = context.deserialize(json, new TypeToken<Map<String, JsonElement>>() {}.getType());
+            shaders.forEach((shader, raw) -> {
+                if (!raw.isJsonObject()) return;
+                Map<String, JsonElement> entries = context.deserialize(raw, new TypeToken<Map<String, JsonElement>>() {}.getType());
+                Map<String, double[]> parameters = new LinkedHashMap<>();
+                entries.forEach((name, value) -> {
+                    if (!value.isJsonArray()) return;
+                    double[] components = context.deserialize(value, double[].class);
+                    for (double component : components) if (!Double.isFinite(component))
                         throw new IllegalArgumentException("Persisted shader parameter must be finite");
-                    }
-                }
-                parameters.put(parameter.getKey(), components);
-            }
-            result.put(shader.getKey(), parameters);
+                    parameters.put(name, components);
+                });
+                result.put(shader, parameters);
+            });
+            return result;
         }
-        return result;
     }
 
     private static Map<String, Map<String, double[]>> copy(

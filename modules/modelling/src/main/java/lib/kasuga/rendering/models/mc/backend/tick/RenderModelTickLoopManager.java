@@ -1,47 +1,59 @@
 package lib.kasuga.rendering.models.mc.backend.tick;
 
-import jakarta.annotation.PostConstruct;
+import lib.kasuga.rendering.models.mc.dynamic.MinecraftModelRuntime;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.ModelTickLoop;
-import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
-import net.neoforged.neoforge.common.NeoForge;
 
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.Map;
+import java.util.Objects;
+import java.util.WeakHashMap;
 
+/** Registers instance-owned pipelines with the single Minecraft frame scheduler. */
 public abstract class RenderModelTickLoopManager<M> {
-    private final Map<ModelInstance, ModelTickLoop> registeredLoops = new LinkedHashMap<>();
+    // Do not store ModelTickLoop as a weak-key value: it strongly retains the instance.
+    private final Map<ModelInstance, Boolean> registeredInstances = new WeakHashMap<>();
 
-    @PostConstruct
-    private void init() {
-        NeoForge.EVENT_BUS.register(this);
-    }
-
-    @SubscribeEvent
+    /** Explicit compatibility fallback; automatic frames are owned by MinecraftModelRuntime. */
+    @Deprecated
     public void onRenderFrame(RenderFrameEvent.Pre event) {
-        float deltaTime = event.getPartialTick().getRealtimeDeltaTicks() / 20.0f;
-        tick(deltaTime);
+        tick(event.getPartialTick().getRealtimeDeltaTicks() / 20f);
     }
 
+    /** Explicit fallback for registrations whose automatic scheduling has been disabled. */
     public void tick(float deltaTime) {
-        for (var loop : this.registeredLoops.values()) {
-            loop.tick(deltaTime);
+        for (ModelInstance instance : snapshot()) {
+            if (instance.isClosed()) {
+                unregisterLoop(instance);
+            } else if (!MinecraftModelRuntime.isRegistered(instance)) {
+                instance.tick(deltaTime);
+            }
         }
     }
 
-    public ModelTickLoop registerLoop(ModelInstance instance) {
-        var loop = create(instance);
-        this.registeredLoops.put(instance, loop);
-        return loop;
+    public synchronized ModelTickLoop registerLoop(ModelInstance instance) {
+        Objects.requireNonNull(instance, "instance").requireOpen();
+        registeredInstances.put(instance, Boolean.TRUE);
+        MinecraftModelRuntime.register(instance);
+        return instance.getTickLoop();
     }
 
-    public void unregisterLoop(ModelInstance owner) {
-        var h = this.registeredLoops.remove(owner);
-        if (h != null) {
-            h.destroy();
-        }
+    /** Scheduling ends here; destruction of the canonical loop belongs to ModelInstance.close(). */
+    public synchronized void unregisterLoop(ModelInstance owner) {
+        if (registeredInstances.remove(owner) != null) MinecraftModelRuntime.unregister(owner);
     }
 
-    protected abstract ModelTickLoop create(ModelInstance instance);
+    /**
+     * Retained for source/binary compatibility with existing subclasses. Registration always uses
+     * {@link ModelInstance#getTickLoop()} and never calls a factory that could create a second loop.
+     */
+    @Deprecated
+    protected ModelTickLoop create(ModelInstance instance) {
+        return Objects.requireNonNull(instance, "instance").getTickLoop();
+    }
+
+    private synchronized ArrayList<ModelInstance> snapshot() {
+        return new ArrayList<>(registeredInstances.keySet());
+    }
 }

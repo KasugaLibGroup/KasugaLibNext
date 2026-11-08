@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.mc.typo.fmt;
 
 import com.google.gson.*;
+import lib.kasuga.utils.json.GsonBindings;
 import lib.kasuga.rendering.models.mc.Constants;
 import lib.kasuga.rendering.models.mc.backend.RenderState;
 import lib.kasuga.rendering.models.mc.java_and_bedrock.data.MCTexture;
@@ -126,20 +127,30 @@ public final class FmtArchiveLoader implements ModelLoader<ZipHelper, ResourceLo
 
     private List<BoxDef> parseJtmt(ZipHelper input) {
         ZipResource resource = input.getResource("model.jtmt"); if (resource == null) return List.of();
-        JsonObject root = JsonParser.parseString(new String(bytes(resource.buffer()), StandardCharsets.UTF_8)).getAsJsonObject();
-        List<BoxDef> result = new ArrayList<>(); JsonObject groups = root.has("groups") ? root.getAsJsonObject("groups") : new JsonObject();
-        for (JsonElement group : groups.entrySet().stream().map(Map.Entry::getValue).toList()) {
-            JsonArray polys = group.getAsJsonObject().getAsJsonArray("polygons"); if (polys == null) continue;
-            for (JsonElement element : polys) { JsonObject p = element.getAsJsonObject(); if (!"box".equalsIgnoreCase(p.has("type") ? p.get("type").getAsString() : "")) continue;
-                result.add(new BoxDef(new Vector3f(num(p,"pos_x"),num(p,"pos_y"),num(p,"pos_z")), new Vector3f(num(p,"width",1),num(p,"height",1),num(p,"depth",1)), new Vector3f(num(p,"off_x"),num(p,"off_y"),num(p,"off_z")), new Vector3f(), new Vector3f(num(p,"scale_x",1),num(p,"scale_y",1),num(p,"scale_z",1)), new Vector2i((int)num(p,"texture_x",0),(int)num(p,"texture_y",0)), null)); }
+        JtmtInput root = GsonBindings.GSON.fromJson(new String(bytes(resource.buffer()), StandardCharsets.UTF_8), JtmtInput.class);
+        List<BoxDef> result = new ArrayList<>();
+        for (JtmtGroup group : root.groups.values()) {
+            if (group.polygons == null) continue;
+            for (JtmtBox box : group.polygons) {
+                if (!"box".equalsIgnoreCase(box.type)) continue;
+                result.add(new BoxDef(new Vector3f(box.posX, box.posY, box.posZ),
+                        new Vector3f(box.width, box.height, box.depth), new Vector3f(box.offX, box.offY, box.offZ),
+                        new Vector3f(), new Vector3f(box.scaleX, box.scaleY, box.scaleZ),
+                        new Vector2i(box.textureX.intValue(), box.textureY.intValue()), null));
+            }
         }
         return result;
+    }
+    private static final class JtmtInput { Map<String, JtmtGroup> groups = Map.of(); }
+    private static final class JtmtGroup { List<JtmtBox> polygons; }
+    private static final class JtmtBox {
+        String type = "";
+        Float posX = 0f, posY = 0f, posZ = 0f, offX = 0f, offY = 0f, offZ = 0f, textureX = 0f, textureY = 0f;
+        Float width = 1f, height = 1f, depth = 1f, scaleX = 1f, scaleY = 1f, scaleZ = 1f;
     }
 
     private static float f(String s) { return Float.parseFloat(s.trim().replace(',', '.')); }
     private static int i(String s) { return Integer.parseInt(s.trim()); }
-    private static float num(JsonObject o, String key) { return num(o,key,0); }
-    private static float num(JsonObject o, String key, double def) { return o.has(key) ? o.get(key).getAsFloat() : (float)def; }
 
     private void appendBox(BoxDef box, Material material, Bone root, List<Vertex> vertices, List<Mesh> meshes) {
         Vector3f dimensions = new Vector3f(box.size.x == 0f ? 0.01f : box.size.x,

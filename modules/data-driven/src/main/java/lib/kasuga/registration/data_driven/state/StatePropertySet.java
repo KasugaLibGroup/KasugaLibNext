@@ -1,9 +1,10 @@
 package lib.kasuga.registration.data_driven.state;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
+import com.google.gson.JsonParseException;
+import com.google.gson.annotations.SerializedName;
+import lib.kasuga.utils.json.GsonBindings;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
@@ -62,7 +63,8 @@ public final class StatePropertySet {
                 throw error(name, "definition must be an object");
             }
             JsonObject definition = field.getValue().getAsJsonObject();
-            String type = stringField(definition, "type", name);
+            String type = bind(definition, TypeInput.class, name).type;
+            if (type == null) throw error(name, "type must be a string");
             Entry<?> entry = switch (type) {
                 case "boolean" -> parseBoolean(name, definition);
                 case "integer" -> parseInteger(name, definition);
@@ -77,24 +79,16 @@ public final class StatePropertySet {
 
     private static Entry<Boolean> parseBoolean(String name, JsonObject definition) {
         requireKeys(name, definition, Set.of("type", "default"));
-        BooleanProperty property = BooleanProperty.create(name);
-        boolean value = false;
-        if (definition.has("default")) {
-            JsonElement json = definition.get("default");
-            if (!json.isJsonPrimitive() || !json.getAsJsonPrimitive().isBoolean()) {
-                throw error(name, "default must be a boolean");
-            }
-            value = json.getAsBoolean();
-        }
-        return new Entry<>(property, value);
+        BooleanInput input = bind(definition, BooleanInput.class, name);
+        return new Entry<>(BooleanProperty.create(name), input.defaultValue);
     }
 
     private static Entry<Integer> parseInteger(String name, JsonObject definition) {
         requireKeys(name, definition, Set.of("type", "min", "max", "default"));
-        int min = intField(definition, "min", name);
-        int max = intField(definition, "max", name);
-        int value = definition.has("default") ? intField(definition, "default", name) : min;
-        return integerEntry(name, min, max, value);
+        IntegerInput input = bind(definition, IntegerInput.class, name);
+        if (input.min == null || input.max == null) throw error(name, "min and max must be integers");
+        int min = input.min, max = input.max;
+        return integerEntry(name, min, max, input.defaultValue == null ? min : input.defaultValue);
     }
 
     private static Entry<Integer> integerEntry(String name, int min, int max, int value) {
@@ -111,32 +105,26 @@ public final class StatePropertySet {
 
     private static Entry<String> parseEnum(String name, JsonObject definition) {
         requireKeys(name, definition, Set.of("type", "values", "default"));
-        JsonElement raw = definition.get("values");
-        if (raw == null || !raw.isJsonArray()) {
-            throw error(name, "values must be an array of strings");
-        }
-        JsonArray array = raw.getAsJsonArray();
-        if (array.size() < 2 || array.size() > MAX_VALUES_PER_PROPERTY) {
+        EnumInput input = bind(definition, EnumInput.class, name);
+        if (input.values == null) throw error(name, "values must be an array of strings");
+        List<String> values = input.values;
+        if (values.size() < 2 || values.size() > MAX_VALUES_PER_PROPERTY)
             throw error(name, "values must contain 2–" + MAX_VALUES_PER_PROPERTY + " entries");
-        }
-        LinkedHashSet<String> values = new LinkedHashSet<>();
-        for (JsonElement element : array) {
-            String value = stringValue(element, "values", name);
-            if (!NAME.matcher(value).matches() || !values.add(value)) {
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String value : values) {
+            if (value == null || !NAME.matcher(value).matches() || !unique.add(value))
                 throw error(name, "values must be unique and match [a-z0-9_]+");
-            }
         }
-        List<String> ordered = List.copyOf(values);
-        String value = definition.has("default") ? stringField(definition, "default", name) : ordered.get(0);
-        if (!values.contains(value)) {
-            throw error(name, "default must be one of the enum values");
-        }
-        return new Entry<>(new StringStateProperty(name, ordered), value);
+        String value = input.defaultValue == null ? values.get(0) : input.defaultValue;
+        if (!unique.contains(value)) throw error(name, "default must be one of the enum values");
+        return new Entry<>(new StringStateProperty(name, List.copyOf(values)), value);
     }
 
     private static Entry<?> parseVanilla(String name, JsonObject definition) {
         requireKeys(name, definition, Set.of("type", "property", "default"));
-        String fieldName = stringField(definition, "property", name);
+        VanillaInput input = bind(definition, VanillaInput.class, name);
+        String fieldName = input.property;
+        if (fieldName == null) throw error(name, "property must be a string");
         if (!VANILLA_FIELD.matcher(fieldName).matches()) {
             throw error(name, "vanilla property must be an uppercase BlockStateProperties field name");
         }
@@ -149,7 +137,7 @@ public final class StatePropertySet {
             if (!name.equals(property.getName())) {
                 throw error(name, "vanilla property '" + fieldName + "' is named '" + property.getName() + "'");
             }
-            return vanillaEntry(name, property, definition.get("default"));
+            return vanillaEntry(name, property, input.defaultValue);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw error(name, "unknown vanilla property '" + fieldName + "'");
         }
@@ -163,38 +151,30 @@ public final class StatePropertySet {
             if (!json.isJsonPrimitive()) {
                 throw error(name, "default must be a primitive property value");
             }
-            String serialized = json.getAsString();
+            String serialized = GsonBindings.GSON.fromJson(json, String.class);
             value = property.getValue(serialized)
                     .orElseThrow(() -> error(name, "invalid vanilla default '" + serialized + "'"));
         }
         return new Entry<>(property, value);
     }
 
-    private static int intField(JsonObject json, String field, String name) {
-        JsonElement element = json.get(field);
-        if (element == null || !element.isJsonPrimitive() || !element.getAsJsonPrimitive().isNumber()) {
-            throw error(name, "'" + field + "' must be an integer");
-        }
-        try {
-            return element.getAsBigDecimal().intValueExact();
-        } catch (ArithmeticException | NumberFormatException e) {
-            throw error(name, "'" + field + "' must be a 32-bit integer");
-        }
+    private static <T> T bind(JsonObject json, Class<T> type, String name) {
+        try { return GsonBindings.STRICT.fromJson(json, type); }
+        catch (JsonParseException failure) { throw error(name, failure.getMessage()); }
     }
-
-    private static String stringField(JsonObject json, String field, String name) {
-        return stringValue(json.get(field), field, name);
+    private record TypeInput(String type) {}
+    private static final class BooleanInput { @SerializedName("default") Boolean defaultValue = false; }
+    private static final class IntegerInput {
+        Integer min, max;
+        @SerializedName("default") Integer defaultValue;
     }
-
-    private static String stringValue(JsonElement element, String field, String name) {
-        if (element == null || !element.isJsonPrimitive()) {
-            throw error(name, "'" + field + "' must be a string");
-        }
-        JsonPrimitive primitive = element.getAsJsonPrimitive();
-        if (!primitive.isString()) {
-            throw error(name, "'" + field + "' must be a string");
-        }
-        return primitive.getAsString();
+    private static final class EnumInput {
+        List<String> values;
+        @SerializedName("default") String defaultValue;
+    }
+    private static final class VanillaInput {
+        String property;
+        @SerializedName("default") JsonElement defaultValue;
     }
 
     private static void requireKeys(String name, JsonObject definition, Set<String> allowed) {

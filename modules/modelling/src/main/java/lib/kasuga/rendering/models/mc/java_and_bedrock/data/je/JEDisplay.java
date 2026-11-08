@@ -1,7 +1,8 @@
 package lib.kasuga.rendering.models.mc.java_and_bedrock.data.je;
 
 import com.google.gson.JsonObject;
-import lib.kasuga.rendering.models.mc.util.JsonHelper;
+import lib.kasuga.utils.json.JsonFieldPolicy.NonNullFields;
+import lib.kasuga.rendering.models.mc.util.ModelJson;
 import lombok.Getter;
 import org.joml.Vector3f;
 
@@ -45,22 +46,15 @@ public class JEDisplay {
     }
 
     public static JEDisplay fromJson(JsonObject input) {
-        Objects.requireNonNull(input, "input must not be null");
+        Input value = ModelJson.GSON.fromJson(Objects.requireNonNull(input), Input.class);
+        return value.build();
+    }
 
-        Vector3f translation = new Vector3f(0, 0, 0);
-        Vector3f rotation = new Vector3f(0, 0, 0);
-        Vector3f scale = new Vector3f(1, 1, 1);
-
-        if (input.has("translation")) {
-            translation = JsonHelper.jsonToV3f(input.get("translation")).div(16f);
+    @NonNullFields
+    static final class Input {
+        Vector3f translation = new Vector3f(), rotation = new Vector3f(), scale = new Vector3f(1f);
+        JEDisplay build() {
+            return new JEDisplay(translation.div(16f), rotation, scale);
         }
-        if (input.has("rotation")) {
-            rotation = JsonHelper.jsonToV3f(input.get("rotation"));
-        }
-        if (input.has("scale")) {
-            scale = JsonHelper.jsonToV3f(input.get("scale"));
-        }
-
-        return new JEDisplay(translation, rotation, scale);
     }
 }

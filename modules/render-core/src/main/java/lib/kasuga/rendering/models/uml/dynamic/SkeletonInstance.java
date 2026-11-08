@@ -12,6 +12,9 @@ import lib.kasuga.rendering.models.uml.structure.skeleton.Bone;
 import lib.kasuga.rendering.models.uml.structure.skeleton.Skeleton;
 import lib.kasuga.rendering.models.uml.structure.skeleton.data.SkeletonInstanceData;
 import lib.kasuga.rendering.models.uml.dynamic.ik.CalikoIkSolver;
+import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
+import lib.kasuga.rendering.models.uml.dynamic.physics.ModelPhysicsScene;
+import lib.kasuga.rendering.models.uml.dynamic.physics.box3d.NativeBox3D;
 import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics.IkChain;
 import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics.TargetMode;
 import lib.kasuga.rendering.models.uml.structure.skeleton.SkeletonDynamics.BonePoseConstraint;
@@ -30,6 +33,29 @@ import java.util.*;
 
 @Getter
 public class SkeletonInstance {
+
+    /** Motion policy of this skeleton; joint constraints remain active in both physical states. */
+    public enum MotionState { ANIMATED, RELAXED, DRIVEN }
+
+    /** Bounded pose tracking. A zero weight leaves a constrained, freely relaxing skeleton. */
+    public record PoseDrive(float frequencyHz, float dampingRatio, float maximumForce,
+                            float maximumTorque, float weight) {
+        public PoseDrive {
+            for (float value : new float[]{frequencyHz, dampingRatio, maximumForce, maximumTorque, weight}) {
+                if (!Float.isFinite(value) || value < 0f) {
+                    throw new IllegalArgumentException("pose drive values must be finite and non-negative");
+                }
+            }
+            if (weight > 1f) throw new IllegalArgumentException("pose drive weight must be within [0, 1]");
+        }
+    }
+
+    /** Historical adapter type retained for compatibility; its lifetime belongs to this skeleton. */
+    @Getter(lombok.AccessLevel.NONE)
+    private SkeletonRagdoll relaxation;
+    private PoseDrive poseDrive;
+    private long poseTargetEpoch = -1;
+    private boolean poseTargetReady;
 
     private final ModelInstance modelInstance;
     private final Skeleton skeleton;
@@ -126,6 +152,114 @@ public class SkeletonInstance {
             public void refresh(Bone driver, Bone endpoint) { evaluateHierarchyFrom(driver, endpoint); }
         });
         updateTransform();
+    }
+
+    @Nullable
+    public SkeletonRagdoll getRelaxation() { return relaxation; }
+
+    public MotionState getMotionState() {
+        if (relaxation == null || !relaxation.enabled()) return MotionState.ANIMATED;
+        return poseDrive != null && poseDrive.weight() > 0f ? MotionState.DRIVEN : MotionState.RELAXED;
+    }
+
+    /** Releases animation tracking while preserving native joint, contact and bone constraints. */
+    @Nullable
+    public SkeletonRagdoll relax() {
+        return activateRelaxation(relaxation == null ? null : relaxation.physicsScene(), null, false);
+    }
+
+    @Nullable
+    public SkeletonRagdoll relax(@Nullable SkeletonRagdoll.Profile profile) {
+        return activateRelaxation(relaxation == null ? null : relaxation.physicsScene(), profile, true);
+    }
+
+    @Nullable
+    public SkeletonRagdoll relax(ModelPhysicsScene scene, @Nullable SkeletonRagdoll.Profile profile) {
+        Objects.requireNonNull(scene, "scene");
+        if (scene.closed()) throw new IllegalStateException("shared physics scene is closed");
+        return activateRelaxation(scene, profile, true);
+    }
+
+    // Legacy ModelInstance enablePhysics explicitly selects a standalone world.
+    SkeletonRagdoll relaxStandalone() { return activateRelaxation(null, null, false); }
+    SkeletonRagdoll relaxStandalone(SkeletonRagdoll.Profile profile) {
+        return activateRelaxation(null, profile, true);
+    }
+
+    private SkeletonRagdoll activateRelaxation(ModelPhysicsScene scene,
+                                               SkeletonRagdoll.Profile profile, boolean replaceProfile) {
+        modelInstance.requireOpen();
+        if (!NativeBox3D.availableOrWarn()) return null;
+        if (relaxation != null && replaceProfile && !Objects.equals(relaxation.profile(), profile)) {
+            detachRelaxation();
+        }
+        if (relaxation == null) new SkeletonRagdoll(modelInstance, profile, scene);
+        else if (relaxation.physicsScene() != scene) relaxation.moveTo(scene);
+        poseDrive = null;
+        relaxation.setEnabled(true);
+        return relaxation;
+    }
+
+    /** Applies bounded animation tracking to the existing relaxation, retaining its profile and scene. */
+    @Nullable
+    public SkeletonRagdoll drivePose(PoseDrive drive) {
+        Objects.requireNonNull(drive, "drive");
+        modelInstance.requireOpen();
+        if (relaxation == null && relax() == null) return null;
+        relaxation.setEnabled(true);
+        poseDrive = drive;
+        return relaxation;
+    }
+
+    public void resumeAnimation() {
+        modelInstance.invalidatePreparedFrame();
+        poseDrive = null;
+        if (relaxation != null) relaxation.setEnabled(false);
+    }
+
+    public void detachRelaxation() {
+        modelInstance.invalidatePreparedFrame();
+        poseDrive = null;
+        SkeletonRagdoll previous = relaxation;
+        relaxation = null;
+        if (previous != null) previous.close();
+    }
+
+    /** Adapter attachment hook, including legacy direct construction. Only one physical state may own a rig. */
+    public void attachRelaxation(SkeletonRagdoll adapter) {
+        if (relaxation != null && relaxation != adapter) {
+            throw new IllegalStateException("skeleton already has a relaxation adapter");
+        }
+        relaxation = Objects.requireNonNull(adapter, "adapter");
+    }
+
+    public void releaseRelaxation(SkeletonRagdoll adapter) {
+        if (relaxation == adapter) {
+            modelInstance.invalidatePreparedFrame();
+            relaxation = null;
+            poseDrive = null;
+        }
+    }
+
+    /** Starts a standard pose evaluation; simulated output never becomes the next frame's input. */
+    public void beginPoseEvaluation() {
+        poseTargetReady = false;
+        clearPhysicsTransforms();
+        clearFrameIkTargets();
+        modelInstance.getMorph().update();
+    }
+
+    /** Standard IK stage: all downstream modules see this frame's constrained animation target. */
+    public void evaluatePoseTarget() {
+        modelInstance.getMorph().update();
+        updateTransform();
+        poseTargetEpoch = mutationEpoch;
+        poseTargetReady = true;
+        if (relaxation != null && relaxation.enabled()) relaxation.captureAnimationTarget();
+    }
+
+    public boolean hasCurrentPoseTarget() {
+        return poseTargetReady && poseTargetEpoch == mutationEpoch && !isMorphUpdated();
     }
 
     public void getMorphTransform(Bone original, Transform dest) {

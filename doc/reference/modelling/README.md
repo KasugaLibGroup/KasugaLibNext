@@ -90,7 +90,7 @@ ResourceLocation instanceKey = ResourceLocation.fromNamespaceAndPath(
         "examplemod", "engine_at_spawn"
 );
 
-ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline =
+ModelPipeLine<ResourceLocation, ResourceLocation> pipeline =
         PipelineRegistry.resolve(modelKey);
 if (pipeline == null || !pipeline.hasModel(modelKey)) {
     // 代理规则未匹配，或资源重载尚未完成。

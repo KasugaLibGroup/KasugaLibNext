@@ -4,7 +4,7 @@ import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.AnchorModule;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.IkModule;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.ModelTickLoopModule;
-import lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.RagdollModule;
+import lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.SkeletonPhysicsModule;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.SkeletonApplyModule;
 import lib.kasuga.rendering.models.uml.structure.Model;
 import lib.kasuga.rendering.models.uml.structure.skeleton.Bone;
@@ -29,9 +29,9 @@ import java.util.Objects;
  * }</pre>
  */
 public class ModelTickLoop {
-    /** Flushes the per-node pending transforms into the skeleton. Always first. */
+    /** Flushes per-node pending transforms after user input modules. */
     public static final String SLOT_APPLY = "kasuga:apply";
-    /** Evaluates the hierarchy and solves PMX IK. Skipped while physics owns the pose. */
+    /** Evaluates the animation hierarchy and constrained IK target for every motion state. */
     public static final String SLOT_IK = "kasuga:ik";
     /** Advances the attached ragdoll (Box3D) and writes the result back. No-op without physics. */
     public static final String SLOT_PHYSICS = "kasuga:physics";
@@ -54,6 +54,8 @@ public class ModelTickLoop {
 
     /** Set by the typed helpers; direct {@link #getPipeline()} mutations are detected via size. */
     private boolean proceduralModulesAttached;
+    private boolean evaluating;
+    private boolean sharedPhysics;
 
     public ModelTickLoop(ModelInstance instance) {
         this(instance, createTransforms(instance));
@@ -68,7 +70,7 @@ public class ModelTickLoop {
     private void installDefaults() {
         this.pipeline.addLast(SLOT_APPLY, new SkeletonApplyModule());
         this.pipeline.addLast(SLOT_IK, new IkModule());
-        this.pipeline.addLast(SLOT_PHYSICS, new RagdollModule());
+        this.pipeline.addLast(SLOT_PHYSICS, new SkeletonPhysicsModule());
         this.pipeline.addLast(SLOT_ANCHOR, new AnchorModule());
     }
 
@@ -82,7 +84,7 @@ public class ModelTickLoop {
      */
     public void addPreIk(String id, ModelTickLoopModule module) {
         this.proceduralModulesAttached = true;
-        this.pipeline.addBefore(SLOT_IK, id, module);
+        this.pipeline.addBefore(SLOT_APPLY, id, module);
     }
 
     /**
@@ -122,43 +124,114 @@ public class ModelTickLoop {
         this.tickWithTransforms(this.transforms, deltaTime);
     }
 
+    public boolean isEvaluating() { return evaluating; }
+    public boolean isSharedPhysics() { return sharedPhysics; }
+
+    public void beforePhysicsStep() {
+        if (!evaluating) throw new IllegalStateException("fixed steps require an evaluating model pipeline");
+        for (var module : pipeline.list()) module.beforePhysicsStep(getModel(), this);
+    }
+
     public void tickWithTransforms(PendingTransform[] transforms, float deltaTime) {
         validateTransforms(instance, transforms);
-        // Transient IK targets live for exactly one tick: cleared here so the
-        // pre-IK modules of THIS tick repopulate them and every later consumer
-        // (IK solve, physics kinematic target) sees the same values.
-        instance.getSkeletonInstance().clearFrameIkTargets();
-        Model model = instance.getModel();
-        for (var h : this.pipeline.list()) {
-            h.tick(model, transforms, this, deltaTime);
+        var relaxation = instance.getSkeletonInstance().getRelaxation();
+        if (relaxation != null && relaxation.enabled()) {
+            if (!(deltaTime > 0f) || !Float.isFinite(deltaTime)) return;
+            if (relaxation.physicsScene() != null) {
+                throw new IllegalStateException("shared skeletons must be advanced through their scene");
+            }
+        }
+        beginEvaluation();
+        try {
+            Model model = instance.getModel();
+            for (var module : pipeline.list()) module.tick(model, transforms, this, deltaTime);
+        } finally {
+            evaluating = false;
         }
     }
 
-    /** Runs every stage before the built-in physics slot for a shared scene. */
+    /** Compatibility/reset entry: evaluate only the standard input/apply/IK stages. */
+    public void evaluateTarget() {
+        beginEvaluation();
+        try {
+            int ik = requiredSlot(SLOT_IK);
+            runRange(0, ik + 1, 0f);
+        } finally {
+            evaluating = false;
+        }
+    }
+
+    private void beginEvaluation() {
+        instance.requireOpen();
+        if (evaluating) throw new IllegalStateException("model pipeline cannot evaluate recursively");
+        evaluating = true;
+        try {
+            instance.getSkeletonInstance().beginPoseEvaluation();
+        } catch (RuntimeException | Error failure) {
+            evaluating = false;
+            throw failure;
+        }
+    }
+
+    /**
+     * Standard cross-model physics barrier. Every participant executes its physics slot to submit
+     * targets/controllers, then the world advances once, then all poses commit before observers run.
+     * The caller supplies the simulation service; scenes never schedule individual model stages.
+     */
+    public static void tickSharedPhysics(List<ModelTickLoop> participants, float deltaTime, Runnable solveWorld) {
+        Objects.requireNonNull(solveWorld, "solveWorld");
+        if (!(deltaTime > 0f) || !Float.isFinite(deltaTime)) return;
+        List<ModelTickLoop> loops = List.copyOf(participants);
+        var unique = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<ModelTickLoop, Boolean>());
+        for (ModelTickLoop loop : loops) {
+            if (!unique.add(loop)) throw new IllegalArgumentException("duplicate model in physics batch");
+            loop.requiredSlot(SLOT_PHYSICS);
+            if (loop.evaluating) throw new IllegalStateException("model pipeline cannot evaluate recursively");
+        }
+        java.util.ArrayList<ModelTickLoop> started = new java.util.ArrayList<>();
+        try {
+            for (ModelTickLoop loop : loops) {
+                loop.sharedPhysics = true;
+                started.add(loop);
+                loop.beginEvaluation();
+            }
+            for (ModelTickLoop loop : loops) {
+                loop.runRange(0, loop.requiredSlot(SLOT_PHYSICS) + 1, deltaTime);
+            }
+            solveWorld.run();
+            for (ModelTickLoop loop : loops) {
+                loop.pipeline.get(SLOT_PHYSICS, ModelTickLoopModule.class)
+                        .afterSharedPhysics(loop.getModel(), loop.transforms, loop, deltaTime);
+            }
+            for (ModelTickLoop loop : loops) loop.tickAfterSharedPhysics(deltaTime);
+        } finally {
+            for (ModelTickLoop loop : started) {
+                loop.evaluating = false;
+                loop.sharedPhysics = false;
+            }
+        }
+    }
+
+    /** Legacy range helper; new shared worlds should use {@link #tickSharedPhysics}. */
     public void tickBeforeSharedPhysics(float deltaTime) {
-        clearTransientIkTargets();
-        runSharedRange(0, pipeline.ids().indexOf(SLOT_PHYSICS), deltaTime);
+        instance.getSkeletonInstance().beginPoseEvaluation();
+        runRange(0, requiredSlot(SLOT_PHYSICS), deltaTime);
     }
 
-    /** Runs every stage after the built-in physics slot once the scene wrote all poses back. */
     public void tickAfterSharedPhysics(float deltaTime) {
-        int physicsIndex = pipeline.ids().indexOf(SLOT_PHYSICS);
-        runSharedRange(physicsIndex + 1, pipeline.size(), deltaTime);
+        runRange(requiredSlot(SLOT_PHYSICS) + 1, pipeline.size(), deltaTime);
     }
 
-    private void clearTransientIkTargets() {
-        instance.getSkeletonInstance().clearFrameIkTargets();
+    private int requiredSlot(String slot) {
+        int index = pipeline.ids().indexOf(slot);
+        if (index < 0) throw new IllegalStateException("standard pipeline requires slot " + slot);
+        return index;
     }
 
-    private void runSharedRange(int start, int end, float deltaTime) {
-        List<String> ids = pipeline.ids();
-        if (start < 0 || end < start || end > ids.size()) {
-            throw new IllegalStateException("shared physics requires the built-in physics slot");
-        }
-        Model model = instance.getModel();
+    private void runRange(int start, int end, float deltaTime) {
+        List<ModelTickLoopModule> modules = pipeline.list();
         for (int index = start; index < end; index++) {
-            pipeline.get(ids.get(index), ModelTickLoopModule.class)
-                    .tick(model, transforms, this, deltaTime);
+            modules.get(index).tick(getModel(), transforms, this, deltaTime);
         }
     }
 

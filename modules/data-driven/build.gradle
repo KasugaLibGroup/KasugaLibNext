@@ -114,6 +114,7 @@ configurations {
 }
 
 dependencies {
+    implementation(project(":modules:utils")) { transitive = false }
     implementation("io.micronaut:micronaut-inject:4.9.10") {
         exclude group: 'org.slf4j', module: 'slf4j-api'
     }

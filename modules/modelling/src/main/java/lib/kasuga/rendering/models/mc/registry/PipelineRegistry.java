@@ -53,7 +53,7 @@ public final class PipelineRegistry {
     public static final String FMT_BINARY = "fmt_binary";
     public static final String ASSEMBLY = "assembly";
 
-    private static final Map<String, ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?>> PIPELINES =
+    private static final Map<String, ModelPipeLine<ResourceLocation, ResourceLocation>> PIPELINES =
             new ConcurrentHashMap<>();
 
     private static final Map<String, String> BUILTIN_ROUTES = new LinkedHashMap<>();
@@ -79,14 +79,14 @@ public final class PipelineRegistry {
     private static KsgGltfLoader gltfLoader;
     private static McModelAssemblies assemblies;
 
-    private static ModelPipeLine<JsonObject, BackendInstance, ResourceLocation, ResourceLocation, String> bePipeline;
-    private static ModelPipeLine<JsonObject, BackendInstance, ResourceLocation, ResourceLocation, String> jePipeline;
-    private static ModelPipeLine<String, BackendInstance, ResourceLocation, ResourceLocation, String> objPipeline;
-    private static ModelPipeLine<ZipHelper, BackendInstance, ResourceLocation, ResourceLocation, ZipResource> pmxPipeline;
-    private static ModelPipeLine<byte[], BackendInstance, ResourceLocation, ResourceLocation, Object> gltfPipeline;
-    private static ModelPipeLine<String, BackendInstance, ResourceLocation, ResourceLocation, Integer> bbmodelPipeline;
-    private static ModelPipeLine<ZipHelper, BackendInstance, ResourceLocation, ResourceLocation, Integer> fmtArchivePipeline;
-    private static ModelPipeLine<byte[], BackendInstance, ResourceLocation, ResourceLocation, Integer> fmtBinaryPipeline;
+    private static ModelPipeLine<ResourceLocation, ResourceLocation> bePipeline;
+    private static ModelPipeLine<ResourceLocation, ResourceLocation> jePipeline;
+    private static ModelPipeLine<ResourceLocation, ResourceLocation> objPipeline;
+    private static ModelPipeLine<ResourceLocation, ResourceLocation> pmxPipeline;
+    private static ModelPipeLine<ResourceLocation, ResourceLocation> gltfPipeline;
+    private static ModelPipeLine<ResourceLocation, ResourceLocation> bbmodelPipeline;
+    private static ModelPipeLine<ResourceLocation, ResourceLocation> fmtArchivePipeline;
+    private static ModelPipeLine<ResourceLocation, ResourceLocation> fmtBinaryPipeline;
 
     private PipelineRegistry() {
     }
@@ -190,41 +190,41 @@ public final class PipelineRegistry {
                 .withBackend("mc_backend", backend)
                 .build();
         register(FMT_BINARY, fmtBinaryPipeline);
-        var assembled = new ModelPipeLine.Builder<Object, BackendInstance, ResourceLocation, ResourceLocation, Object>()
-                .withBridge("mc_bridge", bridge).withBackend("mc_backend", backend).buildForPublishedModels();
+        var assembled = new ModelPipeLine.PublishedBuilder<ResourceLocation, ResourceLocation, BackendInstance>()
+                .withBridge("mc_bridge", bridge).withBackend("mc_backend", backend).build();
         register(ASSEMBLY, assembled);
         assemblies = new McModelAssemblies(assembled, KasugaModelPipelines::publishedSource, new ModelAssemblyCache());
     }
 
-    public static ModelPipeLine<JsonObject, BackendInstance, ResourceLocation, ResourceLocation, String> be() {
+    public static ModelPipeLine<ResourceLocation, ResourceLocation> be() {
         return bePipeline;
     }
 
-    public static ModelPipeLine<JsonObject, BackendInstance, ResourceLocation, ResourceLocation, String> je() {
+    public static ModelPipeLine<ResourceLocation, ResourceLocation> je() {
         return jePipeline;
     }
 
-    public static ModelPipeLine<String, BackendInstance, ResourceLocation, ResourceLocation, String> obj() {
+    public static ModelPipeLine<ResourceLocation, ResourceLocation> obj() {
         return objPipeline;
     }
 
-    public static ModelPipeLine<ZipHelper, BackendInstance, ResourceLocation, ResourceLocation, ZipResource> pmx() {
+    public static ModelPipeLine<ResourceLocation, ResourceLocation> pmx() {
         return pmxPipeline;
     }
 
-    public static ModelPipeLine<byte[], BackendInstance, ResourceLocation, ResourceLocation, Object> gltf() {
+    public static ModelPipeLine<ResourceLocation, ResourceLocation> gltf() {
         return gltfPipeline;
     }
 
-    public static ModelPipeLine<String, BackendInstance, ResourceLocation, ResourceLocation, Integer> bbmodel() {
+    public static ModelPipeLine<ResourceLocation, ResourceLocation> bbmodel() {
         return bbmodelPipeline;
     }
 
-    public static ModelPipeLine<ZipHelper, BackendInstance, ResourceLocation, ResourceLocation, Integer> fmtArchive() {
+    public static ModelPipeLine<ResourceLocation, ResourceLocation> fmtArchive() {
         return fmtArchivePipeline;
     }
 
-    public static ModelPipeLine<byte[], BackendInstance, ResourceLocation, ResourceLocation, Integer> fmtBinary() {
+    public static ModelPipeLine<ResourceLocation, ResourceLocation> fmtBinary() {
         return fmtBinaryPipeline;
     }
 
@@ -243,17 +243,17 @@ public final class PipelineRegistry {
     @Nullable public static McModelAssemblies assemblies() { return assemblies; }
     public static boolean isInitialized() { return router != null; }
 
-    public static void register(String id, ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline) {
+    public static void register(String id, ModelPipeLine<ResourceLocation, ResourceLocation> pipeline) {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(pipeline, "pipeline");
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> previous = PIPELINES.putIfAbsent(id, pipeline);
+        ModelPipeLine<ResourceLocation, ResourceLocation> previous = PIPELINES.putIfAbsent(id, pipeline);
         if (previous != null && previous != pipeline) {
             throw new IllegalStateException("Pipeline '" + id + "' is already registered to a different pipeline");
         }
     }
 
     @Nullable
-    public static ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> get(String id) {
+    public static ModelPipeLine<ResourceLocation, ResourceLocation> get(String id) {
         if (id == null) {
             return null;
         }
@@ -275,7 +275,7 @@ public final class PipelineRegistry {
     }
 
     @Nullable
-    public static ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> resolve(ResourceLocation modelKey) {
+    public static ModelPipeLine<ResourceLocation, ResourceLocation> resolve(ResourceLocation modelKey) {
         if (router == null) {
             throw new IllegalStateException("KasugaPipeLineRouter is not initialized yet (registerDefaultRoutes)");
         }

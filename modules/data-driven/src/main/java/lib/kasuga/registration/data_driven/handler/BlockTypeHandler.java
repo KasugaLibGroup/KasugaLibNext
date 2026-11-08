@@ -1,11 +1,12 @@
 package lib.kasuga.registration.data_driven.handler;
 
 import com.google.gson.JsonObject;
+import lib.kasuga.registration.data_driven.json.DataJson;
+import java.util.Objects;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.data_driven.property.JsonItemParser;
 import lib.kasuga.registration.data_driven.property.JsonPropertyParser;
 import lib.kasuga.registration.data_driven.context.BuildContext;
-import lib.kasuga.registration.data_driven.state.StatePropertySet;
 import lib.kasuga.registration.data_driven.state.StatefulBlockFactory;
 import lib.kasuga.registration.factory.FactoryRegistry;
 import net.minecraft.resources.ResourceLocation;
@@ -26,15 +27,10 @@ public class BlockTypeHandler extends RegTypeHandler<BlockDef> {
 
     @Override
     public BlockDef parse(JsonObject json) {
-        return new BlockDef(
-            json.get("id").getAsString(),
-            json.get("type").getAsString(),
-            json.has("registry_group") ? json.get("registry_group").getAsString() : null,
-            json.has("properties") ? json.getAsJsonObject("properties") : null,
-            json.has("item_properties") ? json.getAsJsonObject("item_properties") : null,
-            json.has("params") ? json.getAsJsonObject("params") : null,
-            json.has("state_properties") ? StatePropertySet.parse(json.get("state_properties")) : null
-        );
+        BlockDef definition = DataJson.GSON.fromJson(json, BlockDef.class);
+        Objects.requireNonNull(definition.id(), "id");
+        Objects.requireNonNull(definition.type(), "type");
+        return definition;
     }
 
     @Override
@@ -64,10 +60,8 @@ public class BlockTypeHandler extends RegTypeHandler<BlockDef> {
 
     @Override
     protected ResourceLocation resolveCreativeTab(BlockDef definition) {
-        if (definition.itemProperties() != null && definition.itemProperties().has("tab")) {
-            return ResourceLocation.parse(definition.itemProperties().get("tab").getAsString());
-        }
-        return null;
+        String tab = DataJson.creativeTab(definition.itemProperties());
+        return tab == null ? null : ResourceLocation.parse(tab);
     }
 
     @Override

@@ -1,8 +1,8 @@
 package lib.kasuga.rendering.models.mc.java_and_bedrock.loader.be;
 
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import lib.kasuga.rendering.models.mc.util.JsonHelper;
+import lib.kasuga.rendering.models.mc.util.ModelJson;
 import lib.kasuga.rendering.models.mc.util.RotHelper;
 import lib.kasuga.rendering.models.uml.loaders.structural.Context;
 import lib.kasuga.rendering.models.uml.loaders.structural.Layer;
@@ -24,16 +24,17 @@ public class BELocatorLayer extends Layer<JsonElement> {
             context.getLoader().getBones().addAnchor(name, transform, List.of(boneName), null);
         }
         if (input.isJsonObject()) {
-            JsonObject obj = input.getAsJsonObject();
-            Vector3f pos = JsonHelper.jsonToV3f(obj.get("offset")).mul(1/16f);
+            Input definition = ModelJson.GSON.fromJson(input, Input.class);
+            Vector3f pos = new Vector3f(definition.offset).mul(1/16f);
             pos.mul(-1, 1, 1);
-            Vector3f rotation = obj.has("rotation") ?
-                    JsonHelper.jsonToV3f(obj.get("rotation")) :
-                    new Vector3f(0, 0, 0);
+            Vector3f rotation = new Vector3f(definition.rotation);
             Transform transform = new Transform();
             transform.translate(pos);
             RotHelper.rotation(transform, rotation);
             context.getLoader().getBones().addAnchor(name, transform, List.of(boneName), null);
         }
+    }
+    private static final class Input {
+        Vector3f offset, rotation = new Vector3f();
     }
 }

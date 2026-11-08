@@ -66,6 +66,7 @@ public final class SkeletonRagdoll implements AutoCloseable {
     private boolean sharedSelfCollisionsEnabled;
     private final Profile profile;
     private boolean enabled = true;
+    private boolean closed;
     /** Mutation epoch of the skeleton at the last kinematic evaluation. */
     private long kinematicEvaluationEpoch = -1;
     /** False once physics writeback (or a step boundary) invalidated the evaluation. */
@@ -76,7 +77,7 @@ public final class SkeletonRagdoll implements AutoCloseable {
     // nothing mutates skeleton inputs during world.step, so re-evaluating per
     // fixed step (the previous behavior) recomputed identical hierarchies.
     private final RigidBodyWorld.KinematicDriver driver = new RigidBodyWorld.KinematicDriver() {
-        @Override public void beginStep(RigidBodyWorld simulatedWorld) {}
+        @Override public void beginStep(RigidBodyWorld simulatedWorld) { instance.getTickLoop().beforePhysicsStep(); }
 
         @Override public Frames.Pose kinematicTarget(SimBody body) {
             return ((Body) body).animationTargetCache;
@@ -101,12 +102,16 @@ public final class SkeletonRagdoll implements AutoCloseable {
         this.instance = Objects.requireNonNull(instance, "instance");
         this.skeleton = instance.getSkeletonInstance();
         this.physicsScene = physicsScene;
+        instance.requireOpen();
+        if (skeleton.getRelaxation() != null) {
+            throw new IllegalStateException("skeleton already has a relaxation adapter");
+        }
         // Bone evaluation and Box3D share one origin-relative coordinate
         // system. The high-precision world anchor remains on the skeleton and
         // never enters float matrices or the native solver.
         if (physicsScene == null) this.skeleton.enableFloatingOrigin();
         else this.skeleton.rebaseFloatingOrigin(physicsScene.worldOrigin());
-        this.skeleton.updateTransform();
+        instance.getTickLoop().evaluateTarget();
         this.profile = profile;
         this.definition = skeleton.getSkeleton().getDynamics().physics();
         this.modelScale = definition.unitScale();
@@ -171,6 +176,9 @@ public final class SkeletonRagdoll implements AutoCloseable {
         }
         bodySet.addAll(bodies);
         if (physicsScene != null) physicsScene.register(this);
+        skeleton.attachRelaxation(this);
+        // Authored colliders/joints are defined in bind space; enter relaxation at the current pose.
+        reset();
     }
 
     public Profile profile() {
@@ -534,7 +542,10 @@ public final class SkeletonRagdoll implements AutoCloseable {
 
     /** Migrates this ragdoll and its bodies to another shared physics scene (or standalone if null). */
     public void moveTo(ModelPhysicsScene newScene) {
+        ensureOpen();
+        if (newScene != null && newScene.closed()) throw new IllegalStateException("shared physics scene is closed");
         if (this.physicsScene == newScene) return;
+        boolean selfCollisions = selfCollisionsEnabled();
         Vector3d oldOrigin = world.worldOrigin();
         if (this.physicsScene != null) {
             this.physicsScene.detach(this);
@@ -571,6 +582,7 @@ public final class SkeletonRagdoll implements AutoCloseable {
                 for (Body body : bodies) world.setBodyEnabled(body, false);
             }
         }
+        setSelfCollisionsEnabled(selfCollisions);
         evaluateAnimationTarget();
         this.world.wake();
     }
@@ -592,9 +604,24 @@ public final class SkeletonRagdoll implements AutoCloseable {
     /** Releases dragging and environment resources and restores the animated pose. */
     @Override
     public void close() {
-        if (physicsScene == null) world.close();
-        else physicsScene.detach(this);
-        setEnabled(false);
+        if (closed) return;
+        try {
+            setEnabled(false);
+        } finally {
+            try {
+                if (physicsScene == null) world.close();
+                else physicsScene.detach(this);
+            } finally {
+                closed = true;
+                skeleton.releaseRelaxation(this);
+            }
+        }
+    }
+
+    public boolean closed() { return closed; }
+
+    private void ensureOpen() {
+        if (closed) throw new IllegalStateException("skeleton relaxation is closed");
     }
 
     public boolean enabled() {
@@ -630,7 +657,9 @@ public final class SkeletonRagdoll implements AutoCloseable {
     }
 
     public void setEnabled(boolean enabled) {
+        ensureOpen();
         if (this.enabled == enabled) return;
+        instance.invalidatePreparedFrame();
         this.enabled = enabled;
         if (!enabled) {
             if (bodySet.contains(world.draggedBody())) world.endDrag();
@@ -638,7 +667,7 @@ public final class SkeletonRagdoll implements AutoCloseable {
                 for (Body body : bodies) world.setBodyEnabled(body, false);
             }
             skeleton.clearPhysicsTransforms();
-            skeleton.updateTransform();
+            if (!instance.isClosed()) instance.getTickLoop().evaluateTarget();
         } else {
             reset();
             if (physicsScene != null) {
@@ -650,6 +679,7 @@ public final class SkeletonRagdoll implements AutoCloseable {
 
     /** Resets every body to the current animated/IK pose and clears velocity. */
     public void reset() {
+        ensureOpen();
         if (physicsScene == null) world.resetState();
         else world.wake();
         evaluateAnimationTarget();
@@ -665,29 +695,35 @@ public final class SkeletonRagdoll implements AutoCloseable {
         kinematicEvaluationFresh = false;
     }
 
-    /** Advances the ragdoll and writes the resulting dynamic body pose to bones. */
+    /** Compatibility entry: every standalone relaxation advances through its owning standard pipeline. */
     public void step(float deltaSeconds) {
+        ensureOpen();
         if (physicsScene != null) {
-            throw new IllegalStateException("shared ragdolls must be stepped through ModelPhysicsScene.step");
+            throw new IllegalStateException("shared skeletons must be stepped through ModelPhysicsScene.step");
+        }
+        if (!enabled || !(deltaSeconds > 0f) || !Float.isFinite(deltaSeconds)) return;
+        instance.tick(deltaSeconds);
+    }
+
+    /** Integration service invoked by the standard physics slot, after the IK target is complete. */
+    public void stepPrepared(float deltaSeconds) {
+        ensureOpen();
+        if (!instance.getTickLoop().isEvaluating() || instance.getTickLoop().isSharedPhysics()
+                || physicsScene != null) {
+            throw new IllegalStateException("standalone integration requires the standard physics stage");
         }
         if (!enabled || !(deltaSeconds > 0f) || !Float.isFinite(deltaSeconds)) return;
         long profileStart = ModelProfiler.start();
-        evaluateAnimationTarget();
+        captureAnimationTarget();
         world.step(deltaSeconds, driver);
         applyToSkeleton(world.interpolationAlpha());
-        // Physics writeback changed the skeleton state, so the next tick must
-        // rebuild the kinematic target even if no other input changed.
         kinematicEvaluationFresh = false;
         if (profileStart != 0L) {
-            ModelProfiler.record("physics.mmd.step", profileStart,
+            ModelProfiler.record("physics.skeleton.step", profileStart,
                     "bodies=" + bodies.size() + " joints=" + joints.size()
                             + " fixedSteps=" + world.lastFixedStepCount()
                             + " substeps=" + world.lastFixedStepCount() * world.substepCount());
         }
-    }
-
-    void prepareSharedStep() {
-        evaluateAnimationTarget();
     }
 
     Frames.Pose sharedKinematicTarget(SimBody body) {
@@ -695,6 +731,14 @@ public final class SkeletonRagdoll implements AutoCloseable {
             return new Frames.Pose(body.positionRef(), body.rotationRef());
         }
         return value.animationTargetCache;
+    }
+
+    public void finishSharedStep() {
+        ensureOpen();
+        if (!instance.getTickLoop().isSharedPhysics()) {
+            throw new IllegalStateException("shared writeback requires the standard physics barrier");
+        }
+        finishSharedStep(world.interpolationAlpha());
     }
 
     void finishSharedStep(float interpolationAlpha) {
@@ -705,29 +749,47 @@ public final class SkeletonRagdoll implements AutoCloseable {
     void onSharedSceneClosed() {
         enabled = false;
         skeleton.clearPhysicsTransforms();
-        skeleton.updateTransform();
-        kinematicEvaluationFresh = false;
+        try {
+            if (!instance.isClosed()) instance.getTickLoop().evaluateTarget();
+        } finally {
+            kinematicEvaluationFresh = false;
+            closed = true;
+            skeleton.releaseRelaxation(this);
+        }
     }
 
     /**
-     * Re-evaluates the kinematic (animation + IK) pose this ragdoll tracks and
-     * refreshes every body's cached target. Skipped when no skeleton input has
-     * changed since the last evaluation — controllers mounted before the
-     * physics stage and {@link #step(float)} then share one hierarchy solve.
+     * Compatibility target refresh through the standard input/apply/IK stages.
+     * Controllers within an evaluating pipeline consume captureAnimationTarget instead;
+     * they never schedule another hierarchy solve.
      */
     public void evaluateAnimationTarget() {
+        ensureOpen();
+        if (!skeleton.hasCurrentPoseTarget()) {
+            if (instance.getTickLoop().isEvaluating()) {
+                throw new IllegalStateException("pose inputs changed after IK; write targets in a pre-IK module");
+            }
+            instance.getTickLoop().evaluateTarget();
+        }
+        captureAnimationTarget();
+    }
+
+    /** Copies the standard IK result into existing per-body buffers; never solves or mutates skeleton inputs. */
+    public void captureAnimationTarget() {
+        ensureOpen();
+        if (!skeleton.hasCurrentPoseTarget()) {
+            throw new IllegalStateException("a standard IK target must be evaluated before physics");
+        }
         long epoch = skeleton.getMutationEpoch();
-        if (kinematicEvaluationFresh && epoch == kinematicEvaluationEpoch && !skeleton.isMorphUpdated()) return;
-        skeleton.clearPhysicsTransforms();
-        skeleton.updateTransform();
-        kinematicEvaluationEpoch = skeleton.getMutationEpoch();
-        kinematicEvaluationFresh = true;
+        if (kinematicEvaluationFresh && epoch == kinematicEvaluationEpoch) return;
         for (Body body : bodies) {
             Frames.Pose target = body.kinematicFollowBody == null
                     ? bodyTarget(body)
                     : Frames.compose(body.kinematicFollowBody.pose, body.kinematicFollowOffset);
             body.animationTargetCache.set(target);
         }
+        kinematicEvaluationEpoch = epoch;
+        kinematicEvaluationFresh = true;
     }
 
     private Frames.Pose bodyTarget(Body body) {
@@ -955,7 +1017,8 @@ public final class SkeletonRagdoll implements AutoCloseable {
         Frames.Pose pose = modelPose(scaled(source.position()), Frames.quaternionFromEuler(source.rotation()));
         Frames.Pose boneToBody = bone == null
                 ? new Frames.Pose()
-                : Frames.relative(Frames.poseOf(skeleton.getAbsoluteTransforms().get(bone)), pose);
+                : Frames.relative(Frames.poseOf(skeleton.getTransform().copy()
+                        .mul(skeleton.getSkeleton().getBindingAbsolute(bone))), pose);
         return new Body(source, bone, pose, boneToBody,
                 source.mode() == 2 || authoredSecondaryBody
                         ? BoneWriteback.ROTATION_ONLY : BoneWriteback.FULL_POSE,

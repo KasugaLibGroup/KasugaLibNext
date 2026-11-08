@@ -24,166 +24,143 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 import java.util.function.Consumer;
 
-public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifierType, InstanceIdentifierType, TextureIdentifierType> {
+public class ModelPipeLine<K, I> {
 
-    private final SourceManager<SourceOutputType> sourceManager;
+    @FunctionalInterface
+    private interface ModelPreparation<K> {
+        Map<K, Model> prepare(K source, @Nullable String sourceLoaderName);
+    }
 
-    private final Map<SourceType, HashMap<String, SourceManager<?>>> sidedSources;
+    private interface Renderer {
+        void add(ModelInstance instance, String bridgeName);
+        boolean contains(ModelInstance instance);
+        boolean remove(ModelInstance instance);
+    }
 
-    private final ModelLoader<SourceOutputType, StorageIdentifierType, TextureIdentifierType> loader;
+    private final ModelPublicationCoordinator coordinator;
+    public ModelPublicationCoordinator publicationCoordinator() { return coordinator; }
+    private final ModelPreparation<K> preparation;
+    private final Set<String> bridgeNames;
+    private final Map<String, Renderer> backends;
 
-    private final Map<String, Bridge<BackendInputType>> bridges;
-
-    private final Map<StorageIdentifierType, Model> models;
-
-    private final Map<String, Backend<Bridge<BackendInputType>, BackendInputType, ?, ?>> backends;
-
-    private final Map<StorageIdentifierType,
-            HashMap<InstanceIdentifierType, ModelInstance>> modelInstances;
-    private final Map<StorageIdentifierType, Long> modelRevisions = new HashMap<>();
-    private final List<Consumer<ModelChange<StorageIdentifierType>>> modelListeners = new ArrayList<>();
-    private long revision;
+    private final Map<K,
+            HashMap<I, ModelInstance>> modelInstances;
+    private final List<Consumer<ModelChange<K>>> modelListeners = new ArrayList<>();
 
     public record ModelChange<K>(K key, @Nullable Model previous, @Nullable Model current, long revision) {}
 
     /** Game-thread notification, before retired instances are closed. Close the subscription to unregister. */
-    public AutoCloseable onModelChanged(Consumer<ModelChange<StorageIdentifierType>> listener) {
+    public AutoCloseable onModelChanged(Consumer<ModelChange<K>> listener) {
+        coordinator.checkThread();
         modelListeners.add(Objects.requireNonNull(listener));
-        return () -> modelListeners.remove(listener);
+        return () -> {
+            coordinator.checkThread();
+            modelListeners.remove(listener);
+        };
     }
 
-    @Nullable public Model getModel(StorageIdentifierType key) { return models.get(key); }
-    public long modelRevision(StorageIdentifierType key) { return modelRevisions.getOrDefault(key, 0L); }
+    @Nullable public Model getModel(K key) { return coordinator.getModel(this, key); }
+    public long modelRevision(K key) { return coordinator.modelRevision(this, key); }
     /** Finds a registered instance once; callers can retain the key for subsequent constant-time checks. */
-    @Nullable public StorageIdentifierType modelKeyOf(ModelInstance instance) {
+    @Nullable public K modelKeyOf(ModelInstance instance) {
+        coordinator.checkThread();
         for (var entry : modelInstances.entrySet()) {
             for (ModelInstance candidate : entry.getValue().values()) if (candidate == instance) return entry.getKey();
         }
         return null;
     }
 
-    private ModelPipeLine(SourceManager<SourceOutputType> sourceManager,
-                          ModelLoader<SourceOutputType, StorageIdentifierType, TextureIdentifierType> loader,
-                          Map<String, Bridge<BackendInputType>> bridges,
-                          Map<String, Backend<Bridge<BackendInputType>, BackendInputType, ?, ?>> backends,
-                          Map<SourceType, HashMap<String, SourceManager<?>>> sidedSources
-    ) {
-        this.sourceManager = sourceManager;
-        this.loader = loader;
-        this.bridges = bridges;
-        this.backends = backends;
-        this.models = new HashMap<>();
+    private <S, B, T> ModelPipeLine(SourceManager<S> sourceManager,
+                          ModelLoader<S, K, T> loader,
+                          Map<String, Bridge<B>> bridges,
+                          Map<String, Backend<Bridge<B>, B, ?, ?>> backends,
+                          Map<SourceType, HashMap<String, SourceManager<?>>> sidedSources,
+                          ModelPublicationCoordinator coordinator) {
+        this.coordinator = coordinator;
+        this.preparation = sourceManager == null || loader == null ? null
+                : new LoadingBinding<>(sourceManager, loader, sidedSources)::prepare;
+        this.bridgeNames = Set.copyOf(bridges.keySet());
+        Map<String, Bridge<B>> boundBridges = Map.copyOf(bridges);
+        var renderers = new HashMap<String, Renderer>();
+        backends.forEach((name, backend) -> renderers.put(name, new Renderer() {
+            @Override public void add(ModelInstance instance, String bridgeName) {
+                backend.add(instance, boundBridges.get(bridgeName), instance);
+            }
+            @Override public boolean contains(ModelInstance instance) { return backend.contains(instance); }
+            @Override public boolean remove(ModelInstance instance) { return backend.remove(instance); }
+        }));
+        this.backends = Map.copyOf(renderers);
         this.modelInstances = new HashMap<>();
-        this.sidedSources = sidedSources;
     }
 
-    public Map<StorageIdentifierType, Model> loadModel(Object source, @Nullable String sourceLoaderName) {
-        Map<StorageIdentifierType, Model> loaded = prepareModel(source, sourceLoaderName);
-        publishModels(loaded);
-        return loaded;
+    /** Loads without publishing. Source and texture types are captured at construction. */
+    public Map<K, Model> prepareModel(K source, @Nullable String sourceLoaderName) {
+        if (preparation == null) throw new IllegalStateException("This pipeline accepts published models only");
+        return preparation.prepare(source, sourceLoaderName);
     }
 
-    /** Loads and builds models without making them visible to render callers. */
-    public Map<StorageIdentifierType, Model> prepareModel(Object source, @Nullable String sourceLoaderName) {
-        if (sourceManager == null || loader == null) throw new IllegalStateException("This pipeline accepts published models only");
-        Source<?, SourceOutputType> manager = null;
-        if (sourceLoaderName != null) {
-            manager = sourceManager.getSource(sourceLoaderName);
-        }
-        if (manager == null) {
-            for (Source<?, SourceOutputType> m : sourceManager.getSources().values()) {
-                if (m.isValidInput(source)) {
-                    manager = m;
-                    break;
+    private record LoadingBinding<S, K, T>(SourceManager<S> sources, ModelLoader<S, K, T> loader,
+                          Map<SourceType, HashMap<String, SourceManager<?>>> sidedSources) {
+        @SuppressWarnings("unchecked")
+        Map<K, Model> prepare(K source, @Nullable String sourceLoaderName) {
+            Source<?, S> manager = sourceLoaderName == null ? null : sources.getSource(sourceLoaderName);
+            if (manager == null) {
+                for (Source<?, S> candidate : sources.getSources().values()) {
+                    if (candidate.isValidInput(source)) { manager = candidate; break; }
                 }
             }
-        }
-        if (manager == null) {
-            throw new IllegalArgumentException("No source manager found for source: " + source);
-        }
-        Optional<SourceOutputType> sourceOutput = ((Source<Object, SourceOutputType>) manager).getInput(source);
-        if (sourceOutput.isEmpty()) {
-            throw new IllegalStateException("Source manager failed to load source: " + source);
-        }
-        if (loader.getSidedSources().size() != sidedSources.size()) {
-            loader.getSidedSources().clear();
-            loader.getSidedSources().putAll(this.sidedSources);
-        }
-        loader.setSourceManager(this.sourceManager);
-        Map<StorageIdentifierType, Model> map =
-                loader.load((StorageIdentifierType) source, sourceOutput.get());
-        return map;
-    }
-
-    /**
-     * Publishes a prepared model set and removes instances backed by replaced
-     * models. Call this on the game thread after dependent textures are ready.
-     */
-    public void publishModels(Map<StorageIdentifierType, Model> prepared) {
-        RuntimeException failure = null;
-        for (var entry : Map.copyOf(prepared).entrySet()) {
-            try { changeModel(entry.getKey(), entry.getValue()); }
-            catch (RuntimeException cleanup) { failure = combine(failure, cleanup); }
-        }
-        if (failure != null) throw failure;
-    }
-
-    /** Replaces a complete resource snapshot, including models removed from the resource pack. */
-    public void replaceModels(Map<StorageIdentifierType, Model> snapshot) {
-        Map<StorageIdentifierType, Model> next = Map.copyOf(snapshot);
-        Set<StorageIdentifierType> removed = new HashSet<>(models.keySet());
-        removed.removeAll(next.keySet());
-        RuntimeException failure = null;
-        for (var key : removed) {
-            try { changeModel(key, null); }
-            catch (RuntimeException cleanup) { failure = combine(failure, cleanup); }
-        }
-        try { publishModels(next); }
-        catch (RuntimeException cleanup) { failure = combine(failure, cleanup); }
-        if (failure != null) throw failure;
-    }
-
-    public boolean removeModel(StorageIdentifierType key) {
-        if (!models.containsKey(key)) return false;
-        changeModel(key, null);
-        return true;
-    }
-
-    private void changeModel(StorageIdentifierType key, @Nullable Model next) {
-        Objects.requireNonNull(key, "key");
-        Model previous = models.get(key);
-        if (previous == next) return;
-        long version = ++revision;
-        if (next == null) { models.remove(key); modelRevisions.remove(key); }
-        else { models.put(key, next); modelRevisions.put(key, version); }
-        HashMap<InstanceIdentifierType, ModelInstance> stale = modelInstances.remove(key);
-        RuntimeException failure = null;
-        var change = new ModelChange<>(key, previous, next, version);
-        for (var listener : List.copyOf(modelListeners)) {
-            try { listener.accept(change); }
-            catch (RuntimeException cleanup) { failure = combine(failure, cleanup); }
-        }
-        if (stale != null) {
-            for (var instance : stale.values()) {
-                try { retireInstance(instance); }
-                catch (RuntimeException cleanup) { failure = combine(failure, cleanup); }
+            if (manager == null) throw new IllegalArgumentException("No source manager found for source: " + source);
+            Optional<S> output = ((Source<Object, S>) manager).getInput(source);
+            if (output.isEmpty()) throw new IllegalStateException("Source manager failed to load source: " + source);
+            if (loader.getSidedSources().size() != sidedSources.size()) {
+                loader.getSidedSources().clear();
+                loader.getSidedSources().putAll(sidedSources);
             }
+            loader.setSourceManager(sources);
+            return loader.load(source, output.get());
         }
-        if (failure != null) throw failure;
     }
 
-    private static RuntimeException combine(@Nullable RuntimeException failure, RuntimeException next) {
-        if (failure == null) return next;
-        if (failure != next) failure.addSuppressed(next);
-        return failure;
+    static final class RetiredChange {
+        private final Runnable detach;
+        private final List<Runnable> notifications;
+        private final List<Runnable> retirements;
+        RetiredChange(Runnable detach, List<Runnable> notifications, List<Runnable> retirements) {
+            this.detach = detach;
+            this.notifications = notifications;
+            this.retirements = retirements;
+        }
+        Throwable detach(Throwable failure) { return runAll(List.of(detach), failure); }
+        Throwable notifyListeners(Throwable failure) { return runAll(notifications, failure); }
+        Throwable retire(Throwable failure) { return runAll(retirements, failure); }
+        private static Throwable runAll(List<Runnable> actions, Throwable failure) {
+            for (Runnable action : actions) {
+                try { action.run(); }
+                catch (RuntimeException | Error problem) { failure = ModelPublicationCoordinator.combine(failure, problem); }
+            }
+            return failure;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    RetiredChange prepareForPublication(Object rawKey, Model previous, Model next, long revision) {
+        K key = (K) rawKey;
+        var stale = modelInstances.get(key);
+        var change = new ModelChange<>(key, previous, next, revision);
+        List<Runnable> notifications = new ArrayList<>();
+        for (var listener : List.copyOf(modelListeners)) notifications.add(() -> listener.accept(change));
+        List<Runnable> retirements = new ArrayList<>();
+        if (stale != null) for (var instance : stale.values()) retirements.add(() -> retireInstance(instance));
+        return new RetiredChange(() -> modelInstances.remove(key), notifications, retirements);
     }
 
     @Nullable
-    public ModelInstance createInstance(StorageIdentifierType modelName, InstanceIdentifierType instanceIdentifier,
+    public ModelInstance createInstance(K modelName, I instanceIdentifier,
                                                 @Nullable Transform transform,
                                                 @Nullable ModelInstanceData instanceData,
                                                 @Nullable SkeletonInstanceData skeletonInstanceData) {
-        Model model = models.get(modelName);
+        coordinator.checkThread();
+        Model model = getModel(modelName);
         if (model == null) {return null;}
         ModelInstance current = getInstance(modelName, instanceIdentifier);
         if (current != null) return current;
@@ -201,7 +178,7 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
      * @param driver the pose driver to attach, or {@code null} to leave the instance static
      */
     @Nullable
-    public ModelInstance createInstance(StorageIdentifierType modelName, InstanceIdentifierType instanceIdentifier,
+    public ModelInstance createInstance(K modelName, I instanceIdentifier,
                                                 @Nullable Transform transform,
                                                 @Nullable ModelInstanceData instanceData,
                                                 @Nullable SkeletonInstanceData skeletonInstanceData,
@@ -214,18 +191,20 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
     }
 
     @Nullable
-    public ModelInstance getInstance(StorageIdentifierType modelName, InstanceIdentifierType instanceIdentifier) {
-        HashMap<InstanceIdentifierType, ModelInstance> instances = modelInstances.get(modelName);
+    public ModelInstance getInstance(K modelName, I instanceIdentifier) {
+        coordinator.checkThread();
+        HashMap<I, ModelInstance> instances = modelInstances.get(modelName);
         if (instances == null) {return null;}
         return instances.get(instanceIdentifier);
     }
 
-    public boolean hasModel(StorageIdentifierType modelName) {
-        return models.containsKey(modelName);
+    public boolean hasModel(K modelName) {
+        return getModel(modelName) != null;
     }
 
-    public boolean hasInstance(StorageIdentifierType modelName, InstanceIdentifierType instanceIdentifier) {
-        HashMap<InstanceIdentifierType, ModelInstance> instances = modelInstances.get(modelName);
+    public boolean hasInstance(K modelName, I instanceIdentifier) {
+        coordinator.checkThread();
+        HashMap<I, ModelInstance> instances = modelInstances.get(modelName);
         if (instances == null) {
             return false;
         }
@@ -236,11 +215,12 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
      * Removes an instance from every backend and from this pipeline's instance
      * registry, then closes its runtime state (animation and physics).
      */
-    public boolean removeInstance(StorageIdentifierType modelName,
-                                  InstanceIdentifierType instanceIdentifier) {
-        Model model = models.get(modelName);
+    public boolean removeInstance(K modelName,
+                                  I instanceIdentifier) {
+        coordinator.checkThread();
+        Model model = getModel(modelName);
         if (model == null) return false;
-        HashMap<InstanceIdentifierType, ModelInstance> instances = modelInstances.get(modelName);
+        HashMap<I, ModelInstance> instances = modelInstances.get(modelName);
         if (instances == null) return false;
         ModelInstance instance = instances.remove(instanceIdentifier);
         if (instance == null) return false;
@@ -251,29 +231,26 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
 
     /** Release failures must not strand the instance in another backend or its runtime. */
     private void retireInstance(ModelInstance instance) {
-        RuntimeException failure = null;
+        Throwable failure = null;
         for (var backend : backends.values()) {
             try { backend.remove(instance); }
-            catch (RuntimeException cleanup) {
-                if (failure == null) failure = cleanup;
-                else failure.addSuppressed(cleanup);
-            }
+            catch (RuntimeException | Error cleanup) { failure = ModelPublicationCoordinator.combine(failure, cleanup); }
         }
-        lib.kasuga.rendering.models.uml.framework.schedule.ModelRenderScheduling.scheduler().detach(instance);
+        try { lib.kasuga.rendering.models.uml.framework.schedule.ModelRenderScheduling.scheduler().detach(instance); }
+        catch (RuntimeException | Error cleanup) { failure = ModelPublicationCoordinator.combine(failure, cleanup); }
         try { instance.close(); }
-        catch (RuntimeException cleanup) {
-            if (failure == null) failure = cleanup;
-            else failure.addSuppressed(cleanup);
-        }
-        if (failure != null) throw failure;
+        catch (RuntimeException | Error cleanup) { failure = ModelPublicationCoordinator.combine(failure, cleanup); }
+        if (failure instanceof RuntimeException exception) throw exception;
+        if (failure instanceof Error error) throw error;
     }
 
     public void addToRenderer(
-            StorageIdentifierType modelName,
-            InstanceIdentifierType instanceIdentifier,
+            K modelName,
+            I instanceIdentifier,
             String bridgeName,
             String backendName) {
-        Model model = models.get(modelName);
+        coordinator.checkThread();
+        Model model = getModel(modelName);
         if (model == null) {
             throw new IllegalArgumentException("No model found with name: " + modelName);
         }
@@ -281,22 +258,22 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
         if (instance == null) {
             throw new IllegalArgumentException("No instance found with identifier: " + instanceIdentifier);
         }
-        Bridge<BackendInputType> bridge = bridges.get(bridgeName);
-        if (bridge == null) {
+        if (!bridgeNames.contains(bridgeName)) {
             throw new IllegalArgumentException("No bridge found with name: " + bridgeName);
         }
-        Backend<Bridge<BackendInputType>, BackendInputType, ?, ?> backend = backends.get(backendName);
+        Renderer backend = backends.get(backendName);
         if (backend == null) {
             throw new IllegalArgumentException("No backend found with name: " + backendName);
         }
-        backend.add(instance, bridge, instance);
+        backend.add(instance, bridgeName);
     }
 
     public boolean isRendering(
-            StorageIdentifierType modelName,
-            InstanceIdentifierType instanceIdentifier,
+            K modelName,
+            I instanceIdentifier,
             @Nullable String backendName) {
-        Model model = models.get(modelName);
+        coordinator.checkThread();
+        Model model = getModel(modelName);
         if (model == null) {
             return false;
         }
@@ -305,12 +282,12 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
             return false;
         }
         if (backendName != null) {
-            Backend<Bridge<BackendInputType>, BackendInputType, ?, ?> backend = backends.get(backendName);
+            Renderer backend = backends.get(backendName);
             if (backend != null) {
                 return backend.contains(instance);
             }
         }
-        for (Backend<Bridge<BackendInputType>, BackendInputType, ?, ?> backend : backends.values()) {
+        for (Renderer backend : backends.values()) {
             if (backend.contains(instance)) {
                 return true;
             }
@@ -325,8 +302,8 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
      * are unaffected by this call.
      */
     public void setRendering(
-            StorageIdentifierType modelName,
-            InstanceIdentifierType instanceIdentifier,
+            K modelName,
+            I instanceIdentifier,
             boolean visible) {
         ModelInstance instance = getInstance(modelName, instanceIdentifier);
         if (instance != null) {
@@ -335,10 +312,11 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
     }
 
     public boolean stopRendering(
-            StorageIdentifierType modelName,
-            InstanceIdentifierType instanceIdentifier,
+            K modelName,
+            I instanceIdentifier,
             @Nullable String backendName) {
-        Model model = models.get(modelName);
+        coordinator.checkThread();
+        Model model = getModel(modelName);
         if (model == null) {
             return false;
         }
@@ -349,12 +327,12 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
         boolean removed = false;
         RuntimeException failure = null;
         if (backendName != null) {
-            Backend<Bridge<BackendInputType>, BackendInputType, ?, ?> backend = backends.get(backendName);
+            Renderer backend = backends.get(backendName);
             if (backend != null) {
                 return backend.remove(instance);
             }
         }
-        for (Backend<Bridge<BackendInputType>, BackendInputType, ?, ?> backend : backends.values()) {
+        for (Renderer backend : backends.values()) {
             // Each backend must get its release attempt even if an earlier one fails.
             try { removed |= backend.remove(instance); }
             catch (RuntimeException cleanup) {
@@ -366,8 +344,31 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
         return removed;
     }
 
+    /** Loader-free construction needs only keys and the backend renderable type. */
+    public static final class PublishedBuilder<K, I, B> {
+        private final Builder<Void, B, K, I, Void> builder = new Builder<>();
+        public PublishedBuilder<K, I, B> withPublicationCoordinator(ModelPublicationCoordinator coordinator) {
+            builder.withPublicationCoordinator(coordinator); return this;
+        }
+        public PublishedBuilder<K, I, B> withBridge(String name, Bridge<B> bridge) {
+            builder.withBridge(name, bridge);
+            return this;
+        }
+        public PublishedBuilder<K, I, B> withBackend(String name, Backend<? extends Bridge<B>, B, ?, ?> backend) {
+            builder.withBackend(name, backend);
+            return this;
+        }
+        public ModelPipeLine<K, I> build() { return builder.buildForPublishedModels(); }
+    }
+
     public static class Builder<SourceOutputType,
         BackendInputType, StorageIdentifierType, InstanceIdentifierType, TextureIdentifierType> {
+
+        private ModelPublicationCoordinator coordinator = ModelPublicationCoordinator.global();
+        public Builder<SourceOutputType, BackendInputType, StorageIdentifierType, InstanceIdentifierType, TextureIdentifierType>
+        withPublicationCoordinator(ModelPublicationCoordinator coordinator) {
+            this.coordinator = Objects.requireNonNull(coordinator); return this;
+        }
 
         private SourceManager<SourceOutputType> sourceManager;
         private final Map<SourceType, HashMap<String, SourceManager<?>>> sidedSources = new HashMap<>();
@@ -411,18 +412,14 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
             return this;
         }
 
-        public ModelPipeLine<SourceOutputType,
-                BackendInputType, StorageIdentifierType,
-                InstanceIdentifierType, TextureIdentifierType> build() {
+        public ModelPipeLine<StorageIdentifierType, InstanceIdentifierType> build() {
             Objects.requireNonNull(sourceManager);
             Objects.requireNonNull(loader);
             return buildForPublishedModels();
         }
 
         /** Builds a render/instance pipeline without a format loader (e.g. derived assembled models). */
-        public ModelPipeLine<SourceOutputType,
-                BackendInputType, StorageIdentifierType,
-                InstanceIdentifierType, TextureIdentifierType> buildForPublishedModels() {
+        public ModelPipeLine<StorageIdentifierType, InstanceIdentifierType> buildForPublishedModels() {
             if (bridges.isEmpty()) {
                 throw new IllegalStateException("At least one bridge must be provided");
             }
@@ -430,7 +427,7 @@ public class ModelPipeLine<SourceOutputType, BackendInputType, StorageIdentifier
                 throw new IllegalStateException("At least one backend must be provided");
             }
             bridges.forEach((name, bridge) -> bridge.setBackends((Map) backends));
-            return new ModelPipeLine<>(sourceManager, loader, bridges, backends, sidedSources);
+            return new ModelPipeLine<>(sourceManager, loader, bridges, backends, sidedSources, coordinator);
         }
     }
 }
