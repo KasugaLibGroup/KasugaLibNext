@@ -12,6 +12,8 @@
 | 摄像机分量轨道、光学缩放与共享时钟 | [Camera Animation](camera-animation.md) |
 | 分层状态、动作与姿态混合 | [FSM](fsm.md) |
 | 共享变体定义与每实例选择状态 | [Multiplexer](multiplexer.md) |
+| 逻辑时间、输入/控制事务与同代结果发布 | [动画作用域](animation/animation-scope.md) |
+| 类型化输出槽位、连续性与安全重绑 | [动画目标](animation/animation-target.md) |
 | 描述/执行分离、shader 准备、效果和后处理图 | [自定义渲染](effect-rendering.md) |
 | 层级职责、挂载发布和在途 GPU 读取 | [UML Framework](uml-render-framework.md) |
 | 核心、图形 API 与宿主适配边界 | [Rendering Backends](rendering-backends.md) |

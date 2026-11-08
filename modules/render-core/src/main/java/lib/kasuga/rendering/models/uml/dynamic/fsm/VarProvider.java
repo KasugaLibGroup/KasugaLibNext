@@ -3,17 +3,15 @@ package lib.kasuga.rendering.models.uml.dynamic.fsm;
 import java.util.Map;
 
 /**
- * Per-entity rendering variable provider (the parameter-store render projection, G2). Hooked onto
- * {@link FsmPoseDriver} and invoked on the <b>main thread once per {@link FsmPoseDriver#tick(float)}</b>,
- * after the machine itself has ticked. Derives parameter values from machine state and writes them back
- * through the machine-internal write path — single source of truth — while projecting the render-thread
- * values into {@code out}, keyed by the formula name <em>without</em> the {@code "query."} prefix.
+ * Per-entity formula variable provider. {@link FsmPoseEvaluator} invokes it on the logical thread once
+ * after each committed state-machine step. It derives parameter values from machine state and writes
+ * them back through the machine-internal write path, then exposes the step values through {@code out},
+ * keyed by the formula name <em>without</em> the {@code "query."} prefix.
  *
  * <p>The provider is the machine-internal writer of derived ({@code externalWritable=false}) parameters:
  * it uses {@link StateMachine#setInternal} so the derived-parameter guard is bypassed (external consumers
- * cannot write them). {@code out} is a fresh map each tick; the driver publishes it as a {@code volatile}
- * snapshot the render thread later assigns into the formula
- * {@link lib.kasuga.formula.compute.data.Namespace} before composing.
+ * cannot write them). {@code out} is a fresh map each tick; the evaluator assigns it to the formula
+ * {@link lib.kasuga.formula.compute.data.Namespace} before sampling that logical step's result.
  *
  * <p>Default (no provider) behaves exactly like the pre-G2 driver: {@code out} stays empty, so formula
  * tracks fall back to their identity values — zero behavior change for existing users.

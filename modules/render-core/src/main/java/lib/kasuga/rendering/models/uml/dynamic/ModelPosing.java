@@ -4,6 +4,7 @@ import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationLibrary;
 import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationPlayer;
 import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationTimeline;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Pose;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
@@ -29,7 +30,7 @@ public final class ModelPosing implements RebindablePoseDriver {
         var clip = instance.getModel().getAnimations().get(name);
         if (clip == null) return false;
         player.play(AnimationLibrary.SAMPLER, clip, loop);
-        instance.setPoseDriver(this);
+        installDriver();
         return true;
     }
 
@@ -37,13 +38,13 @@ public final class ModelPosing implements RebindablePoseDriver {
         var clip = instance.getModel().getAnimations().get(name);
         if (clip == null) return false;
         player.follow(AnimationLibrary.SAMPLER, clip, timeline);
-        instance.setPoseDriver(this);
+        installDriver();
         return true;
     }
 
     public void pose(Pose pose) {
         player.play(AnimationLibrary.SAMPLER, AnimationLibrary.pose(pose), false);
-        instance.setPoseDriver(this);
+        installDriver();
     }
 
     /** Neutralize this driver's bone/morph/IK channels on the next render sample. */
@@ -73,6 +74,10 @@ public final class ModelPosing implements RebindablePoseDriver {
         } else {
             player.rebind(fresh, AnimationLibrary.SAMPLER, replacement);
         }
-        fresh.setPoseDriver(this);
+    }
+
+    /** Installs this source through the common binding. */
+    private void installDriver() {
+        ModelPoseBinding.install(instance, this);
     }
 }

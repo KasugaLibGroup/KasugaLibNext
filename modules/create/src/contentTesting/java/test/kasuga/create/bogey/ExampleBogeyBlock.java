@@ -11,7 +11,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelReader;
-import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -25,34 +24,50 @@ import java.util.function.Supplier;
 public final class ExampleBogeyBlock extends AbstractBogeyBlock<ExampleBogeyBlockEntity> {
     private final Supplier<BogeyStyle> defaultStyle;
     private final Supplier<BlockEntityType<ExampleBogeyBlockEntity>> blockEntityType;
-    private final Supplier<Set<TrackMaterial.TrackType>> validTrackTypes;
+    /**
+     * The one track type this bogey rides. Create compares it against the material of the edge the
+     * carriage stands on ({@code AbstractBogeyBlock#isOnIncompatibleTrack}); a mismatch does not
+     * derail the train but marks the carriage {@code blocked}, which zeroes its speed and reports
+     * "A Carriage has reached the end of its Track". It must therefore be a single, deterministic
+     * value — a set from which an arbitrary element is picked makes the train randomly immobile.
+     */
+    private final TrackMaterial.TrackType trackType;
+    /**
+     * Distance between this bogey's two wheel points, as an arc length on the track. Create derives
+     * stress from {@code spacing - distance(travelling points)}, so it has to match the model's
+     * wheelset spacing (±z of the wheel parts); declaring it larger than the geometry makes every
+     * carriage accumulate stress until the train derails.
+     */
+    private final double wheelPointSpacing;
 
     public ExampleBogeyBlock(
             Properties properties,
             BogeySizes.BogeySize size,
             Supplier<BogeyStyle> defaultStyle,
             Supplier<BlockEntityType<ExampleBogeyBlockEntity>> blockEntityType,
-            Supplier<Set<TrackMaterial.TrackType>> validTrackTypes
+            TrackMaterial.TrackType trackType,
+            double wheelPointSpacing
     ) {
         super(properties, size);
         this.defaultStyle = defaultStyle;
         this.blockEntityType = blockEntityType;
-        this.validTrackTypes = validTrackTypes;
+        this.trackType = trackType;
+        this.wheelPointSpacing = wheelPointSpacing;
     }
 
     @Override
     public TrackMaterial.TrackType getTrackType(BogeyStyle style) {
-        return validTrackTypes.get().iterator().next();
+        return trackType;
     }
 
     @Override
     public Set<TrackMaterial.TrackType> getValidPathfindingTypes(BogeyStyle style) {
-        return validTrackTypes.get();
+        return Set.of(trackType);
     }
 
     @Override
     public double getWheelPointSpacing() {
-        return 2.5d;
+        return wheelPointSpacing;
     }
 
     @Override
@@ -93,11 +108,11 @@ public final class ExampleBogeyBlock extends AbstractBogeyBlock<ExampleBogeyBloc
 
     @Override
     public <S extends BlockEntity> BlockEntityTicker<S> getTicker(Level level, BlockState state, BlockEntityType<S> type) {
-        return ProxyTickers.forBlockEntity(type);
-    }
-
-    @Override
-    protected RenderShape getRenderShape(BlockState state) {
-        return RenderShape.ENTITYBLOCK_ANIMATED;
+        // The demo spin has to run before the proxy reads the angle, so it goes in as the wrapped ticker.
+        return ProxyTickers.forBlockEntity(type, (lvl, pos, st, blockEntity) -> {
+            if (blockEntity instanceof ExampleBogeyBlockEntity bogey) {
+                bogey.demoSpin(lvl, pos);
+            }
+        });
     }
 }

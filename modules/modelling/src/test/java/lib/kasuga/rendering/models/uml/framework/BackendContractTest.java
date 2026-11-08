@@ -5,6 +5,7 @@ import lib.kasuga.rendering.models.uml.backend.BackendContext;
 import lib.kasuga.rendering.models.uml.bridge.Bridge;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
 import lib.kasuga.rendering.models.uml.dynamic.SkeletonInstance;
 import lib.kasuga.rendering.models.uml.framework.render.RenderBackend;
@@ -122,7 +123,7 @@ class BackendContractTest {
         ModelPipeLine<Object, Resource, String, String, String> pipeline = pipeline(adapter, a, b);
         pipeline.publishModels(Map.of("model", instance().getModel()));
         ModelInstance instance = pipeline.createInstance("model", "instance", null, null, null);
-        instance.setPoseDriver(new PoseDriver() {});
+        ModelPoseBinding.install(instance, new PoseDriver() {});
         pipeline.addToRenderer("model", "instance", "bridge", "a");
         adapter.factory = model -> second;
         pipeline.addToRenderer("model", "instance", "bridge", "b");

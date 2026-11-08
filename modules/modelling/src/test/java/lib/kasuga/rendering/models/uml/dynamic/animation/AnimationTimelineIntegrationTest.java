@@ -3,6 +3,7 @@ package lib.kasuga.rendering.models.uml.dynamic.animation;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstanceFixture;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Pose;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.codec.TransformDefinition;
@@ -13,6 +14,7 @@ import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static lib.kasuga.rendering.output.camera.CameraAnimationClip.Channel.X;
 import static org.junit.jupiter.api.Assertions.*;
@@ -50,7 +52,7 @@ class AnimationTimelineIntegrationTest {
             var clip = clip(duration);
             var instance = ModelInstanceFixture.minimal();
             var model = new AnimationPlayer<AnimationClip>(instance);
-            instance.setPoseDriver(model);
+            ModelPoseBinding.install(instance, model);
             var camera = AnimationTimelineIntegrationTest.camera();
             model.follow(ClipSampler.INSTANCE, clip, timeline);
             camera.animation().follow(clip, "shot", timeline);
@@ -76,6 +78,47 @@ class AnimationTimelineIntegrationTest {
         assertSame(scene.timeline(), scene.model().timeline());
         assertSame(scene.timeline(), scene.camera().animation().timeline());
         scene.camera().close();
+    }
+
+    @Test void sharedTargetsKeepTheSameInterpolatedTimeAcrossManyFrames() throws Exception {
+        var scene = Scene.create(1, true);
+        for (int tick = 0; tick < 400; tick++) {
+            scene.timeline().tick(1f / 20f);
+            float partialTick = tick % 2 == 0 ? 0.37f : 0.83f;
+            scene.model().model().sample(partialTick);
+            double modelX = scene.model().model().getSkeletonInstance()
+                    .getTransforms().values().iterator().next().getPosition().x;
+            double cameraX = scene.camera().samplePose(partialTick).x() - BASE.x();
+            assertEquals(modelX, cameraX, 1e-5,
+                    "tick " + tick + " partial=" + partialTick
+                            + " timeline=" + scene.timeline().snapshot()
+                            + " cameraTime=" + scene.camera().animation().currentTime());
+        }
+        scene.camera().close();
+    }
+
+    @Test void sharedModelRenderSamplingDoesNotResampleTheAnimationSource() {
+        var samples = new AtomicInteger();
+        AnimationSampler<AnimationClip> sampler = new AnimationSampler<>() {
+            @Override public float duration(AnimationClip data) { return data.durationSeconds(); }
+
+            @Override public Pose sample(AnimationClip data, float time) {
+                samples.incrementAndGet();
+                return ClipSampler.INSTANCE.sample(data, time);
+            }
+        };
+        var timeline = new AnimationTimeline();
+        var model = new AnimationPlayer<AnimationClip>(ModelInstanceFixture.minimal());
+        model.follow(sampler, clip(1), timeline);
+        timeline.play(1, true);
+        timeline.tick(.25f);
+        int samplesAfterTick = samples.get();
+
+        model.sample(0);
+        model.sample(.5f);
+        model.sample(1);
+
+        assertEquals(samplesAfterTick, samples.get());
     }
 
     @Test void sharedControlsPauseSeekSpeedAndResumeBothTargets() throws Exception {
@@ -147,7 +190,7 @@ class AnimationTimelineIntegrationTest {
         var scene = Scene.create(1, true);
         scene.timeline().seek(.5f);
         var fresh = ModelInstanceFixture.minimal();
-        fresh.setPoseDriver(scene.model()); scene.model().rebind(fresh);
+        ((ModelPoseBinding) scene.model().model().getPoseDriver()).rebind(fresh);
         scene.assertPose(1, 5); assertSame(scene.timeline(), scene.model().timeline());
         scene.camera().close();
     }
@@ -187,16 +230,6 @@ class AnimationTimelineIntegrationTest {
             var json = JsonParser.parseString("{\"id\":\"test:scene\",\"duration_seconds\":1,\"cameras\":" + cameras + "}");
             assertTrue(AnimationClip.CODEC.parse(JsonOps.INSTANCE, json).error().isPresent());
         }
-    }
-
-    @Test void standaloneStaticModelPosesAndInvalidTickDeltasKeepTheirContract() {
-        var playback = new AnimationPlayback<String, Pose>();
-        playback.play(new AnimationSource<>() {
-            public float duration(String data) { return -1; }
-            public Pose sample(String data, float time) { assertEquals(0, time); return Pose.empty(); }
-        }, "static", false);
-        playback.tick(Float.NaN); playback.tick(-1); assertEquals(0, playback.currentTime());
-        playback.tick(.05f); assertEquals(Pose.empty(), playback.sample(0)); assertFalse(playback.isPlaying());
     }
 
     @Test void aLegacyNullModelSampleStillResetsPreviouslyPosedChannels() {

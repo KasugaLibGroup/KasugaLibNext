@@ -26,8 +26,10 @@ diamond IK is a separate solve constraint. Cross-branch inheritance affects vert
 subtree, and updates must cover those dependencies.
 
 Animation keeps each source's sampling algorithm and only requires that the output be a common Pose. A named
-clip library combines samplers and source data, the player handles time, and PoseSink writes into the model
-instance. A static pose is a clip sampled at a constant value and uses the same channel ownership and reset
+clip library combines samplers and source data. `AnimationScope` owns logical time and publication generations;
+a standalone `AnimationPlayer` uses a private Scope. The source is sampled into an immutable result during a
+logical commit, and a result-based Target plus PoseSink writes into the model during a render frame. A static
+pose is a clip sampled at a constant value and uses the same channel ownership and reset
 rules. VPD/VMD do not require the target skeleton to carry PMX metadata; matching bone names and channel
 identities are enough for a write. Topological retargeting between different skeletons remains the
 integrator's responsibility.

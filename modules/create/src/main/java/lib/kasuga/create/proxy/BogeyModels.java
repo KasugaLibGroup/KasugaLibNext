@@ -1,10 +1,15 @@
 package lib.kasuga.create.proxy;
 
+import com.simibubi.create.content.trains.bogey.AbstractBogeyBlockEntity;
 import com.simibubi.create.content.trains.bogey.BogeySizes;
 import com.simibubi.create.content.trains.bogey.BogeyStyle;
+import net.createmod.catnip.nbt.NBTHelper;
+import lib.kasuga.rendering.models.mc.proxies.ModelPart;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,14 +44,30 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class BogeyModels {
 
     /**
-     * What to draw for one style/size.
+     * What to draw for one style/size: one or more independently placed model parts.
      *
-     * @param model   the model resource location
-     * @param yOffset vertical offset added to the block centre, in blocks
+     * @param parts   the parts, in content order; each gets its own pipeline instance keyed
+     *                {@code <proxy identity>/part/<index>}
+     * @param yOffset vertical offset from the block centre applied to the proxy root, in blocks
      */
-    public record Placement(ResourceLocation model, float yOffset) {
+    public record Placement(List<ModelPart> parts, float yOffset) {
+
         public Placement {
-            Objects.requireNonNull(model, "model");
+            Objects.requireNonNull(parts, "parts");
+            if (parts.isEmpty()) {
+                throw new IllegalArgumentException("a placement needs at least one model part");
+            }
+            parts = List.copyOf(parts);
+        }
+
+        /** Single-model placement: one part centred on the proxy root. */
+        public Placement(ResourceLocation model, float yOffset) {
+            this(List.of(ModelPart.of(model)), yOffset);
+        }
+
+        /** The model drawn by the first part — what a single-model registration shows. */
+        public ResourceLocation model() {
+            return parts.get(0).model();
         }
     }
 
@@ -73,11 +94,29 @@ public final class BogeyModels {
         MODELS.put(new Key(style, null), new Placement(model, yOffset));
     }
 
-    /** Registers a model for one specific size; overrides the style-wide entry for that size only. */
+    /** Registers one model for one specific size; overrides the style-wide entry for that size only. */
     public static void register(ResourceLocation style, BogeySizes.BogeySize size,
                                 ResourceLocation model, float yOffset) {
         Objects.requireNonNull(size, "size");
         MODELS.put(new Key(style, size.id()), new Placement(model, yOffset));
+    }
+
+    /**
+     * Registers a multi-part model group for every size of a style.
+     *
+     * <p>Parts are positioned relative to the proxy root (the block centre plus {@code yOffset});
+     * reference values are usually copied from the renderer the models came from, minus the main
+     * body's offset, so the model group keeps the same internal layout.
+     */
+    public static void register(ResourceLocation style, List<ModelPart> parts, float yOffset) {
+        MODELS.put(new Key(style, null), new Placement(parts, yOffset));
+    }
+
+    /** Registers a multi-part model group for one specific size. */
+    public static void register(ResourceLocation style, BogeySizes.BogeySize size,
+                                List<ModelPart> parts, float yOffset) {
+        Objects.requireNonNull(size, "size");
+        MODELS.put(new Key(style, size.id()), new Placement(parts, yOffset));
     }
 
     /**
@@ -102,6 +141,41 @@ public final class BogeyModels {
     /** Drops every mapping; intended for tests and reload harnesses, not for live content. */
     public static void clear() {
         MODELS.clear();
+    }
+
+    /**
+     * Resolves a placement from ids alone — for hosts that have the style only as NBT, which is the
+     * case for a bogey mounted on a train ({@code CarriageBogey} stores the style id in its
+     * {@code bogeyData}, not a {@code BogeyStyle} reference).
+     *
+     * @param styleId the committed style id, or {@code null} when the NBT carried none
+     * @param sizeId  the size id, or {@code null} to look up the style-wide entry
+     * @return the registered placement, or {@code null}
+     */
+    public static @Nullable Placement resolve(@Nullable ResourceLocation styleId, @Nullable ResourceLocation sizeId) {
+        if (styleId == null) {
+            return null;
+        }
+        if (sizeId != null) {
+            Placement exact = MODELS.get(new Key(styleId, sizeId));
+            if (exact != null) {
+                return exact;
+            }
+        }
+        return MODELS.get(new Key(styleId, null));
+    }
+
+    /**
+     * Reads the style id Create stores in a bogey's NBT ({@code "BogeyStyle"}).
+     *
+     * @param bogeyData the tag handed to a bogey visual, possibly {@code null} or empty
+     * @return the style id, or {@code null} when the tag does not carry one
+     */
+    public static @Nullable ResourceLocation styleIdOf(@Nullable CompoundTag bogeyData) {
+        if (bogeyData == null || !bogeyData.contains(AbstractBogeyBlockEntity.BOGEY_STYLE_KEY)) {
+            return null;
+        }
+        return NBTHelper.readResourceLocation(bogeyData, AbstractBogeyBlockEntity.BOGEY_STYLE_KEY);
     }
 
     private BogeyModels() {

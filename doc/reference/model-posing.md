@@ -46,7 +46,7 @@ AnimationLibrary.Clip<Pose> AnimationLibrary.pose(Pose pose);
 `register` 的名称非空且不可全为空白，同名注册替换已有绑定；`get` 未命中返回 null。
 `clips()` 返回不可修改的视图。构建/加载时注册，完成注册后再创建播放器；注册不是线程安全操作。
 sampler/data 非 null；外部 data 的不可变性由接入方保证。库不复制原始动画，也不改写其插值方式。
-片段的时间和时长为秒，实际启动播放时由公共播放器检查时长是否有限。
+片段的时间和时长为秒，实际启动播放时由私有 Scope adapter 检查时长是否有限。
 `AnimationLibrary.SAMPLER` 是供 AnimationPlayer/FSM 使用的公共片段适配器。
 FSM 的公式 Namespace 透传给原 sampler；命名绑定不会丢失公式上下文。
 `pose` 生成未命名、时长为 0 的常量片段。
@@ -92,9 +92,10 @@ instance.getPosing().pose(new Pose.Builder()
 | `void tick(float dt)` | 通常由 `ModelInstance.animate(dt)` 推进 |
 | `void sample(float partialTick)` | 通常由实例渲染采样入口调用 |
 
-每实例独立持有播放器、时间轴和 PoseSink；静态姿态、命名片段切换复用同一个 sink，
-因此前一姿态中消失的通道会自动清除。播放控制和 tick 串行执行，render sample 消费公共播放器
-发布的时钟快照。`stop` 的重置在采样阶段执行，不能代替采样或实例更新。
+每实例独立持有播放器、Scope、时间轴引用和 PoseSink；静态姿态、命名片段切换复用同一个 sink，
+因此前一姿态中消失的通道会自动清除。播放控制和 tick 串行执行，render sample 只插值 Scope
+已发布的 batch；`follow` 的外部时间轴通过 observer 提交逻辑结果，不拥有时间推进权。
+`stop` 的重置在采样阶段执行，不能代替采样或实例更新。
 当前 PoseDriver 仍是单个槽位；安装 ModelPosing 会替换当前驱动。
 公共驱动实现 RebindablePoseDriver，资源切换与时钟保留见 [输入迁移](minecraft-model-assembly.md#驱动和输入迁移)。
 需要动画分层时，用 FSM 的 `State.clip(AnimationLibrary.SAMPLER, clip, loop)` 和 `State.pose(Pose)`。

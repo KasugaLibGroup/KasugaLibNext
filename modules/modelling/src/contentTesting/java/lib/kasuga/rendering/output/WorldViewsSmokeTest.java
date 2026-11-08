@@ -92,7 +92,7 @@ public final class WorldViewsSmokeTest {
             var model = pipeline.createInstance(MODEL, INSTANCE, new Transform().translate(
                     (float) modelPosition.x, (float) modelPosition.y, (float) modelPosition.z), null, null);
             if (model == null) { finish(new IllegalStateException("Missing built-in cube model fixture")); return; }
-            model.setPoseDriver(new PoseDriver() {
+            lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding.install(model, new PoseDriver() {
                 @Override public void sample(float partialTick) { samplesThisFrame++; samplesTotal++; }
             });
             pipeline.addToRenderer(MODEL, INSTANCE, "mc_bridge", "mc_backend");

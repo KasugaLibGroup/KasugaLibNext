@@ -105,7 +105,7 @@ public final class State<Owner> {
 
     /**
      * Reference an animation clip for this state. The FSM holds the playback clock and samples this
-     * state's pose from {@code sampler} at render rate. A state
+     * state's pose during logical commits. A state
      * may carry both a static pose and a clip: the static pose supplies morphs/frames, the clip supplies
      * bone motion (clip bone entries win for same-named bones).
      *

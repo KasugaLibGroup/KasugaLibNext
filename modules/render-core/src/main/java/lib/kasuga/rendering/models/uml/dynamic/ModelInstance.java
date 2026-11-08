@@ -2,6 +2,8 @@ package lib.kasuga.rendering.models.uml.dynamic;
 
 import lib.kasuga.rendering.models.uml.dynamic.morph.MorphInstance;
 import lib.kasuga.rendering.models.uml.dynamic.morph.MorphResult;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.AnimationRenderPort;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.RenderSampleContext;
 import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import lib.kasuga.rendering.models.uml.dynamic.physics.ModelPhysicsScene;
 import lib.kasuga.rendering.models.uml.dynamic.physics.box3d.NativeBox3D;
@@ -59,9 +61,20 @@ public class ModelInstance implements AutoCloseable {
      * {@code null} for a static instance. Set by the host (e.g. an {@code FsmPoseDriver}); advanced via
      * {@link #animate(float)}, separately from {@link #update()}.
      */
-    @Setter
     @Nullable
     private PoseDriver poseDriver;
+
+    /**
+     * Optional render-frame writer for the instance root. This is a separate ownership slot from
+     * {@link #poseDriver}; logical publishers advance root state, while render sampling only writes it.
+     */
+    @Nullable
+    private RootTransformDriver rootTransformDriver;
+
+    /** Optional scope-owned batch renderer. When present, it replaces the two legacy drivers. */
+    @Nullable
+    private AnimationRenderPort animationRenderPort;
+
     private ModelPosing posing;
 
     @Nullable
@@ -104,9 +117,54 @@ public class ModelInstance implements AutoCloseable {
 
     /** Lazily composes the common posing driver; playback controls install it when requested. */
     public synchronized ModelPosing getPosing() {
-        if (poseDriver instanceof ModelPosing active && active.model() == this) return active;
+        if (poseDriver instanceof ModelPoseBinding binding
+                && binding.source() instanceof ModelPosing active && active.model() == this) {
+            return active;
+        }
         if (posing == null) posing = new ModelPosing(this);
         return posing;
+    }
+
+    /**
+     * Replaces the pose owner. Animation sources must be installed through
+     * {@link ModelPoseBinding#install(ModelInstance, PoseDriver)}; {@code null} remains available
+     * for the current owner's cleanup path.
+     */
+    public void setPoseDriver(@Nullable PoseDriver poseDriver) {
+        if (poseDriver != null && !(poseDriver instanceof ModelPoseBinding)) {
+            throw new IllegalArgumentException("poseDriver must be a ModelPoseBinding or null");
+        }
+        if (poseDriver instanceof ModelPoseBinding binding && binding.model() != this) {
+            throw new IllegalArgumentException("poseDriver belongs to another model instance");
+        }
+        this.poseDriver = poseDriver;
+    }
+
+    /** Installs a root owner, rejecting a driver that already belongs to another instance. */
+    public void setRootTransformDriver(@Nullable RootTransformDriver rootTransformDriver) {
+        if (rootTransformDriver != null && rootTransformDriver.owner() != null
+                && rootTransformDriver.owner() != this) {
+            throw new IllegalArgumentException("rootTransformDriver belongs to another model instance");
+        }
+        RootTransformDriver previous = this.rootTransformDriver;
+        if (previous == rootTransformDriver) {
+            return;
+        }
+        this.rootTransformDriver = rootTransformDriver;
+        if (previous != null) {
+            previous.detach(this);
+        }
+    }
+
+    /**
+     * Installs the render endpoint for committed animation targets.
+     *
+     * <p>The port samples the target batch in the scope's registration order. It is deliberately
+     * separate from the legacy root/pose driver slots so migration can reject two render paths
+     * rather than silently running both.
+     */
+    public void setAnimationRenderPort(@Nullable AnimationRenderPort animationRenderPort) {
+        this.animationRenderPort = animationRenderPort;
     }
 
     public SpriteSet getMaterialFrame(Material mat) {
@@ -256,25 +314,13 @@ public class ModelInstance implements AutoCloseable {
      */
     public void evaluatePhysicsFrame(float partialTick, float deltaSeconds) {
         if (ragdoll == null || !ragdoll.enabled()) return;
-        if (!Float.isFinite(partialTick)) {
-            throw new IllegalArgumentException("partialTick must be finite");
-        }
-        if (poseDriver != null) {
-            poseDriver.sample(partialTick);
-            frameSamplePrepared = true;
-        }
+        prepareDriversForFrame(partialTick);
         tickLoop.tick(deltaSeconds);
     }
 
     /** Samples animation for a scene that will advance several models in one shared step. */
     public void prepareSharedPhysicsFrame(float partialTick) {
-        if (!Float.isFinite(partialTick)) {
-            throw new IllegalArgumentException("partialTick must be finite");
-        }
-        if (poseDriver != null) {
-            poseDriver.sample(partialTick);
-            frameSamplePrepared = true;
-        }
+        prepareDriversForFrame(partialTick);
     }
 
     /**
@@ -287,9 +333,27 @@ public class ModelInstance implements AutoCloseable {
             frameSamplePrepared = false;
             return;
         }
-        if (poseDriver != null) {
-            poseDriver.sample(partialTick);
+        sampleDrivers(partialTick);
+    }
+
+    /**
+     * Samples the committed target batch for one platform render frame.
+     *
+     * <p>{@code interpolationAlpha} changes only the result between two committed logical outputs.
+     * It never advances animation time, controller state or playback instances.
+     */
+    public void sample(RenderSampleContext context) {
+        java.util.Objects.requireNonNull(context, "context");
+        if (frameSamplePrepared) {
+            frameSamplePrepared = false;
+            return;
         }
+        AnimationRenderPort port = animationRenderPort;
+        if (port != null) {
+            port.sample(context);
+            return;
+        }
+        sampleDrivers((float) context.interpolationAlpha());
     }
 
     public void update() {
@@ -410,11 +474,53 @@ public class ModelInstance implements AutoCloseable {
 
     @Override
     public void close() {
-        poseDriver = null;
-        tickLoop.destroy();
-        if (ragdoll != null) {
-            ragdoll.close();
-            ragdoll = null;
+        RootTransformDriver rootDriver = rootTransformDriver;
+        PoseDriver internalPoseDriver = poseDriver;
+        try {
+            if (rootDriver != null) {
+                rootDriver.detach(this);
+            }
+        } finally {
+            try {
+                if (internalPoseDriver instanceof ModelPoseBinding binding) {
+                    binding.detach(this);
+                }
+            } finally {
+                rootTransformDriver = null;
+                animationRenderPort = null;
+                poseDriver = null;
+                tickLoop.destroy();
+                if (ragdoll != null) {
+                    ragdoll.close();
+                    ragdoll = null;
+                }
+            }
+        }
+    }
+
+    /**
+     * Samples both write domains in their fixed order: external root first, internal pose second.
+     * Calling this once per prepared frame prevents duplicate interpolation in physics and backend
+     * paths.
+     */
+    private boolean sampleDrivers(float partialTick) {
+        if (!Float.isFinite(partialTick)) {
+            throw new IllegalArgumentException("partialTick must be finite");
+        }
+        RootTransformDriver rootDriver = rootTransformDriver;
+        if (rootDriver != null) {
+            rootDriver.sampleRoot(partialTick);
+        }
+        PoseDriver internalPoseDriver = poseDriver;
+        if (internalPoseDriver != null) {
+            internalPoseDriver.sample(partialTick);
+        }
+        return rootDriver != null || internalPoseDriver != null;
+    }
+
+    private void prepareDriversForFrame(float partialTick) {
+        if (!frameSamplePrepared) {
+            frameSamplePrepared = sampleDrivers(partialTick);
         }
     }
 }

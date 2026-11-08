@@ -11,6 +11,9 @@ import lib.kasuga.rendering.models.uml.backend.Backend;
 import lib.kasuga.rendering.models.uml.backend.BackendContext;
 import lib.kasuga.rendering.models.uml.bridge.Bridge;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.FrameInputSnapshot;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.RenderFrameToken;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.RenderSampleContext;
 import lib.kasuga.rendering.models.uml.dynamic.SkeletonInstance;
 import lib.kasuga.rendering.models.uml.framework.schedule.ModelRenderScheduling;
 import lib.kasuga.rendering.models.uml.framework.schedule.RenderScheduler;
@@ -121,7 +124,10 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
             // physics is advanced by MinecraftRagdollRuntime independently of
             // render visibility; tying it to this method froze culled instances.
             if (sampledThisFrame.firstSample(model)) {
-                model.sample(context.getPartialTickFraction());
+                model.sample(new RenderSampleContext(
+                        new RenderFrameToken(renderFrameToken),
+                        context.getPartialTickFraction(),
+                        FrameInputSnapshot.empty()));
             }
 
             LightData lightData;

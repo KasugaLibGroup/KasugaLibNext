@@ -41,8 +41,8 @@ Grouped by subsystem. The left column is the term used in the English pages, the
 | variant | 变体 | Not version or edition, which here mean a resource version |
 | variant selector | 变体选择器 | |
 | context | 上下文 | The Multiplexer's context snapshot; unrelated to the "host frame context" of the rendering framework |
-| retargeting | 重定向 | Topology retargeting between skeletons is the integrator's responsibility; code entry point `AnimationPlayback.retarget` |
-| formula track | 公式轨道 | Evaluated every frame |
+| retargeting | 重定向 | Topology retargeting between skeletons is the integrator's responsibility; use `AnimationPlayer.rebind(fresh, sampler, data)` to retain playback state while replacing clip data |
+| formula track | 公式轨道 | Evaluated once per committed logical step; render frames interpolate the resulting Poses |
 
 ### Skeleton, physics and ragdoll
 

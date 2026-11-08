@@ -46,7 +46,8 @@ AnimationLibrary.Clip<Pose> AnimationLibrary.pose(Pose pose);
 The name passed to `register` must be non-empty and must not be all whitespace; registering the same name replaces the existing binding; `get` returns null on a miss.
 `clips()` returns an unmodifiable view. Register at build/load time, and create players only after registration is complete; registration is not a thread-safe operation.
 sampler/data must be non-null; the integrating party guarantees the immutability of external data. The library does not copy the original animation, nor does it rewrite its interpolation mode.
-Clip times and durations are in seconds, and the shared player checks whether the duration is finite when playback actually starts.
+Clip times and durations are in seconds, and the private Scope adapter checks whether the duration
+is finite when playback actually starts.
 `AnimationLibrary.SAMPLER` is the shared clip adapter used by AnimationPlayer/FSM.
 The FSM's formula Namespace is passed through to the original sampler; a named binding does not lose the formula context.
 `pose` produces an unnamed, zero-duration constant clip.
@@ -92,9 +93,11 @@ Package: `lib.kasuga.rendering.models.uml.dynamic`; implements `PoseDriver`.
 | `void tick(float dt)` | Usually advanced by `ModelInstance.animate(dt)` |
 | `void sample(float partialTick)` | Usually called by the instance's render sampling entry point |
 
-Each instance holds its own player, timeline and PoseSink; a static pose and a named clip switch reuse the same sink,
-so channels that disappear from the previous pose are cleared automatically. Playback control and tick run serially, and the render sample consumes the clock snapshot
-published by the shared player. `stop`'s reset runs during the sampling phase and cannot replace sampling or instance updates.
+Each instance holds its own player, Scope, timeline reference and PoseSink; a static pose and a named clip
+switch reuse the same sink, so channels that disappear from the previous pose are cleared
+automatically. Playback control and tick run serially, and render sampling only interpolates the
+batch published by the private Scope. `follow` observes an external timeline without owning its
+tick. `stop`'s reset runs during the sampling phase and cannot replace sampling or instance updates.
 The current PoseDriver is still a single slot; installing a ModelPosing replaces the current driver.
 The shared drivers implement RebindablePoseDriver; for resource switching and clock preservation see [input migration](minecraft-model-assembly.md#driver-and-input-migration).
 When animation layering is needed, use the FSM's `State.clip(AnimationLibrary.SAMPLER, clip, loop)` and `State.pose(Pose)`.
