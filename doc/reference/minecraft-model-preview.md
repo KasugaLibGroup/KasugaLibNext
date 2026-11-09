@@ -137,6 +137,9 @@ Create gallery 里准星对准模型后左击，会显示 5 秒信息，点击�
 Done 或 Esc 关闭后继续绕行，当前分层和爆炸状态仍然保留。
 面板中的 `Rig / Windmill` 可切换真实风车实体：原生轴承负责 tick 与同步，显示源持续读取
 `ControlledContraptionEntity` 的转角，分层、单层和爆炸图仍继续旋转。
+携带 `-PkasugaPreviewSchematic=...` 启动开发客户端后，来源菜单中工厂行右侧的 **Inspect**
+进入同一个世界检查面板；也可执行 `/kasuga_create_gallery factory` 或点面板内 **Factory**。
+工厂同样支持 I 面板、分层、爆炸图、缩放、重置和方块点击信息。
 
 验证命令：
 

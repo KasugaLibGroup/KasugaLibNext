@@ -58,7 +58,7 @@ public final class CreateModelPreviewDemo {
         MinecraftPreviewDemo.register("create-airship", CreateAirshipExample::create);
         String path = System.getProperty("kasuga.minecraftPreview.schematic");
         if (path != null && !path.isBlank()) MinecraftPreviewDemo.register("external-create-schematic",
-                () -> CreateModelSources.schematic(Minecraft.getInstance().level, java.nio.file.Path.of(path)));
+                () -> CreateModelSources.schematic(Minecraft.getInstance().level, java.nio.file.Path.of(path)), CreateModelGallery::startFactory);
     }
 
     private static List<StructureBlockInfo> blocks() {

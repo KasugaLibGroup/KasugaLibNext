@@ -49,11 +49,17 @@ UI 自动化与世界自动化是独立任务。用隔离世界运行，查看 J
   -PkasugaClientDirectory=/absolute/path/to/isolated-client -PkasugaQuickPlayWorld=preview
 ```
 
-在菜单选择 `external-create-schematic`。源文件不会复制到资源包或提交。
+在菜单点击 `external-create-schematic` 打开 UI 预览；点击同一行右侧 **Inspect** 进入工厂世界检查，
+会自动打开分层/爆炸控制面板。Done、I 或 Esc 关闭面板后可自由飞行，再按 I 打开。
+也可执行 `/kasuga_create_gallery factory` 直接进入，或在已有面板里点 **Factory**。
+面板支持工厂与 Rig / Windmill 切换，工厂加载和几何缓存会在会话内复用。
+源文件不会复制到资源包或提交。
 `JAVA_TOOL_OPTIONS=-Dkasuga.testExternalSchematic=true` 可运行导入与实际截图验收；
 `JAVA_TOOL_OPTIONS=-Dkasuga.testWindmill=true` 则验证真实转子在 assembled、exploded、single slice
 三种模式中跨 tick 的角度与实际几何深度像素都在变化。两种 smoke 分别写入
 `debug/external-schematic/report.json` 与 `debug/windmill/report.json`。
+`JAVA_TOOL_OPTIONS=-Dkasuga.testFactoryInspection=true` 从真实菜单的 Inspect 按钮开始验证工厂
+分层、爆炸、缩放、拾取、目标切换及退出恢复，报告为 `debug/factory-inspection/report.json`。
 
 性能与缓存验收（使用独立游戏目录，保持蓝图/分辨率/相机一致）：
 

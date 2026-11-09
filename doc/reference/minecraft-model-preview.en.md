@@ -130,6 +130,9 @@ model with its current layout retained.
 The `Rig / Windmill` button switches to a real windmill assembled and ticked by Create's native
 bearing. Its `ControlledContraptionEntity` keeps driving rotation in assembled, isolated-layer and
 exploded modes; the display adapter reads the entity without ticking or changing it.
+With `-PkasugaPreviewSchematic=...`, click **Inspect** beside the factory entry for the same world
+inspection panel, or use `/kasuga_create_gallery factory` or the panel's **Factory** button.
+The factory retains layers, explosion, scale, reset, I to reopen controls and block information.
 
 ```bash
 ./gradlew :modules:modelling:modelUnitTest --tests 'lib.kasuga.rendering.models.mc.scene.*'

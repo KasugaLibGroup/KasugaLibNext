@@ -35,7 +35,17 @@ public final class CreateModelGallery {
     @SubscribeEvent public static void commands(RegisterClientCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("kasuga_create_gallery")
                 .executes(context -> start() ? 1 : 0)
+                .then(Commands.literal("factory").executes(context -> startFactory() ? 1 : 0))
                 .then(Commands.literal("stop").executes(context -> { stop(); return 1; })));
+    }
+    /** Same gallery controls and source owner as rig/windmill, selected from the blueprint menu. */
+    public static boolean startFactory() {
+        String path = System.getProperty("kasuga.minecraftPreview.schematic");
+        if (path == null || path.isBlank()) return reject("No external blueprint was supplied to this development client.");
+        if (!start()) return false;
+        session.factoryRequested = true;
+        Minecraft.getInstance().setScreen(null);
+        return true;
     }
     public static boolean start() {
         if (session != null) return true;
@@ -64,6 +74,7 @@ public final class CreateModelGallery {
         Minecraft.getInstance().setScreen(new InspectionScreen(session)); return true;
     }
     static LayerLayout layout() { return session.layout; }
+    static boolean factorySelected() { return session != null && session.factorySelected; }
     static com.simibubi.create.content.contraptions.ControlledContraptionEntity windmillEntity() {
         var current = session;
         if (current == null || current.nativeWindmill == null || Minecraft.getInstance().level == null) return null;
@@ -74,14 +85,48 @@ public final class CreateModelGallery {
         var current = session;
         if (current == null || windmill && current.windmillEntry == null) return false;
         current.windmillSelected = windmill;
+        current.factorySelected = false;
         current.rigEntry.visible(!windmill);
         if (current.windmillEntry != null) current.windmillEntry.visible(windmill);
+        if (current.factoryEntry != null) current.factoryEntry.visible(false);
         current.entry = windmill ? current.windmillEntry : current.rigEntry;
         current.baseTransform = windmill ? current.windmillBase : current.rigBase;
         current.minimumLayer = windmill ? current.windmillMinimum : current.rigMinimum;
         current.maximumLayer = windmill ? current.windmillMaximum : current.rigMaximum;
         current.layer = current.maximumLayer;
         current.layout = LayerLayout.ASSEMBLED; current.scale = 1; current.all = current.cumulative = true; current.selected = null;
+        current.entry.layers(current.layout).transform(current.baseTransform);
+        return true;
+    }
+    private static boolean selectFactory() {
+        var current = session;
+        if (current == null || current.scene == null) return false;
+        if (current.factoryEntry == null) {
+            lib.kasuga.rendering.models.mc.scene.MinecraftModelSource source = null;
+            try {
+                source = lib.kasuga.create.client.model.CreateModelSources.schematic(Minecraft.getInstance().level,
+                        java.nio.file.Path.of(System.getProperty("kasuga.minecraftPreview.schematic")));
+                var frame = source.snapshot(LayerLayout.ASSEMBLED, 0);
+                var bounds = frame.bounds(); var center = bounds.minimum().add(bounds.maximum()).mul(.5f);
+                float scale = (float) (17 / Math.max(bounds.maxX()-bounds.minX(), Math.max(bounds.maxY()-bounds.minY(),bounds.maxZ()-bounds.minZ())));
+                current.factoryBase = new Matrix4f().scale(scale).translate(-center.x,-center.y,-center.z);
+                var layers = source.snapshot(LayerLayout.ASSEMBLED.separation(.001),0);
+                current.factoryMinimum = layers.parts().stream().mapToInt(part -> part.layer()).min().orElse(0);
+                current.factoryMaximum = layers.parts().stream().mapToInt(part -> part.layer()).max().orElse(0);
+                current.factoryEntry = current.scene.add(source,CENTER).transform(current.factoryBase).visible(false);
+            } catch (Exception error) {
+                if (source != null && current.factoryEntry == null) source.close();
+                reject("Cannot inspect blueprint: " + error.getMessage());
+                LogUtils.getLogger().error("Cannot inspect external blueprint",error); return false;
+            }
+        }
+        current.rigEntry.visible(false);
+        if (current.windmillEntry != null) current.windmillEntry.visible(false);
+        current.factoryEntry.visible(true);
+        current.factorySelected = true; current.windmillSelected = false; current.entry = current.factoryEntry;
+        current.baseTransform = current.factoryBase;
+        current.minimumLayer = current.factoryMinimum;current.maximumLayer = current.factoryMaximum;current.layer = current.maximumLayer;
+        current.layout = LayerLayout.ASSEMBLED;current.scale=1;current.all=current.cumulative=true;current.selected=null;
         current.entry.layers(current.layout).transform(current.baseTransform);
         return true;
     }
@@ -113,7 +158,8 @@ public final class CreateModelGallery {
     @SubscribeEvent public static void hud(net.neoforged.neoforge.client.event.RenderGuiEvent.Post event) {
         var current = session; var mc = Minecraft.getInstance();
         if (current == null || current.scene == null) return;
-        event.getGuiGraphics().drawString(mc.font, "Create gallery | I layers / explode / windmill | Click inspect | WASD fly | Space up | Shift down", 8, 8, 0xFFF0F8FF);
+        String selected = current.factorySelected ? "Factory" : current.windmillSelected ? "Windmill" : "Rig";
+        event.getGuiGraphics().drawString(mc.font, selected + " | I layers / explode | Click inspect | WASD fly | Space up | Shift down", 8, 8, 0xFFF0F8FF);
         if (current.selected != null && System.nanoTime() < current.selectedUntil)
             lib.kasuga.rendering.models.mc.backend.ui.ModelBlockInfo.draw(event.getGuiGraphics(), mc.font, current.selected, 8, 24);
     }
@@ -141,6 +187,12 @@ public final class CreateModelGallery {
                     current.windmillEntry = current.scene.add(windmill, CENTER).transform(current.windmillBase).visible(false);
                     LogUtils.getLogger().info("CREATE_WINDMILL_PREVIEW_READY entity={} backlink={}", rotor.getId(), rotor.getContraption().entity == rotor);
                 } catch (Exception error) { windmill.close(); LogUtils.getLogger().error("Cannot preview native windmill", error); }
+            }
+            if (current.factoryRequested) {
+                current.factoryRequested = false;
+                if (selectFactory()) {
+                    openControls(); LogUtils.getLogger().info("CREATE_FACTORY_INSPECTION_READY");
+                }
             }
             return;
         }
@@ -186,9 +238,12 @@ public final class CreateModelGallery {
         volatile CreateWindmillExample nativeWindmill;
         SceneModels scene; SceneModels.Entry entry;
         SceneModels.Entry rigEntry, windmillEntry;
+        SceneModels.Entry factoryEntry;
         Matrix4f rigBase, windmillBase;
+        Matrix4f factoryBase;
         int rigMinimum, rigMaximum, windmillMinimum, windmillMaximum;
-        boolean windmillSelected;
+        int factoryMinimum, factoryMaximum;
+        boolean windmillSelected, factorySelected, factoryRequested;
         lib.kasuga.rendering.models.mc.scene.MinecraftModelSource.BlockHit selected;
         long selectedUntil;
         LayerLayout layout = LayerLayout.ASSEMBLED;
@@ -242,10 +297,14 @@ public final class CreateModelGallery {
                 if (selectWindmill(!state.windmillSelected)) rebuildWidgets();
             }).bounds(376, bottom - 28, 112, 20).build());
             target.active = state.windmillEntry != null;
+            String blueprint = System.getProperty("kasuga.minecraftPreview.schematic");
+            if (blueprint != null && !blueprint.isBlank()) addRenderableWidget(net.minecraft.client.gui.components.Button.builder(Component.literal("Factory"), button -> {
+                if (selectFactory()) rebuildWidgets();
+            }).bounds(496,bottom-28,70,20).build());
         }
         @Override public void render(net.minecraft.client.gui.GuiGraphics graphics, int x, int y, float partialTick) {
             graphics.fill(4, height - 85, width - 4, height - 4, 0xDD101926);
-            graphics.drawString(font, title, 12, height - 80, 0xFFF0F8FF);
+            graphics.drawString(font, title.copy().append(state.factorySelected ? " / Factory" : state.windmillSelected ? " / Windmill" : " / Rig"), 12, height - 80, 0xFFF0F8FF);
             graphics.drawString(font, state.all ? "All layers" : "Layer " + state.layer + (state.cumulative ? " / stack" : " / slice"),
                     Math.max(380, width - 130), height - 52, 0xFFB8CBE0);
             super.render(graphics, x, y, partialTick);

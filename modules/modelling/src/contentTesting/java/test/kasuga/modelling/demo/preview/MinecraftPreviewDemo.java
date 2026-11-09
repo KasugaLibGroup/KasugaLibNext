@@ -33,7 +33,9 @@ import java.util.List;
 @EventBusSubscriber(modid = KasugaLib.MODID, value = Dist.CLIENT)
 public final class MinecraftPreviewDemo {
     @FunctionalInterface public interface Factory { MinecraftModelSource create() throws Exception; }
-    public record Example(String name, Factory factory) {}
+    public record Example(String name, Factory factory, Runnable inspection) {
+        public Example(String name, Factory factory) { this(name, factory, null); }
+    }
     private static final List<Example> EXAMPLES = new ArrayList<>();
     private static SceneModels scene;
     private static Object sceneLevel;
@@ -50,8 +52,12 @@ public final class MinecraftPreviewDemo {
     }
     private MinecraftPreviewDemo() {}
     public static void register(String name, Factory factory) {
+        register(name, factory, null);
+    }
+    /** Optional demo-owned world inspection entry, without linking modelling to optional mods. */
+    public static void register(String name, Factory factory, Runnable inspection) {
         if (EXAMPLES.stream().anyMatch(example -> example.name().equals(name))) throw new IllegalArgumentException("Duplicate example " + name);
-        EXAMPLES.add(new Example(name, factory));
+        EXAMPLES.add(new Example(name, factory, inspection));
     }
     public static List<Example> examples() { return List.copyOf(EXAMPLES); }
     public static boolean selectorOpen() { return Minecraft.getInstance().screen instanceof Selector; }
@@ -104,7 +110,10 @@ public final class MinecraftPreviewDemo {
                                 (int) Math.floor(bounds.minY()), (int) Math.ceil(bounds.maxY()) - 1, MinecraftPreviewDemo::open));
                     } catch (Exception failure) { if (preview != null) preview.close(); else source.close(); throw failure; }
                 })).bounds(width / 2 - 170, y, 270, 20).build());
-                addRenderableWidget(Button.builder(Component.literal("World"), button -> run(() -> showWorld(choice)))
+                addRenderableWidget(Button.builder(Component.literal(choice.inspection() == null ? "World" : "Inspect"), button -> run(() -> {
+                    if (choice.inspection() == null) showWorld(choice);
+                    else { clearWorld(); choice.inspection().run(); }
+                }))
                         .bounds(width / 2 + 106, y, 64, 20).build());
                 y += 26;
             }
