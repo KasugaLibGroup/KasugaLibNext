@@ -208,6 +208,9 @@ neoForge {
             if (providers.gradleProperty('kasugaNebulaAuto').getOrElse('false').toBoolean()) {
                 systemProperty 'kasuga.nebula.auto', 'true'
             }
+            if (providers.gradleProperty('kasugaCobaltAuto').getOrElse('false').toBoolean()) {
+                systemProperty 'kasuga.cobalt.auto', 'true'
+            }
             if (providers.gradleProperty('kasugaTestNebula').getOrElse('false').toBoolean()) {
                 systemProperty 'kasuga.testNebula', 'true'
                 systemProperty 'kasuga.nebula.auto', 'true'

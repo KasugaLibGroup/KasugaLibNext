@@ -1,0 +1,9 @@
+# Generated cobalt beach material
+newmtl coast
+Kd 1.0 1.0 1.0
+Ke 0.0 0.0 0.0
+Ks 0.02 0.025 0.03
+Ns 8.0
+Pr 0.92
+d 1.0
+map_Kd kasuga_demo:cobalt/coast

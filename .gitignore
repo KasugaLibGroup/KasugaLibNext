@@ -59,3 +59,6 @@ logs/
 # These are per-change working documents, not long-term assets — see
 # .agents/skills/feature-impact-analysis/SKILL.md "产出位置".
 /doc/local/
+
+# User-supplied Cobalt blue music, prepared locally from the selected recording.
+/modules/modelling/src/contentTesting/resources/assets/kasuga_demo/sounds/cobalt/instant_blue.ogg

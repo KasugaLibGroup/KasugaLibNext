@@ -1,0 +1,5 @@
+{
+  "cobalt_blue_music": {
+    "sounds": [{"name":"kasuga_demo:cobalt/instant_blue","stream":true,"attenuation_distance":48}]
+  }
+}
