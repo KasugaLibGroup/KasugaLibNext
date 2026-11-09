@@ -20,7 +20,7 @@ All procedural stages hang off the single ordered `ModelTickLoop` pipeline. The 
 modules such as physics and IK implement only their own internal logic:
 
 ```text
-kasuga:apply -> [user pre-IK modules] -> kasuga:ik -> [user post-IK modules]
+[user pre-IK modules] -> kasuga:apply -> kasuga:ik -> [user post-IK modules]
   -> kasuga:physics -> [user post-physics modules] -> kasuga:anchor
 ```
 
@@ -28,17 +28,17 @@ The complete data flow within one frame for a model with physics:
 
 ```text
 PoseDriver.sample(partialTick)
+  -> pre-IK modules (write pending transforms and transient IK targets)
   -> SkeletonApplyModule (flush pending transforms)
-  -> pre-IK modules (write transient IK targets; modules that need pending transforms flushed go before apply)
-  -> IkModule (hierarchy evaluation + generic Caliko IK; skipped while physics takes over the pose)
+  -> IkModule (constrained animation/IK target for every motion state)
   -> post-IK modules (read the same-frame IK results, submit controller forces)
-  -> RagdollModule (Box3D fixed steps + bone writeback)
+  -> SkeletonPhysicsModule (fixed-step drive, Box3D, bone writeback)
   -> post-physics modules (observe the final pose)
   -> AnchorModule (recompute the world transform of the display child anchor)
   -> renderer upload
 ```
 
-`MinecraftRagdollRuntime` samples the animation first and then advances physics in `RenderFrame.Pre`; the backend's later `sample` consumes the
+`MinecraftModelRuntime` (with `MinecraftRagdollRuntime` as a compatibility facade) samples the animation first and then advances physics in `RenderFrame.Pre`; the backend's later `sample` consumes the
 mark already prepared for this frame and does not overwrite the physics results with the animation again. Animation/IK targets are evaluated and cached by input mutation epoch, so
 when the input stays the same the fixed steps reuse the same animation target; the native force accumulation and fixed-step execution are still managed by the world.
 
@@ -54,8 +54,29 @@ instance.tick(frameSeconds);              // advances the whole pipeline directl
 Use this when animation sampling and physics advancement must happen in one call:
 
 ```java
-instance.evaluatePhysicsFrame(partialTick, frameSeconds);
+instance.evaluateFrame(partialTick, frameSeconds);
 ```
+
+### Standard skeleton motion state
+
+```java
+var skeleton = instance.getSkeletonInstance();
+var physics = skeleton.relax(); // null if native physics is unavailable
+skeleton.drivePose(new SkeletonInstance.PoseDrive(5f, 1f, 800f, 250f, 1f));
+skeleton.relax();             // release tracking; keep profile and scene
+skeleton.resumeAnimation();   // restore current animation/IK pose
+skeleton.detachRelaxation();  // release adapter, not its shared scene
+```
+
+`getMotionState()` returns `ANIMATED`, `RELAXED`, or `DRIVEN`; zero weight is `RELAXED`.
+Both physical states retain joint/contact constraints. The rig needs common physics definitions and a profile where required.
+`relax(profile)` and `relax(scene, profile)` select profile and shared world; `getRelaxation()` exposes the historically
+named `SkeletonRagdoll` adapter, preserving existing nested API types. Legacy `ModelInstance.enablePhysics` delegates
+to the skeleton; calls without a scene argument still select a standalone world.
+
+Shared scenes use `ModelTickLoop.tickSharedPhysics`: all physics slots submit, the world advances once,
+all poses commit, then post-physics/anchor observers run. `beforePhysicsStep` applies controller forces per fixed step;
+`afterSharedPhysics` commits shared physics-slot results. Modify target poses before IK; post-IK consumers read the solved target.
 
 ## 2. Generic Rigid Body API
 
@@ -309,15 +330,15 @@ Every `ModelInstance` carries its own `ModelTickLoop` pipeline (`instance.getTic
 | Slot | Module | Responsibility |
 | --- | --- | --- |
 | `kasuga:apply` | `SkeletonApplyModule` | flushes pending transforms into the skeleton; the identity slot skips, and does not overwrite bones the animation already wrote |
-| `kasuga:ik` | `IkModule` | hierarchy evaluation + generic Caliko IK; when physics is enabled physics takes over the pose and this slot skips automatically |
-| `kasuga:physics` | `RagdollModule` | advances the SkeletonRagdoll (Box3D) and writes back; no-op when physics is not enabled |
+| `kasuga:ik` | `IkModule` | same-frame constrained animation/IK target for all motion states |
+| `kasuga:physics` | `SkeletonPhysicsModule` | advances the SkeletonRagdoll (Box3D) and writes back; no-op when physics is not enabled |
 | `kasuga:anchor` | `AnchorModule` | recomputes the anchor world transform and notifies the display children |
 
 User modules attach between the standard slots with typed helpers, and ordering is provided entirely by the pipeline:
 
 ```java
 ModelTickLoop loop = instance.getTickLoop();
-loop.addPreIk("my-target", module);      // by default after apply, before IK
+loop.addPreIk("my-target", module);      // before apply, pending writes take effect in the same evaluation
 loop.addPostIk("my-controller", module); // after IK, before physics
 loop.addPostPhysics("my-observer", module); // after physics, before anchor
 loop.module(ModelTickLoop.SLOT_ANCHOR, AnchorModule.class); // fetch a built-in module instance
@@ -343,9 +364,12 @@ It writes the transient world target only in the pre-IK stage, and does not modi
 
 ### 5.2 `ActiveRagdollModule`
 
-This controller pulls dynamic bodies toward the same-frame animation/IK body targets in the post-IK stage: it first calls
-`SkeletonRagdoll.evaluateAnimationTarget()` to refresh the kinematic targets, and then computes the PD spring force/torque;
-integration, collision, joints, and sleep are still all executed by Box3D in the physics stage.
+This compatibility controller reads the target already solved by the standard IK stage. It computes bounded
+PD forces/torques through `beforePhysicsStep` on every fixed step, without another hierarchy or IK solve.
+Box3D handles integration, contacts and joints. Whole-skeleton tracking can use `skeleton.drivePose(...)` directly.
+Zero weight skips both body traversal and force submission. Angular drive retains the legacy
+`ActiveRagdollModule` mass scaling for parameter compatibility; it is not normalized by rotational inertia.
+The maximum torque remains significant for small skeletons.
 
 Control all dynamic bodies:
 

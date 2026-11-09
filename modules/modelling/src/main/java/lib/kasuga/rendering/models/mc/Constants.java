@@ -38,9 +38,6 @@ import lib.kasuga.rendering.models.mc.source.texture.bake.PbrBakeCoordinator;
 import lib.kasuga.rendering.models.mc.source.texture.bake.PbrBakeState;
 import lib.kasuga.rendering.models.uml.loaders.sources.SourceType;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.screens.AlertScreen;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.*;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -117,6 +114,11 @@ public class Constants {
         pipelines.world(opaque, context -> renderModels(context, ModelRenderPass.OPAQUE, true, false));
         pipelines.world(mask, context -> renderModels(context, ModelRenderPass.MASK, false, false));
         pipelines.world(translucent, context -> renderModels(context, ModelRenderPass.TRANSLUCENT, false, true));
+        pipelines.world(RenderPipelineDescriptor.builder(
+                ResourceLocation.fromNamespaceAndPath(KasugaLib.MODID, "world_ui"), RenderPhase.AFTER_LEVEL)
+                .build(), context -> {
+                    if (UI_BACKEND != null) UI_BACKEND.renderWorld(context);
+                });
     }
 
     @SubscribeEvent
@@ -485,20 +487,6 @@ public class Constants {
         } finally {
             source.endBatch(renderType);
         }
-    }
-
-    public static void testUI() {
-        if (UI_BACKEND.getRenderables().isEmpty()) {
-            Screen screen = new AlertScreen(() -> {
-                Minecraft.getInstance().player.displayClientMessage(
-                        Component.literal("触发了按钮"), true
-                );
-            }, Component.literal("Test"), Component.literal("This is a test"));
-            screen.init(Minecraft.getInstance(), Minecraft.getInstance().getWindow().getGuiScaledWidth(), Minecraft.getInstance().getWindow().getGuiScaledHeight());
-            UI_BACKEND.addRenderable(screen);
-        }
-        GuiGraphics guiGraphics = UIBackend.constructGuiGraphics();
-        UI_BACKEND.renderAllUis(guiGraphics, 0);
     }
 
 }

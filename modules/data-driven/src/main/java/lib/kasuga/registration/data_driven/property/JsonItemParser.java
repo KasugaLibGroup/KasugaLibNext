@@ -2,6 +2,7 @@ package lib.kasuga.registration.data_driven.property;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import lib.kasuga.utils.json.GsonBindings;
 import com.mojang.logging.LogUtils;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Rarity;
@@ -20,19 +21,19 @@ public class JsonItemParser {
     private JsonItemParser() {
         parsers = new LinkedHashMap<>();
 
-        parsers.put("stacks_to", (k, v) -> props -> { props.stacksTo(v.getAsInt()); return props; });
+        parsers.put("stacks_to", (k, v) -> props -> { props.stacksTo(GsonBindings.GSON.fromJson(v, Integer.class)); return props; });
         parsers.put("rarity", (k, v) -> {
             try {
-                Rarity rarity = Rarity.valueOf(v.getAsString().toUpperCase(Locale.ROOT));
+                Rarity rarity = Rarity.valueOf(GsonBindings.GSON.fromJson(v, String.class).toUpperCase(Locale.ROOT));
                 return props -> { props.rarity(rarity); return props; };
             } catch (IllegalArgumentException e) {
-                LOGGER.warn("Unknown rarity: {}", v.getAsString());
+                LOGGER.warn("Unknown rarity: {}", GsonBindings.GSON.fromJson(v, String.class));
                 return null;
             }
         });
-        parsers.put("fire_resistant", (k, v) -> v.getAsBoolean() ? props -> { props.fireResistant(); return props; } : null);
-        parsers.put("durability", (k, v) -> props -> { props.durability(v.getAsInt()); return props; });
-        parsers.put("no_repair", (k, v) -> v.getAsBoolean() ? props -> { props.setNoRepair(); return props; } : null);
+        parsers.put("fire_resistant", (k, v) -> GsonBindings.GSON.fromJson(v, Boolean.class) ? props -> { props.fireResistant(); return props; } : null);
+        parsers.put("durability", (k, v) -> props -> { props.durability(GsonBindings.GSON.fromJson(v, Integer.class)); return props; });
+        parsers.put("no_repair", (k, v) -> GsonBindings.GSON.fromJson(v, Boolean.class) ? props -> { props.setNoRepair(); return props; } : null);
     }
 
     public List<Function<Item.Properties, Item.Properties>> parseItemProperties(JsonObject json) {

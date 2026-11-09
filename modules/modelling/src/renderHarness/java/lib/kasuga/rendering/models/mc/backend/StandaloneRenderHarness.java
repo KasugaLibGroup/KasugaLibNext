@@ -67,6 +67,7 @@ public final class StandaloneRenderHarness {
             report.put("extensions", extensions);
             System.out.println("Standalone GL: " + report.get("renderer") + " / " + report.get("glVersion"));
             var suite = new RenderRegressionSuite(options.report.getParent());
+            run(results, "world-ui-canvas", WorldUiCanvasRegression::run);
             run(results, "depth-precision", suite::depthPrecision);
             run(results, "depth-handoff", suite::depthHandoff);
             run(results, "conditional-peel-loop", suite::conditionalPeel);
@@ -74,6 +75,8 @@ public final class StandaloneRenderHarness {
             run(results, "production-alpha-passes", suite::alphaPasses);
             run(results, "target-resize-and-failure", suite::targetLifecycle);
             run(results, "gpu-buffer-lifecycle", GpuBufferLifecycleRegression::run);
+            run(results, "mrt-depth-texture", NebulaGpuResourceRegression::mrtDepthTexture);
+            run(results, "gpu-texture-binding", NebulaGpuResourceRegression::textureBinding);
             run(results, "production-transform-feedback", SkinningRegression::run);
             run(results, "assembled-garment-skinning", AssemblySkinningRegression::run);
             run(results, "fenced-upload-ring", UploadRingRegression::run);

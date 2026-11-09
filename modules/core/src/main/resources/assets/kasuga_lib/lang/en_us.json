@@ -1,7 +1,5 @@
 {
-  "itemGroup.kasuga_lib": "Example Mod Tab",
-  "block.kasuga_lib.example_block": "Example Block",
-  "item.kasuga_lib.example_item": "Example Item",
+  "itemGroup.kasuga_lib": "KasugaLib",
 
   "kasuga_lib.configuration.title": "KasugaLib Next Configs",
   "kasuga_lib.configuration.section.kasuga_lib.common.toml": "KasugaLib Next Configs",

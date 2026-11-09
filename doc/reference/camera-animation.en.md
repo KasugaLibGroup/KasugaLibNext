@@ -155,6 +155,16 @@ or have `timeline.tick` called on it directly. The model's `stop/play` stops the
 The model pose outlet of `ClipSampler` / FSM still applies only model channels; camera channels are applied through explicit target bindings.
 The current shared timeline does not take over the FSM's layer weights or state switching.
 
+### Continuous velocity and acceleration
+
+Java tracks can use `Easing.quinticHermite(v0, v1, a0, a1)` to prescribe normalized endpoint
+velocity and acceleration. For duration `dt` and value delta `dv`, pass `velocity * dt / dv`
+and `acceleration * dt * dt / dv`; handle zero deltas as constant segments. Sharing physical
+knot derivatives across adjacent segments keeps motion continuous. Arguments must be finite;
+the curve may overshoot. Four zero derivatives produce quintic smoothstep. The current codec
+does not persist this parameterized easing, so do not rely on a JSON round trip preserving it.
+See the [Nebula demo](../guides/nebula-demo.md) for tracks following a shared player clock.
+
 ## JSON
 
 Read and written through `CameraAnimationClip.CODEC`; it uses the same easing names as model animation.

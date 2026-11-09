@@ -40,6 +40,7 @@ public class BackendInstance implements AutoCloseable {
 
     private final ExecutorService executor;
     private final boolean cpuSkinning;
+    private final boolean nativeOnly;
     private final EnumMap<ModelRenderPass, RenderPart> parts = new EnumMap<>(ModelRenderPass.class);
     @Nullable
     private final BoneTransformTBO tbo;
@@ -59,9 +60,15 @@ public class BackendInstance implements AutoCloseable {
     }
 
     public BackendInstance(ModelInstance instance, ExecutorService executor, boolean cpuSkinning) {
+        this(instance, executor, cpuSkinning, false);
+    }
+
+    /** UI previews use the native material shader independently of world shader-pack passes. */
+    BackendInstance(ModelInstance instance, ExecutorService executor, boolean cpuSkinning, boolean nativeOnly) {
         this.model = instance;
         this.executor = executor;
         this.cpuSkinning = cpuSkinning;
+        this.nativeOnly = nativeOnly;
 
         Map<VertexFormatElement, Integer> bufOffsets =
                 FlatModelData.genVertexFormat(RenderState.UML_VERTEX_FORMAT);
@@ -188,7 +195,7 @@ public class BackendInstance implements AutoCloseable {
 
         ShaderInstance shader = null;
         try {
-            if (isIrisEnabled()) {
+            if (!nativeOnly && isIrisEnabled()) {
                 modelViewMatrix = matrixCache.set(modelViewMatrix).mul(pose.pose());
             }
             shader = context.enter(renderType, part.data.getMcMeshMode(),
@@ -302,14 +309,14 @@ public class BackendInstance implements AutoCloseable {
                 this.program = null;
                 this.irisContext = null;
                 this.vanillaContext = null;
-                this.irisBuffer = isIrisInstalled()
+                this.irisBuffer = !nativeOnly && isIrisInstalled()
                         ? new IrisVertexBuffer(data, getFormat(true), 10000, 64, executor) : null;
                 this.cpuContext = new CpuSkinningContext(this::getVertexBuffer, null);
                 return;
             }
 
             this.cpuContext = null;
-            if (isIrisInstalled()) {
+            if (!nativeOnly && isIrisInstalled()) {
                 this.program = new TransformFeedbackProgram(SKINNING_PROGRAM_LOCATION,
                         data::getBuffer, bufOffsets, data.getVertexSize());
                 this.irisContext = new IrisGpuSkinningContext(getFormat(true),
@@ -330,13 +337,13 @@ public class BackendInstance implements AutoCloseable {
         }
 
         private IVertexBuffer getBuffer() {
-            return isIrisEnabled() && irisBuffer != null ? irisBuffer : vanillaBuffer;
+            return !nativeOnly && isIrisEnabled() && irisBuffer != null ? irisBuffer : vanillaBuffer;
         }
 
         @Nullable
         private GLContext getContext() {
             if (cpuSkinning) return cpuContext;
-            return isIrisEnabled() && irisContext != null ? irisContext : vanillaContext;
+            return !nativeOnly && isIrisEnabled() && irisContext != null ? irisContext : vanillaContext;
         }
 
         @Override

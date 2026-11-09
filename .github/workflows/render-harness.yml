@@ -1,6 +1,26 @@
 name: Standalone rendering
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+      - '.gitignore'
+      - 'LICENSE.txt'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+      - '.gitignore'
+      - 'LICENSE.txt'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3g -XX:+UseParallelGC"
 
 jobs:
   mesa-regression:
@@ -14,8 +34,11 @@ jobs:
           java-version: '21'
           distribution: temurin
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-strict-match: false
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
       - name: Install display and software OpenGL
-        run: sudo apt-get update && sudo apt-get install -y xvfb xauth libgl1-mesa-dri libglx-mesa0 mesa-utils
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y xvfb xauth libgl1-mesa-dri libglx-mesa0 mesa-utils
       - name: Run production GL regression without Minecraft
         run: xvfb-run -a ./gradlew :modules:modelling:renderGlTest --console=plain
       - name: Upload correctness report and failure images
@@ -30,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-14]
+        os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +62,9 @@ jobs:
           java-version: '21'
           distribution: temurin
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-strict-match: false
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
       # Hosted runners do not guarantee a usable hardware GL context. This is a
       # compilation/logic gate; GPU correctness remains the explicit renderGlTest gate.
       - name: Compile standalone entry points and run logic tests (Windows)

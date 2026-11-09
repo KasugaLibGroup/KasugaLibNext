@@ -1,38 +1,35 @@
 package lib.kasuga.rendering.models.mc.java_and_bedrock.loader.be;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import lib.kasuga.rendering.models.mc.java_and_bedrock.data.MCTexture;
 import lib.kasuga.rendering.models.mc.java_and_bedrock.data.MCTextureData;
 import lib.kasuga.rendering.models.mc.java_and_bedrock.data.be.BEModelData;
-import lib.kasuga.rendering.models.mc.util.JsonHelper;
+import lib.kasuga.rendering.models.mc.util.ModelJson;
+import lib.kasuga.utils.json.JsonFieldPolicy.DefaultOnMismatch;
 import lib.kasuga.rendering.models.uml.loaders.MaterialSetBuilder;
 import lib.kasuga.rendering.models.uml.loaders.SpriteSetBuilder;
 import lib.kasuga.rendering.models.uml.loaders.structural.Context;
 import lib.kasuga.rendering.models.uml.loaders.structural.Layer;
 import lib.kasuga.rendering.models.uml.math.Transform;
-import lib.kasuga.rendering.models.uml.structure.Model;
-import lib.kasuga.rendering.models.uml.util.TransformStack;
 import lib.kasuga.structure.Pair;
 import net.minecraft.client.resources.model.Material;
 import org.joml.Vector2f;
 import org.joml.Vector3f;
 
 import java.util.HashMap;
-import java.util.Stack;
 
 public class BEGeoLayer extends Layer<JsonObject> {
 
     @Override
     public void process(JsonObject input, Context context) {
-        JsonObject data = input.getAsJsonObject("description");
-        String identifier = JsonHelper.jsonToString(data, "identifier", "");
-        float textureWidth = JsonHelper.jsonToFloat(data, "texture_width", 16);
-        float textureHeight = JsonHelper.jsonToFloat(data, "texture_height", 16);
-        float visibleBoundsWidth = JsonHelper.jsonToFloat(data, "visible_bounds_width", 3);
-        float visibleBoundsHeight = JsonHelper.jsonToFloat(data, "visible_bounds_height", 3);
-        Vector3f visibleBoundsOffset = JsonHelper.jsonToV3f(data.get("visible_bounds_offset"));
+        Input definition = ModelJson.GSON.fromJson(input, Input.class);
+        Description data = definition.description;
+        String identifier = data.identifier;
+        float textureWidth = data.textureWidth;
+        float textureHeight = data.textureHeight;
+        float visibleBoundsWidth = data.visibleBoundsWidth;
+        float visibleBoundsHeight = data.visibleBoundsHeight;
+        Vector3f visibleBoundsOffset = new Vector3f(data.visibleBoundsOffset);
         String formatVersion = (String) context.getData("format_version");
         boolean legacy = (Boolean) context.getData("legacy");
 
@@ -66,9 +63,9 @@ public class BEGeoLayer extends Layer<JsonObject> {
 
         context.setData("transform_map", new HashMap<String, Pair<Transform, Transform>>());
 
-        JsonArray bonesJson = input.getAsJsonArray("bones");
-        for (JsonElement bone : bonesJson) {
-            addChildProcess(bone.getAsJsonObject(), "bone_layer");
+        java.util.List<JsonObject> bonesJson = definition.bones;
+        for (JsonObject bone : bonesJson) {
+            addChildProcess(bone, "bone_layer");
         }
         context.getLoader().setData(modelData);
     }
@@ -80,5 +77,14 @@ public class BEGeoLayer extends Layer<JsonObject> {
         map.clear();
         HashMap<String, Pair<Transform, Transform>> transformMap = (HashMap<String, Pair<Transform, Transform>>) context.getData("transform_map");
         transformMap.clear();
+    }
+    private static final class Input {
+        Description description;
+        java.util.List<JsonObject> bones;
+    }
+    private static final class Description {
+        @DefaultOnMismatch String identifier = "";
+        @DefaultOnMismatch Float textureWidth = 16f, textureHeight = 16f, visibleBoundsWidth = 3f, visibleBoundsHeight = 3f;
+        Vector3f visibleBoundsOffset;
     }
 }

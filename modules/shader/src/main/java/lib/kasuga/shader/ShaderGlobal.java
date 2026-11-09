@@ -18,6 +18,13 @@ public record ShaderGlobal(
             throw new IllegalArgumentException("arrayLength must be 0 for scalar/vector or greater than 1");
         }
         defaultValues = List.copyOf(defaultValues);
+        if (storage == ShaderStorage.UNIFORM) {
+            for (Number value : defaultValues) {
+                if (!Float.isFinite(value.floatValue())) {
+                    throw new IllegalArgumentException("Uniform default must be finite");
+                }
+            }
+        }
         if ((storage == ShaderStorage.INPUT || storage == ShaderStorage.OUTPUT) && arrayLength != 0) {
             throw new IllegalArgumentException("Stage inputs and outputs cannot be arrays in this profile");
         }

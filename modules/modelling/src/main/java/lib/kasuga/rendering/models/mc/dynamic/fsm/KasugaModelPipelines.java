@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Client-side rendering façade over the global model pipelines ({@code .mmd.zip} → MMD,
  * {@code .glb/.gltf} → glTF, {@code .obj} → OBJ, {@code .geo.json} → Bedrock,
  * {@code .json} → Java Edition). Instances are
- * attached to the global {@code mc_backend} and cleaned up on resource reload ({@code publishModels}).
+ * attached to the global {@code mc_backend} and cleaned up on resource publication.
  *
  * <p>Server-safe: methods are no-ops when the client pipelines are not initialized; {@code unbind}
  * is null-safe. Publication is lazy — {@link #createAndBind} returns {@code null} when the model
@@ -59,7 +59,7 @@ public final class KasugaModelPipelines {
     @Nullable
     public static ModelInstance createAndBind(ResourceLocation modelLoc, ResourceLocation instanceLoc,
                                               @Nullable String modelName, Transform rootTransform) {
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = route(modelLoc);
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = route(modelLoc);
         if (pipeline == null) {
             return null;
         }
@@ -92,7 +92,7 @@ public final class KasugaModelPipelines {
 
     /** Whether the instance is currently attached to the backend (false on server / not bound). */
     public static boolean isRendering(ResourceLocation modelLoc, @Nullable String modelName, ResourceLocation instanceLoc) {
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = route(modelLoc);
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = route(modelLoc);
         if (pipeline == null) {
             return false;
         }
@@ -102,7 +102,7 @@ public final class KasugaModelPipelines {
 
     /** Detach the instance from the backend; null-safe for unbound instances, returns whether anything was removed. */
     public static boolean unbind(ResourceLocation modelLoc, @Nullable String modelName, ResourceLocation instanceLoc) {
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = route(modelLoc);
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = route(modelLoc);
         if (pipeline == null) {
             return false;
         }
@@ -124,7 +124,7 @@ public final class KasugaModelPipelines {
      */
     public static boolean remove(ResourceLocation modelLoc, @Nullable String modelName,
                                  ResourceLocation instanceLoc) {
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = route(modelLoc);
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = route(modelLoc);
         if (pipeline == null) {
             return false;
         }
@@ -142,7 +142,7 @@ public final class KasugaModelPipelines {
     //region routing
 
     @Nullable
-    private static ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> route(@Nullable ResourceLocation modelLoc) {
+    private static ModelPipeLine<ResourceLocation, ResourceLocation> route(@Nullable ResourceLocation modelLoc) {
         if (modelLoc == null) return null;
         if (!PipelineRegistry.isInitialized()) {
             if (warned.add("uninitialized:" + modelLoc)) {
@@ -150,7 +150,7 @@ public final class KasugaModelPipelines {
             }
             return null;
         }
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline = PipelineRegistry.resolve(modelLoc);
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = PipelineRegistry.resolve(modelLoc);
         if (pipeline == null && warned.add("route:" + modelLoc)) {
             LOGGER.warn("[KasugaModelPipelines] no pipeline for model '{}'", modelLoc);
         }
@@ -160,7 +160,7 @@ public final class KasugaModelPipelines {
     /** MMD models resolve their internal entry via {@code PipelineRegistry.pmxLoader()}; other pipelines use the location directly. */
     @Nullable
     private static ResourceLocation resolveLoc(ResourceLocation modelLoc, @Nullable String modelName,
-                                               ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline) {
+                                               ModelPipeLine<ResourceLocation, ResourceLocation> pipeline) {
         if (pipeline != PipelineRegistry.pmx()) {
             return modelLoc;
         }

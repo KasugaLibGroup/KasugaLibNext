@@ -1,0 +1,9 @@
+{
+  "block.kasuga_lib.test_fluid_block": "Test Fluid",
+  "item.kasuga_lib.test_fluid_bucket": "Test Fluid Bucket",
+  "fluid_type.kasuga_lib.test_fluid": "Test Fluid",
+
+  "block.kasuga_lib.cola_fluid_block": "Cola",
+  "item.kasuga_lib.cola_fluid_bucket": "Cola Bucket",
+  "fluid_type.kasuga_lib.cola_fluid": "Cola"
+}

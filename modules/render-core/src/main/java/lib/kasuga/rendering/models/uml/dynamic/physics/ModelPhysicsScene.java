@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.uml.dynamic.physics;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.tick_loop.ModelTickLoop;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.BallJoint;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.Frames;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.PhysicsJoint;
@@ -32,7 +33,11 @@ public final class ModelPhysicsScene implements AutoCloseable {
     private boolean stepping;
 
     private final RigidBodyWorld.KinematicDriver driver = new RigidBodyWorld.KinematicDriver() {
-        @Override public void beginStep(RigidBodyWorld simulatedWorld) {}
+        @Override public void beginStep(RigidBodyWorld simulatedWorld) {
+            for (SkeletonRagdoll state : ragdolls) {
+                if (state.enabled()) state.modelInstance().getTickLoop().beforePhysicsStep();
+            }
+        }
 
         @Override
         public Frames.Pose kinematicTarget(SimBody body) {
@@ -127,43 +132,51 @@ public final class ModelPhysicsScene implements AutoCloseable {
     public void step(float deltaSeconds) {
         ensureOpen();
         if (stepping) throw new IllegalStateException("shared physics scene cannot step recursively");
+        if (!(deltaSeconds > 0f) || !Float.isFinite(deltaSeconds)) return;
         stepping = true;
         try {
-            for (SkeletonRagdoll ragdoll : ragdolls) {
-                if (!ragdoll.enabled()) continue;
-                ModelInstance instance = ragdoll.modelInstance();
-                instance.getTickLoop().tickBeforeSharedPhysics(deltaSeconds);
-                instance.getMorph().update();
-                ragdoll.prepareSharedStep();
-            }
-            world.step(deltaSeconds, driver);
-            float alpha = world.interpolationAlpha();
-            for (SkeletonRagdoll ragdoll : ragdolls) {
-                if (!ragdoll.enabled()) continue;
-                ragdoll.finishSharedStep(alpha);
-                ragdoll.modelInstance().getTickLoop().tickAfterSharedPhysics(deltaSeconds);
-            }
+            var participants = ragdolls.stream().filter(state -> !state.modelInstance().isClosed())
+                    .map(state -> state.modelInstance().getTickLoop()).toList();
+            ModelTickLoop.tickSharedPhysics(participants, deltaSeconds, () -> world.step(deltaSeconds, driver));
         } finally {
             stepping = false;
         }
     }
 
-    /** Samples every participant's animation, then performs one shared native step. */
+    /** Samples participants through the standard model frame entry before the shared pipeline barrier. */
     public void evaluateFrame(float partialTick, float deltaSeconds) {
-        for (SkeletonRagdoll ragdoll : ragdolls) {
-            if (ragdoll.enabled()) ragdoll.modelInstance().prepareSharedPhysicsFrame(partialTick);
+        ensureOpen();
+        if (!(deltaSeconds > 0f) || !Float.isFinite(deltaSeconds)) return;
+        if (!Float.isFinite(partialTick)) throw new IllegalArgumentException("partialTick must be finite");
+        for (SkeletonRagdoll state : ragdolls) {
+            state.modelInstance().prepareFrameSample(partialTick);
         }
         step(deltaSeconds);
+        for (SkeletonRagdoll state : ragdolls) {
+            state.modelInstance().markFrameEvaluated();
+        }
     }
 
     @Override
     public void close() {
         if (closed) return;
-        for (SkeletonRagdoll ragdoll : List.copyOf(ragdolls)) ragdoll.onSharedSceneClosed();
-        ragdolls.clear();
-        ownerByBody.clear();
-        world.close();
-        closed = true;
+        RuntimeException failure = null;
+        try {
+            for (SkeletonRagdoll state : List.copyOf(ragdolls)) {
+                try {
+                    state.onSharedSceneClosed();
+                } catch (RuntimeException exception) {
+                    if (failure == null) failure = exception;
+                    else failure.addSuppressed(exception);
+                }
+            }
+        } finally {
+            ragdolls.clear();
+            ownerByBody.clear();
+            try { world.close(); }
+            finally { closed = true; }
+        }
+        if (failure != null) throw failure;
     }
 
     private void ensureOpen() {

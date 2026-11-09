@@ -34,9 +34,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+
+import org.joml.Vector2f;
+import org.joml.Vector3f;
 
 public class KsgObjLoader extends ObjModelLoader<String, ResourceLocation, String> {
 
@@ -49,6 +56,95 @@ public class KsgObjLoader extends ObjModelLoader<String, ResourceLocation, Strin
         loadedModels = new HashMap<>();
         materials = new HashMap<>();
     }
+
+    /** Uses the standard OBJ/MTL processors, exporting a custom interleaved GPU stream. */
+    public static FlatMesh loadFlatMesh(String objSource, String mtlSource, Function<String, Float> kindResolver) {
+        var loader = new FlatLoader(mtlSource, kindResolver);
+        loader.load(ResourceLocation.fromNamespaceAndPath("kasuga_lib", "flat_mesh"), objSource);
+        return loader.result;
+    }
+
+    public record FlatMesh(float[] vertices, int triangleCount, int vertexCount,
+                           float minX, float minY, float minZ, float maxX, float maxY, float maxZ,
+                           Map<String, ObjTextureData> materials) {}
+
+    /** Output adapter only: tokenization, indices, groups and MTL all use the existing loader. */
+    private static final class FlatLoader extends KsgObjLoader {
+        private final String materialSource;
+        private final Function<String, Float> kindResolver;
+        private final Map<String, ObjTextureData> flatMaterials = new LinkedHashMap<>();
+        private final List<FlatFace> faces = new ArrayList<>();
+        private FlatMesh result;
+
+        FlatLoader(String materialSource, Function<String, Float> kindResolver) {
+            super("flat_obj");
+            this.materialSource = materialSource;
+            this.kindResolver = kindResolver;
+        }
+
+        @Override public String getTextureContent(String ignored) { return materialSource; }
+        @Override public void consumeTexture(ObjTextureData material) {
+            flatMaterials.put(material.getName(), material);
+        }
+        @Override public void beforeProcessors(lib.kasuga.rendering.models.uml.loaders.serial.SerialContext<ObjContextData> context) {
+            getMtlLoader().readMtlFile(materialSource);
+        }
+        @Override public void endHighestGroup(lib.kasuga.rendering.models.uml.loaders.serial.SerialContext<ObjContextData> context) {
+            while (!context.isEmpty()) {
+                var group = context.pop();
+                for (int i = 0; i < group.getBindings().size(); i++) {
+                    var corners = group.getBindings().get(i);
+                    if (corners.size() < 3) throw new IllegalArgumentException("OBJ surface requires at least three corners");
+                    for (int j = 1; j + 1 < corners.size(); j++) {
+                        faces.add(new FlatFace(List.of(corners.getFirst(), corners.get(j), corners.get(j + 1)),
+                                group.getBindingMaterials().get(i)));
+                    }
+                }
+                if (group.isGroup()) break;
+            }
+        }
+        @Override public void build(HashMap<ResourceLocation, Model> unused) {
+            while (!getContext().isEmpty()) endHighestGroup(getContext());
+            if (faces.isEmpty()) throw new IllegalArgumentException("OBJ contains no surfaces");
+            float[] vertices = new float[faces.size() * 3 * 16];
+            int out = 0;
+            var min = new Vector3f(Float.POSITIVE_INFINITY);
+            var max = new Vector3f(Float.NEGATIVE_INFINITY);
+            for (FlatFace face : faces) {
+                var material = flatMaterials.get(face.material());
+                if (material == null) throw new IllegalArgumentException("Undefined OBJ material: " + face.material());
+                var a = getObjVertexPositions().get(face.corners().get(0).vertexIndex());
+                var b = getObjVertexPositions().get(face.corners().get(1).vertexIndex());
+                var c = getObjVertexPositions().get(face.corners().get(2).vertexIndex());
+                var faceNormal = new Vector3f(b).sub(a).cross(new Vector3f(c).sub(a));
+                if (faceNormal.lengthSquared() < 1e-20f) throw new IllegalArgumentException("Degenerate OBJ surface");
+                faceNormal.normalize();
+                for (var corner : face.corners()) {
+                    var position = getObjVertexPositions().get(corner.vertexIndex());
+                    var normal = corner.normalIndex() < 0 ? faceNormal
+                            : new Vector3f(getObjVertexNormals().get(corner.normalIndex())).normalize();
+                    var uv = corner.textureIndex() < 0 ? new Vector2f() : getObjVertexUvs().get(corner.textureIndex());
+                    if (!position.isFinite() || !normal.isFinite() || !uv.isFinite())
+                        throw new IllegalArgumentException("Non-finite OBJ vertex attributes");
+                    vertices[out++] = position.x; vertices[out++] = position.y; vertices[out++] = position.z;
+                    vertices[out++] = normal.x; vertices[out++] = normal.y; vertices[out++] = normal.z;
+                    vertices[out++] = uv.x; vertices[out++] = uv.y;
+                    vertices[out++] = material.getKd().x; vertices[out++] = material.getKd().y;
+                    vertices[out++] = material.getKd().z; vertices[out++] = material.getD();
+                    vertices[out++] = material.getKe().length(); vertices[out++] = material.getPr();
+                    vertices[out++] = kindResolver == null ? 0 : kindResolver.apply(face.material());
+                    vertices[out++] = 0;
+                    min.min(position); max.max(position);
+                }
+            }
+            result = new FlatMesh(vertices, faces.size(), faces.size() * 3,
+                    min.x, min.y, min.z, max.x, max.y, max.z, Map.copyOf(flatMaterials));
+            clear();
+        }
+    }
+
+    private record FlatFace(List<lib.kasuga.rendering.models.uml.typo.wavefont_obj.ObjVertexBinding> corners,
+                            String material) {}
 
     @Override
     public Map<ResourceLocation, Model> load(

@@ -37,6 +37,10 @@ Java builder 立即构建类型化 shader IR，不解析 Java AST，也不反编
 图形程序在构建时检查顶点输出和片元输入的名称、类型，以及跨阶段 uniform/sampler 声明的一致性。
 当前后端将 IR 转换为 GLSL 150 和 Minecraft core-shader 资源。
 
+可选的 `shader-graal` 前端在独立 GraalJS 上下文中直接调用同一套 builder；回调仍在构建期立即执行，
+返回的程序仅保存 Java IR，上下文随构建结束关闭。脚本不参与逐像素或逐帧执行。
+依赖与用法见 [Shader DSL 的 GraalJS 入口](../reference/shader-dsl.md#graaljs-脚本入口)。
+
 ## 效果实例与后处理图
 
 同类效果共享渲染器和管线状态，每实例保存位置、生命周期和插值数据。客户端 tick 推进效果，

@@ -3,6 +3,7 @@ package lib.kasuga.rendering.effect.post;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.Objects;
+import java.util.List;
 
 /** Immutable allocation policy for a reusable post-processing texture target. */
 public record PostProcessTargetDescriptor(
@@ -15,15 +16,28 @@ public record PostProcessTargetDescriptor(
         float clearRed,
         float clearGreen,
         float clearBlue,
-        float clearAlpha
+        float clearAlpha,
+        List<ColorFormat> colorAttachments
 ) {
     public PostProcessTargetDescriptor {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(sizeMode, "sizeMode");
         Objects.requireNonNull(filter, "filter");
-        if (!(width > 0) || !(height > 0)) {
+        colorAttachments = List.copyOf(colorAttachments);
+        if (colorAttachments.isEmpty() || colorAttachments.size() > 8) {
+            throw new IllegalArgumentException("A target requires between one and eight color attachments");
+        }
+        if (!Float.isFinite(width) || !Float.isFinite(height) || !(width > 0) || !(height > 0)) {
             throw new IllegalArgumentException("Post-process target dimensions must be positive");
         }
+    }
+
+    /** Retains the single RGBA8 attachment allocation policy of the original API. */
+    public PostProcessTargetDescriptor(ResourceLocation id, SizeMode sizeMode, float width, float height,
+                                       boolean useDepth, TextureFilter filter,
+                                       float clearRed, float clearGreen, float clearBlue, float clearAlpha) {
+        this(id, sizeMode, width, height, useDepth, filter, clearRed, clearGreen, clearBlue, clearAlpha,
+                List.of(ColorFormat.RGBA8));
     }
 
     public static Builder builder(ResourceLocation id) {
@@ -33,7 +47,7 @@ public record PostProcessTargetDescriptor(
     public PostProcessTargetDescriptor withId(ResourceLocation newId) {
         return new PostProcessTargetDescriptor(
                 Objects.requireNonNull(newId, "newId"), sizeMode, width, height, useDepth, filter,
-                clearRed, clearGreen, clearBlue, clearAlpha
+                clearRed, clearGreen, clearBlue, clearAlpha, colorAttachments
         );
     }
 
@@ -52,6 +66,21 @@ public record PostProcessTargetDescriptor(
     public enum SizeMode {
         SCREEN_RELATIVE,
         FIXED
+    }
+
+    /** OpenGL core formats, without requiring an active context to describe a graph. */
+    public enum ColorFormat {
+        RGBA8(0x8058, 0x1401),
+        RGBA16F(0x881A, 0x1406),
+        RGBA32F(0x8814, 0x1406);
+
+        private final int internalFormat, pixelType;
+        ColorFormat(int internalFormat, int pixelType) {
+            this.internalFormat = internalFormat;
+            this.pixelType = pixelType;
+        }
+        public int internalFormat() { return internalFormat; }
+        public int pixelType() { return pixelType; }
     }
 
     public enum TextureFilter {
@@ -80,6 +109,7 @@ public record PostProcessTargetDescriptor(
         private float clearGreen;
         private float clearBlue;
         private float clearAlpha;
+        private List<ColorFormat> colorAttachments = List.of(ColorFormat.RGBA8);
 
         private Builder(ResourceLocation id) {
             this.id = Objects.requireNonNull(id, "id");
@@ -113,6 +143,11 @@ public record PostProcessTargetDescriptor(
             return this;
         }
 
+        public Builder colorAttachments(ColorFormat... formats) {
+            colorAttachments = List.of(formats);
+            return this;
+        }
+
         public Builder clearColor(float red, float green, float blue, float alpha) {
             clearRed = red;
             clearGreen = green;
@@ -124,7 +159,7 @@ public record PostProcessTargetDescriptor(
         public PostProcessTargetDescriptor build() {
             return new PostProcessTargetDescriptor(
                     id, sizeMode, width, height, useDepth, filter,
-                    clearRed, clearGreen, clearBlue, clearAlpha
+                    clearRed, clearGreen, clearBlue, clearAlpha, colorAttachments
             );
         }
     }

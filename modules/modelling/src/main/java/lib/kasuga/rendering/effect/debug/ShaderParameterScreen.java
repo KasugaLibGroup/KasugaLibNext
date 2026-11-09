@@ -30,6 +30,8 @@ public final class ShaderParameterScreen extends Screen {
     private final Screen parent;
     private final List<RenderShaderHandle> shaders = new ArrayList<>();
     private final List<ParameterView> views = new ArrayList<>();
+    private final List<ResetControl> resetControls = new ArrayList<>();
+    private Button resetAllButton;
     private ResourceLocation selectedShaderId;
     private int selectedIndex;
     private int scrollPixels;
@@ -42,6 +44,7 @@ public final class ShaderParameterScreen extends Screen {
 
     @Override
     protected void init() {
+        resetControls.clear();
         refreshShaders();
         Layout layout = layout();
         addNavigationWidgets(layout);
@@ -88,7 +91,7 @@ public final class ShaderParameterScreen extends Screen {
                 .bounds(innerLeft, 30, navigationWidth, CONTROL_HEIGHT).build());
         Button next = addRenderableWidget(Button.builder(Component.literal("Next >"), button -> selectShader(1))
                 .bounds(innerLeft + navigationWidth + CONTROL_GAP, 30, navigationWidth, CONTROL_HEIGHT).build());
-        Button reset = addRenderableWidget(Button.builder(Component.literal("Reset all"), button -> {
+        resetAllButton = addRenderableWidget(Button.builder(Component.literal("Reset all"), button -> {
                     selectedShader().ifPresent(handle -> handle.parameters().resetAll());
                     rebuildWidgets();
                 })
@@ -98,7 +101,7 @@ public final class ShaderParameterScreen extends Screen {
         boolean multiple = shaders.size() > 1;
         previous.active = multiple;
         next.active = multiple;
-        reset.active = selectedShader()
+        resetAllButton.active = selectedShader()
                 .map(handle -> handle.parameters().hasOverrides())
                 .orElse(false);
     }
@@ -152,6 +155,7 @@ public final class ShaderParameterScreen extends Screen {
                         })
                         .bounds(left + width - 48, resetY, 48, 16).build());
                 reset.active = !block.isDefault(view.parameter);
+                resetControls.add(new ResetControl(view.parameter, reset));
             }
             if (view.parameter.type() == ShaderParameterType.BOOLEAN) {
                 int y = baseY + view.controlsTop;
@@ -191,12 +195,16 @@ public final class ShaderParameterScreen extends Screen {
         graphics.drawCenteredString(font, title, width / 2, 10, 0xFFFFFFFF);
 
         Optional<RenderShaderHandle> selected = selectedShader();
+        resetAllButton.active = selected.map(handle -> handle.parameters().hasOverrides()).orElse(false);
         if (selected.isEmpty()) {
             graphics.drawCenteredString(font, Component.literal("No shaders expose runtime parameters"),
                     width / 2, layout.top + 16, 0xFF9097A4);
             return;
         }
         RenderShaderHandle handle = selected.get();
+        for (ResetControl control : resetControls) {
+            control.button.active = !handle.parameters().isDefault(control.parameter);
+        }
         String shaderTitle = handle.id() + "  (" + (selectedIndex + 1) + "/" + shaders.size() + ")";
         graphics.drawString(font, trim(shaderTitle, layout.width() - 16),
                 layout.left + 8, layout.top + 7, 0xFF78B7FF, false);
@@ -398,6 +406,8 @@ public final class ShaderParameterScreen extends Screen {
             return Math.clamp((current - minimum) / (maximum - minimum), 0.0, 1.0);
         }
     }
+
+    private record ResetControl(ShaderParameter parameter, Button button) {}
 
     private record Layout(int left, int right, int top, int bottom) {
         private int width() {

@@ -3,6 +3,8 @@ package test.kasuga.data_driven;
 import io.micronaut.context.annotation.Context;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.factory.FactoryRegistry;
+import lib.kasuga.registration.data_driven.state.StatefulBlockFactory;
+import lib.kasuga.registration.data_driven.state.StatePropertyContext;
 import lib.kasuga.registration.minecraft.block.BlockReg;
 import lib.kasuga.registration.minecraft.block_entity.BlockEntityReg;
 import lib.kasuga.registration.minecraft.item.ItemReg;
@@ -12,6 +14,7 @@ import net.minecraft.world.level.block.state.BlockBehaviour;
 import test.kasuga.data_driven.block.BEBlock;
 import test.kasuga.data_driven.block.OccludingTestBlock;
 import test.kasuga.data_driven.block.SimpleTestBlock;
+import test.kasuga.data_driven.block.StatefulTestBlock;
 import test.kasuga.data_driven.block_entity.TestBlockEntity;
 
 import java.util.Arrays;
@@ -32,6 +35,10 @@ public class DataDrivenTestFactories {
         FactoryRegistry.register("simple_block", (id, params) -> blockWithItem(id, SimpleTestBlock::new));
         FactoryRegistry.register("be_block", (id, params) -> blockWithItem(id, BEBlock::new));
         FactoryRegistry.register("occluding_block", (id, params) -> blockWithItem(id, OccludingTestBlock::new));
+
+        FactoryRegistry.register("stateful_test_block", (StatefulBlockFactory) (id, params, states) ->
+                blockWithItem(id, properties -> StatePropertyContext.construct(states,
+                        () -> new StatefulTestBlock(properties))));
 
         // Factory that exercises params: reads "occluding" boolean
         FactoryRegistry.register("params_block", (id, params) -> {

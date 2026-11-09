@@ -90,6 +90,13 @@ public abstract class Reg<S extends Reg<?, ?>, T> implements TransformerProvider
         return self();
     }
 
+    /**
+     * @return the registration this one is attached to, or {@code null} for a root registration.
+     */
+    public Reg<?, ?> getParentReg() {
+        return parent;
+    }
+
     public Set<Reg<?, ?>> getChildren() {
         return children;
     }

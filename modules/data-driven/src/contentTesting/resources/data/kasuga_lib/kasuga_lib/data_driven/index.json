@@ -9,6 +9,7 @@
     "kasuga_lib_content/inheritance_groups.json",
     "kasuga_lib_content/items.json",
     "kasuga_lib_content/sourced_blocks.json",
-    "kasuga_lib_content/sourced_items.json"
+    "kasuga_lib_content/sourced_items.json",
+    "kasuga_lib_content/state_blocks.json"
   ]
 }

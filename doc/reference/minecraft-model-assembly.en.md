@@ -120,14 +120,14 @@ The complete `McModelAssemblies` interface:
 
 ```java
 new McModelAssemblies(
-    ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> output,
+    ModelPipeLine<ResourceLocation, ResourceLocation> output,
     Function<McModelAssemblies.Reference, McModelAssemblies.PublishedSource> sources,
     ModelAssemblyCache cache);
 
 new McModelAssemblies.Reference(ResourceLocation model);
 new McModelAssemblies.Reference(ResourceLocation model, @Nullable String modelName);
 new McModelAssemblies.PublishedSource(
-    ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline, ResourceLocation key);
+    ModelPipeLine<ResourceLocation, ResourceLocation> pipeline, ResourceLocation key);
 
 void register(ResourceLocation id, ModelAssemblyDefinition<McModelAssemblies.Reference> definition);
 boolean unregister(ResourceLocation id);
@@ -136,7 +136,7 @@ Map<ResourceLocation, ModelAssemblyDefinition<McModelAssemblies.Reference>> defi
 @Nullable ModelAssembly resolve(ResourceLocation id);
 @Nullable ModelInstance createAndBind(ResourceLocation id, ResourceLocation instanceId, @Nullable Transform root);
 McModelHandle handle(ResourceLocation id, ResourceLocation instanceId);
-ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline();
+ModelPipeLine<ResourceLocation, ResourceLocation> pipeline();
 ModelAssemblyCache.Stats cacheStats();
 void close();
 ```
@@ -191,23 +191,39 @@ the definition IDs that depend on that old Model, which the host should use to t
 
 | Method | Behavior |
 | --- | --- |
-| `Model getModel(StorageIdentifierType key)` | null when not published |
-| `long modelRevision(StorageIdentifierType key)` | Current published version; 0 when absent |
-| `StorageIdentifierType modelKeyOf(ModelInstance instance)` | Looks up the registered key, null when unregistered; the key is kept after binding for constant-time checks |
-| `AutoCloseable onModelChanged(Consumer<ModelChange<StorageIdentifierType>> listener)` | game thread notification, running before the old instance is closed; closing the subscription unregisters |
-| `void publishModels(Map<StorageIdentifierType,Model>)` | Merged publication; identical objects are skipped; replacing reclaims that key's instances |
-| `void replaceModels(Map<StorageIdentifierType,Model>)` | Full replacement, deleting models missing from the snapshot |
-| `boolean removeModel(StorageIdentifierType key)` | Removes that key and its instances; returns false when absent |
-| `Builder.buildForPublishedModels()` | A derived pipeline without a SourceManager/Loader; still needs a bridge and backend |
+| `Model getModel(K key)` | null when not published |
+| `long modelRevision(K key)` | Current published version; 0 when absent |
+| `K modelKeyOf(ModelInstance instance)` | Looks up the registered key, null when unregistered; the key is kept after binding for constant-time checks |
+| `AutoCloseable onModelChanged(Consumer<ModelChange<K>> listener)` | game thread notification, running before the old instance is closed; closing the subscription unregisters |
+| `PublishedBuilder<K, I, B>.build()` | A derived pipeline without a SourceManager/Loader; still needs a bridge and backend |
 
 `ModelChange<K>` is `key, previous, current, revision`, and current is null on deletion.
 A listener exception does not skip other listeners or the old-instance reclamation; the errors are aggregated and thrown after cleanup completes.
 Instances are registered by resource key, and different keys sharing the same Model do not reclaim each other; createInstance with the same key/instanceId is idempotent.
-Calling prepare/load on a publication-only pipeline is an error; the old build methods of SourceManager/Loader pipelines still require a Reader.
+Calling `prepareModel` on a publication-only pipeline is an error; the old build methods of SourceManager/Loader pipelines still require a Reader.
 
-`ModelPublicationBatch<K>.publish(prepared)` publishes one complete generation of a resource manager: the keys of prepared are
-`ModelPipeLine<?,?,K,?,?>`, and the values are `Map<K,Model>`. Old managed keys missing from the next generation are deleted, and other publishers' keys are kept.
-Every managed pipeline gets a chance to clean up, even if an earlier pipeline's cleanup fails.
+Models are managed by `ModelPublicationCoordinator.global()`. Each `ModelPublicationBatch<K>` is an independent publisher:
+`publish(prepared)` replaces its complete contribution across pipelines, `put(pipeline, models)` merges keys,
+`remove(pipeline, key)` removes an owned key, and `close()` releases all owned keys. Two publishers cannot use the same
+key in the same pipeline, even for the same Model; conflicts and preparation failures leave the current generation unchanged.
+The former `publishModels`, `replaceModels`, `removeModel`, and `loadModel` methods are removed: use `prepareModel`
+and submit its result through a publisher. Reusing the same Model reference does not retire instances.
+
+Models and revisions across pipelines switch in one atomic generation. Pin a generation for consistent multi-read queries:
+
+```java
+try (var snapshot = ModelPublicationCoordinator.global().pin()) {
+    Model model = snapshot.getModel(pipeline, key);
+    long revision = snapshot.modelRevision(pipeline, key);
+}
+```
+
+Pins retain Model references and revisions only, not instances or GPU resources. Close pins promptly, and do not race
+concurrent reads against mutations of Model or its contents. Separate pipeline queries can span generations.
+Publication, instance and listener operations must run serially on one game thread; reentrant publication from
+notifications or cleanup is rejected. Listener or cleanup errors are aggregated in `PublicationCommittedException`:
+the reported generation is already active, not rolled back. Atomic model generations do not include texture atlases,
+PMX lookup tables or glTF manifests, which retain independent loading and lifecycle semantics.
 
 ## Driver and input migration
 
@@ -226,3 +242,21 @@ Morph migration copies the activation value/factor corresponding to the identity
 retaining the current Scope clock. Standalone and externally shared playback continue to follow
 their respective clock-ownership rules.
 These control operations must run serially with tick, and the render sample consumes the existing snapshot mechanism.
+
+
+### Pipeline types and publication ownership
+
+`ModelPipeLine<K, I>` exposes model keys and instance keys. Source/texture types are captured by the loader
+closure, and backend renderables by private mount adapters. Loader-free pipelines use
+`new ModelPipeLine.PublishedBuilder<K, I, Renderable>()...build()` without source/texture placeholders.
+The loader `Builder` retains its construction-only types.
+
+The default publication domain is `ModelPublicationCoordinator.global()`. For an isolated domain, pass the same
+coordinator to `withPublicationCoordinator` and `new ModelPublicationBatch<K>(coordinator)`.
+A domain's owning thread may call `releaseThread()` between transactions before a replacement thread adopts it;
+other threads cannot steal ownership. Preparation registration/closing before first use does not bind the domain.
+
+Preparation only removes staged models and has a pass limit derived from the staged entry count.
+`Preparation.beforeNotifications(owner, action)` deduplicates transaction-local commit effects by owner identity;
+those effects run after generation publication and before all model listeners. Aborted preparations do not run them.
+Assembly cache invalidation uses this phase, independently of cross-pipeline notification order.

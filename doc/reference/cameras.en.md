@@ -103,6 +103,14 @@ For the fields and resource-pack rules see [Multi-camera configuration](multi-ca
 `withVerticalFov`, `zoom`, and `apply(view)`. Modifying the projection of a Free camera stops its own animation; updating the render configuration does not stop the animation.
 A window-owned Free Camera uses the actual framebuffer/DPI size.
 
+`WorldCameraView.forward(Vector3f out)`, `inverseView(Matrix4f out)` and
+`projection(float near, float far, Matrix4f out)` write and return a shared direction,
+camera-to-world matrix and OpenGL perspective matrix. Direction follows Minecraft yaw/pitch;
+the inverse view includes roll. Projection uses the view's FOV and aspect ratio and requires
+finite `0 < near < far`. For local scenes, construct the view in the same local frame before
+converting coordinates to float. The [Nebula demo](../guides/nebula-demo.md) shares these matrices
+between OBJ rasterization and volume rays.
+
 ## Host extension and lifecycle
 
 A pure Java host uses `CameraSource.Player(ViewProvider)`, `CameraSource.Free(Supplier<WorldCameraView>)`,

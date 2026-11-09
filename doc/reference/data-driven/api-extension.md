@@ -73,7 +73,7 @@ public void apply(T definition, BuildContext baseContext)                    // 
 | Handler | getTypeName | getPhase | parse 产物 | 出处 |
 |---------|-------------|----------|-----------|------|
 | `RegistryGroupHandler` | `registry_groups` | `PHASE_GROUPS` | `RegistryGroupDef(id, parent, properties, item_properties)` | `RegistryGroupHandler.java:20-33` |
-| `BlockTypeHandler` | `blocks` | `PHASE_CONTENT` | `BlockDef(id, type, registry_group, properties, item_properties, params)` | `BlockTypeHandler.java:19-34` |
+| `BlockTypeHandler` | `blocks` | `PHASE_CONTENT` | `BlockDef(id, type, registry_group, properties, item_properties, params, stateProperties)` | `BlockTypeHandler.java:19-34` |
 | `ItemTypeHandler` | `items` | `PHASE_CONTENT` | `ItemDef(id, type, registry_group, properties, params)` | `ItemTypeHandler.java:16-30` |
 | `BlockEntityTypeHandler` | `block_entities` | `PHASE_EMBEDDED` | `BlockEntityDef(type, parentBlockId, params)`，由 `extractEmbedded` 从 `block_entity` 键生成 | `BlockEntityTypeHandler.java:21-53` |
 

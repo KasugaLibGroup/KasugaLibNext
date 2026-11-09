@@ -1,8 +1,11 @@
 package lib.kasuga.rendering.models.uml.backend.gpu;
 
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 import java.util.Map;
 
@@ -17,6 +20,36 @@ public final class GlslProgram {
             """;
 
     private GlslProgram() {}
+
+    public static void use(int program) {
+        GL20.glUseProgram(program);
+    }
+
+    public static void delete(int program) {
+        if (program != 0) GL20.glDeleteProgram(program);
+    }
+
+    public static void bindTexture2D(int program, String name, int texture, int unit) {
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture);
+        GL20.glUniform1i(GL20.glGetUniformLocation(program, name), unit);
+    }
+
+    public static void uniform(int program, String name, Matrix4f value) {
+        GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program, name), false, value.get(new float[16]));
+    }
+
+    public static void uniform(int program, String name, Vector3f value) {
+        GL20.glUniform3f(GL20.glGetUniformLocation(program, name), value.x, value.y, value.z);
+    }
+
+    public static void uniform(int program, String name, float value) {
+        GL20.glUniform1f(GL20.glGetUniformLocation(program, name), value);
+    }
+
+    public static void uniform(int program, String name, int value) {
+        GL20.glUniform1i(GL20.glGetUniformLocation(program, name), value);
+    }
 
     public static int link(String vertex, String fragment) {
         return link(vertex, fragment, Map.of(), new String[0]);

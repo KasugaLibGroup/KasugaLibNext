@@ -234,6 +234,9 @@ public final class ManagedAnimationScope implements AnimationScope {
                     postStepTimes));
             dispatchControlEvents(controllerRound.events());
         }
+        if (plan.steps().isEmpty()) {
+            rootTimeline.commit(plan);
+        }
         return result(publishedSteps, firstRevision, lastRevision, plan, false, null);
     }
 

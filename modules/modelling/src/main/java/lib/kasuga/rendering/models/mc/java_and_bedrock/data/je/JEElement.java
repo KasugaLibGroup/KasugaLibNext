@@ -1,8 +1,9 @@
 package lib.kasuga.rendering.models.mc.java_and_bedrock.data.je;
 
 import com.google.gson.JsonObject;
+import lib.kasuga.utils.json.JsonFieldPolicy.NonNullFields;
 import lib.kasuga.rendering.models.mc.util.Direction;
-import lib.kasuga.rendering.models.mc.util.JsonHelper;
+import lib.kasuga.rendering.models.mc.util.ModelJson;
 import lombok.Getter;
 import org.joml.Vector3f;
 
@@ -37,28 +38,19 @@ public class JEElement {
     }
 
     public static JEElement fromJson(JsonObject input) {
-        Objects.requireNonNull(input, "input must not be null");
-        if (!input.has("from") || !input.has("to")) {
-            throw new IllegalArgumentException("Element must have both 'from' and 'to' fields");
-        }
-        Vector3f from = JsonHelper.jsonToV3f(input.get("from")).mul(1/16f);
-        Vector3f to = JsonHelper.jsonToV3f(input.get("to")).mul(1/16f);
-        Map<Direction, JEFace> faces = new HashMap<>();
+        return ModelJson.GSON.fromJson(Objects.requireNonNull(input), Input.class).build();
+    }
 
-        JERotation rotation = null;
-        if (input.has("rotation")) {
-            rotation = JERotation.fromJson(input.getAsJsonObject("rotation"));
+    @NonNullFields
+    static final class Input {
+        Vector3f from, to;
+        Map<String, JEFace.Input> faces = Map.of();
+        JERotation.Input rotation;
+        JEElement build() {
+            if (from == null || to == null) throw new IllegalArgumentException("Element must have both 'from' and 'to' fields");
+            Map<Direction, JEFace> built = new HashMap<>();
+            faces.forEach((direction, face) -> built.put(Direction.fromString(direction), face.build()));
+            return new JEElement(from.div(16f), to.div(16f), built, rotation == null ? null : rotation.build());
         }
-
-        if (input.has("faces")) {
-            JsonObject facesObj = input.getAsJsonObject("faces");
-            for (String key : facesObj.keySet()) {
-                Direction dir = Direction.fromString(key);
-                JsonObject faceObj = facesObj.getAsJsonObject(key);
-                faces.put(dir, JEFace.fromJson(faceObj));
-            }
-        }
-
-        return new JEElement(from, to, faces, rotation);
     }
 }

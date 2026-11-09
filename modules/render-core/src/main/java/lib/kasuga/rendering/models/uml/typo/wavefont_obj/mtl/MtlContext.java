@@ -14,6 +14,9 @@ public class MtlContext implements ContextData<MtlContext> {
     private float Ns, Ni, d;
     private int illum;
     private String map_Ka, map_Kd, map_Ks;
+    private String map_Bump, map_Pr, map_Ke;
+    private Vector3f Ke = new Vector3f();
+    private float Pr = .75f;
 
     public MtlContext(@NonNull String name) {
         this.name = name;
@@ -28,6 +31,9 @@ public class MtlContext implements ContextData<MtlContext> {
         map_Ka = null;
         map_Kd = null;
         map_Ks = null;
+        map_Bump = null;
+        map_Pr = null;
+        map_Ke = null;
     }
 
     public void Ka(@NonNull Vector3f Ka) {
@@ -74,10 +80,17 @@ public class MtlContext implements ContextData<MtlContext> {
         this.map_Ks = map_Ks;
     }
 
+    public void map_Bump(@Nullable String map_Bump) { this.map_Bump = map_Bump; }
+    public void Ke(@NonNull Vector3f ke) { this.Ke = ke; }
+    public void Pr(float pr) { this.Pr = pr; }
+    public void map_Pr(@Nullable String map_Pr) { this.map_Pr = map_Pr; }
+    public void map_Ke(@Nullable String map_Ke) { this.map_Ke = map_Ke; }
+
     @Nullable
     public ObjTextureData build() {
         return new ObjTextureData(
-                name, Ka, Kd, Ks, Tf, Ns, Ni, d, illum, map_Kd, map_Ka, map_Ks
+                name, Ka, Kd, Ks, Tf, Ns, Ni, d, illum, map_Kd, map_Ka, map_Ks,
+                map_Bump, map_Pr, map_Ke, Ke, Pr
         );
     }
 

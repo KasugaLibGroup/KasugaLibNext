@@ -62,6 +62,51 @@ neoForge {
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
+        clientDemo {
+            client()
+            gameDirectory = file('run/ui-demo')
+            programArguments.addAll '--width', '1280', '--height', '900'
+            systemProperty 'kasuga.ldlibDemo', 'true'
+            def capture = providers.gradleProperty('kasugaLdlibCapture')
+            if (capture.isPresent()) {
+                systemProperty 'kasuga.ldlibDemo.capture', file(capture.get()).absolutePath
+                systemProperty 'kasuga.headless', 'hidden'
+                systemProperty 'java.awt.headless', 'true'
+            }
+        }
+
+        clientWorldDemo {
+            client()
+            gameDirectory = file('run/world-ui-demo')
+            programArguments.addAll '--width', '1280', '--height', '900'
+            systemProperty 'kasuga.ldlibDemo.world', 'true'
+            def quickPlayWorld = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (quickPlayWorld.isPresent()) programArguments.addAll '--quickPlaySingleplayer', quickPlayWorld.get()
+            def capture = providers.gradleProperty('kasugaLdlibCapture')
+            if (capture.isPresent()) {
+                systemProperty 'kasuga.ldlibDemo.capture', file(capture.get()).absolutePath
+                systemProperty 'kasuga.headless', 'hidden'
+                systemProperty 'java.awt.headless', 'true'
+            }
+            def smoke = providers.gradleProperty('kasugaLdlibWorldSmoke')
+            if (smoke.isPresent()) systemProperty 'kasuga.ldlibWorldSmoke', smoke.get()
+        }
+
+        clientModelDemo {
+            client()
+            gameDirectory = file('run/model-demo')
+            programArguments.addAll '--width', '1280', '--height', '900'
+            systemProperty 'kasuga.modelDemo.toolkit', providers.gradleProperty('kasugaModelToolkit').getOrElse('ldlib')
+            def world = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (world.isPresent()) programArguments.addAll '--quickPlaySingleplayer', world.get()
+            def capture = providers.gradleProperty('kasugaModelCapture')
+            if (capture.isPresent()) {
+                systemProperty 'kasuga.modelDemo.capture', file(capture.get()).absolutePath
+                systemProperty 'kasuga.headless', 'hidden'
+                systemProperty 'java.awt.headless', 'true'
+            }
+        }
+
         server {
             server()
             programArgument '--nogui'
@@ -102,6 +147,24 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
+// The early splash owns a separate GL context before the hidden-window mixins can run.
+tasks.register('prepareUiDemoClient') {
+    def configs = [file('run/ui-demo/config/fml.toml'), file('run/world-ui-demo/config/fml.toml'), file('run/model-demo/config/fml.toml')]
+    doLast {
+        configs.each { config ->
+            config.parentFile.mkdirs()
+            def text = config.exists() ? config.getText('UTF-8') : ''
+            if (text =~ /(?m)^\s*earlyWindowControl\s*=/) {
+                text = text.replaceAll(/(?m)^\s*earlyWindowControl\s*=.*$/, 'earlyWindowControl = false')
+            } else text += '\nearlyWindowControl = false\n'
+            config.setText(text, 'UTF-8')
+        }
+    }
+}
+tasks.matching { it.name in ['runClientDemo', 'prepareClientDemoRun', 'runClientWorldDemo', 'prepareClientWorldDemoRun', 'runClientModelDemo', 'prepareClientModelDemoRun'] }.configureEach {
+    dependsOn 'prepareUiDemoClient'
+}
+
 dependencies {
     implementation ("io.micronaut:micronaut-inject:4.9.10") {
         exclude group : 'org.slf4j', module: 'slf4j-api'
@@ -120,7 +183,7 @@ dependencies {
     compileOnly project(":modules:inject")
     compileOnly project(":modules:utils")
     compileOnly project(":modules:annotations")
-    compileOnly project(":modules:modelling")
+    compileOnlyApi project(":modules:modelling")
     compileOnly project(":modules:scripting")
 
     runtimeOnly (project(":modules:library")) {
@@ -132,8 +195,7 @@ dependencies {
 
 
     // LDLib2
-    implementation("com.lowdragmc.ldlib2:ldlib2-neoforge-${minecraft_version}:${ldlib2_version}:all") { transitive = false }
-    compileOnly("org.appliedenergistics.yoga:yoga:1.0.0")
+    api("com.lowdragmc.ldlib2:ldlib2-neoforge-${minecraft_version}:${ldlib2_version}:all")
 
     annotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
 
@@ -166,7 +228,8 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
             mod_version            : mod_version,
             mod_authors            : mod_authors,
             mod_description        : mod_description,
-            kasuga_lib_version_range: kasuga_lib_version_range
+            kasuga_lib_version_range: kasuga_lib_version_range,
+            ldlib2_version          : ldlib2_version
     ]
     inputs.properties replaceProperties
     expand replaceProperties

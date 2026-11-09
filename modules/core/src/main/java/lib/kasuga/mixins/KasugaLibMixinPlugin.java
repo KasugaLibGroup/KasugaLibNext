@@ -17,6 +17,7 @@ public class KasugaLibMixinPlugin extends ServiceMixinPlugin {
                 return List.of("modelling.CameraChunkServerMixin", "modelling.CameraEntityDataAccessor");
             var mixins = new java.util.ArrayList<>(List.of(
                     "modelling.MinecraftFrameOutputMixin", "modelling.HeadlessGlfwMixin",
+                    "modelling.WorldUiKeyboardMixin",
                     "modelling.HeadlessWindowMixin", "modelling.HeadlessMinecraftMixin", "modelling.HeadlessRenderSystemMixin", "modelling.CameraEntityDataAccessor",
                     "modelling.CameraChunkServerMixin", "modelling.WorldViewBiomeAccessor",
                     "modelling.WorldViewLevelDataAccessor", "modelling.WorldViewClientLevelAccessor",

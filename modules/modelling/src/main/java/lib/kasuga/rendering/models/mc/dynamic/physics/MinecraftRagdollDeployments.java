@@ -82,7 +82,7 @@ public final class MinecraftRagdollDeployments {
             previous.remove();
         }
 
-        ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline =
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline =
                 PipelineRegistry.resolve(request.modelResource);
         if (pipeline == null) return Optional.empty();
         ResourceLocation resolvedModel = request.modelResource;
@@ -257,7 +257,7 @@ public final class MinecraftRagdollDeployments {
         private final Request request;
         private final ResourceLocation resolvedModel;
         private final ResourceLocation resolvedConfig;
-        private final ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline;
+        private final ModelPipeLine<ResourceLocation, ResourceLocation> pipeline;
         private final ModelInstance instance;
         private final SkeletonRagdoll ragdoll;
         private Entity anchoredEntity;
@@ -265,7 +265,7 @@ public final class MinecraftRagdollDeployments {
 
         private DeploymentHandle(Request request, ResourceLocation resolvedModel,
                                  ResourceLocation resolvedConfig,
-                                 ModelPipeLine<?, ?, ResourceLocation, ResourceLocation, ?> pipeline,
+                                 ModelPipeLine<ResourceLocation, ResourceLocation> pipeline,
                                  ModelInstance instance, SkeletonRagdoll ragdoll) {
             this.request = request;
             this.resolvedModel = resolvedModel;

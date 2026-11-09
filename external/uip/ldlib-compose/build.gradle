@@ -1,0 +1,102 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.107'
+    id 'org.jetbrains.kotlin.jvm' version '2.1.20'
+    id 'org.jetbrains.kotlin.plugin.compose' version '2.1.20'
+}
+
+version = '1.0.0'
+group = 'lib.kasuga.uip.compose'
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+kotlin.jvmToolchain(21)
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.firstdark.dev/snapshots' }
+    google()
+}
+
+sourceSets {
+    contentTesting {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+
+neoForge {
+    version = '21.1.238'
+    parchment {
+        mappingsVersion = '2024.11.17'
+        minecraftVersion = '1.21.1'
+    }
+    runs {
+        clientComposeDemo {
+            client()
+            def peer = providers.gradleProperty('kasugaComposePeer').getOrElse('host')
+            gameDirectory = file("run/compose-${peer}")
+            programArguments.addAll '--width', '1280', '--height', '900', '--username', "Compose_${peer}"
+            def world = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (world.isPresent()) programArguments.addAll '--quickPlaySingleplayer', world.get()
+            def server = providers.gradleProperty('kasugaComposeServer')
+            if (server.isPresent()) systemProperty 'kasuga.composeDemo.server', server.get()
+            systemProperty 'kasuga.composeDemo.timeoutSeconds', providers.gradleProperty('kasugaComposeTimeoutSeconds').getOrElse('240')
+            systemProperty 'kasuga.composeDemo.dropAdd', providers.gradleProperty('kasugaComposeDropAdd').getOrElse('false')
+            systemProperty 'kasuga.composeDemo', 'true'
+            systemProperty 'kasuga.composeDemo.peer', peer
+            systemProperty 'kasuga.composeDemo.world', providers.gradleProperty('kasugaComposeWorld').getOrElse('true')
+            def capture = providers.gradleProperty('kasugaComposeCapture')
+            if (capture.isPresent()) {
+                systemProperty 'kasuga.composeDemo.capture', file(capture.get()).absolutePath
+                systemProperty 'kasuga.headless', 'hidden'
+                systemProperty 'java.awt.headless', 'true'
+            }
+            def lan = providers.gradleProperty('kasugaComposeLanPort')
+            if (lan.isPresent()) systemProperty 'kasuga.composeDemo.lanPort', lan.get()
+            systemProperty 'kasuga.composeDemo.paired', lan.isPresent() ? 'true' : providers.gradleProperty('kasugaComposePaired').getOrElse('false')
+        }
+        serverComposeDemo {
+            server()
+            gameDirectory = file('run/compose-server')
+            programArgument '--nogui'
+        }
+    }
+    mods {
+        kasuga_lib_ldlib2 { sourceSet project(':external:uip:ldlib').sourceSets.main }
+        kasuga_lib_ldlib_compose {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.contentTesting
+        }
+    }
+}
+
+dependencies {
+    api project(':external:uip:ldlib')
+    // The official -all mod embeds the Compose runtime under META-INF/jarjar for production/FML.
+    api('com.lowdragmc.ldlib2:ldlib2-compose-1.21.1:21.0.0.1:all') { transitive = false }
+    // Embedded libraries are not on javac/kotlinc's classpath. Runtime ownership stays with upstream.
+    compileOnlyApi 'org.jetbrains.compose.runtime:runtime-desktop:1.8.2'
+    compileOnlyApi 'org.jetbrains.compose.runtime:runtime-saveable-desktop:1.8.2'
+    compileOnly project(':modules:modelling')
+    compileOnly project(':modules:render-core')
+    compileOnly project(':modules:render-opengl')
+    compileOnly project(':modules:core')
+    runtimeOnly(project(':modules:library')) {
+        transitive = false
+        attributes { attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling, Bundling.SHADOWED)) }
+    }
+}
+
+tasks.register('prepareComposeDemo') {
+    def peer = providers.gradleProperty('kasugaComposePeer').getOrElse('host')
+    def config = file("run/compose-${peer}/config/fml.toml")
+    doLast {
+        config.parentFile.mkdirs()
+        def text = config.exists() ? config.getText('UTF-8') : ''
+        text = text.replaceAll(/(?m)^\s*earlyWindowControl\s*=.*$/, '')
+        config.setText(text + '\nearlyWindowControl = false\n', 'UTF-8')
+    }
+}
+tasks.matching { it.name in ['runClientComposeDemo', 'prepareClientComposeDemoRun'] }.configureEach {
+    dependsOn 'prepareComposeDemo'
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }

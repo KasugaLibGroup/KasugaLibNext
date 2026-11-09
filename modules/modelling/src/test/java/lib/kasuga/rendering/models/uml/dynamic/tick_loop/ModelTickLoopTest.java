@@ -79,11 +79,11 @@ class ModelTickLoopTest {
 
         loop.addPreIk("probe", noop());
         assertTrue(loop.hasProceduralModules());
-        assertEquals(List.of(ModelTickLoop.SLOT_APPLY, "probe", ModelTickLoop.SLOT_IK,
+        assertEquals(List.of("probe", ModelTickLoop.SLOT_APPLY, ModelTickLoop.SLOT_IK,
                 ModelTickLoop.SLOT_PHYSICS, ModelTickLoop.SLOT_ANCHOR), loop.getPipeline().ids());
 
         loop.addPostPhysics("late", noop());
-        assertEquals(List.of(ModelTickLoop.SLOT_APPLY, "probe", ModelTickLoop.SLOT_IK,
+        assertEquals(List.of("probe", ModelTickLoop.SLOT_APPLY, ModelTickLoop.SLOT_IK,
                 ModelTickLoop.SLOT_PHYSICS, "late", ModelTickLoop.SLOT_ANCHOR),
                 loop.getPipeline().ids());
     }
@@ -107,6 +107,9 @@ class ModelTickLoopTest {
         });
 
         loop.tick(1f / 20f);
+        assertEquals(new Vector3f(2f, 3f, 4f),
+                fixture.instance().getSkeletonInstance().getAbsoluteTransforms().get(fixture.child()).getPosition(),
+                "pre-IK pending writes must be applied in the first evaluation");
         loop.tick(1f / 20f);
 
         assertEquals(new Vector3f(0f, 0f, 4f),

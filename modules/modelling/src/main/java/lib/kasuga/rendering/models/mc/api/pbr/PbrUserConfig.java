@@ -1,16 +1,16 @@
 package lib.kasuga.rendering.models.mc.api.pbr;
 
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.google.gson.annotations.JsonAdapter;
+import com.google.gson.JsonDeserializer;
+import lib.kasuga.utils.json.GsonBindings;
 import com.mojang.logging.LogUtils;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,10 +19,10 @@ import java.util.Locale;
 /** Player-editable JSON adapter built on top of {@link PbrConversionRegistry}. */
 public final class PbrUserConfig {
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON = GsonBindings.builder().setPrettyPrinting().create();
     private static final ResourceLocation RULE_ID = ResourceLocation.parse("kasuga_lib:user_config");
     private static final String FILE_NAME = "kasuga-pbr.json";
-    private static volatile JsonObject config = defaultConfig();
+    private static volatile ConfigInput config = GSON.fromJson(defaultConfig(), ConfigInput.class);
 
     static {
         PbrConversionRegistry.register(RULE_ID, 1_000, PbrUserConfig::apply);
@@ -37,9 +37,8 @@ public final class PbrUserConfig {
             if (Files.notExists(path)) {
                 Files.writeString(path, GSON.toJson(defaultConfig()), StandardCharsets.UTF_8);
             }
-            JsonElement parsed = JsonParser.parseString(Files.readString(path, StandardCharsets.UTF_8));
-            if (!parsed.isJsonObject()) throw new IOException("Root value must be a JSON object");
-            config = parsed.getAsJsonObject();
+            ConfigInput parsed = GSON.fromJson(Files.readString(path, StandardCharsets.UTF_8), ConfigInput.class);
+            config = java.util.Objects.requireNonNull(parsed, "Root value must be a JSON object");
             LOGGER.info("Loaded player PBR conversion config from {}", path);
         } catch (Exception exception) {
             LOGGER.warn("Failed to load {}; keeping the previous PBR conversion config", path, exception);
@@ -47,33 +46,26 @@ public final class PbrUserConfig {
     }
 
     private static PbrConversionSettings apply(PbrMaterialContext context, PbrConversionSettings current) {
-        JsonObject snapshot = config;
-        if (snapshot.has("enabled") && !snapshot.get("enabled").getAsBoolean()) return current;
-        if (snapshot.has("defaults") && snapshot.get("defaults").isJsonObject()) {
-            current = applyOverrides(snapshot.getAsJsonObject("defaults"), current);
-        }
-        if (!snapshot.has("rules") || !snapshot.get("rules").isJsonArray()) return current;
-        for (JsonElement element : snapshot.getAsJsonArray("rules")) {
-            if (!element.isJsonObject()) continue;
-            JsonObject rule = element.getAsJsonObject();
+        ConfigInput snapshot = config;
+        if (!snapshot.enabled) return current;
+        if (snapshot.defaults != null) current = applyOverrides(snapshot.defaults, current);
+        for (RuleInput rule : snapshot.rules == null ? java.util.List.<RuleInput>of() : snapshot.rules) {
             if (matches(rule, context)) current = applyOverrides(rule, current);
         }
         return current;
     }
 
-    private static boolean matches(JsonObject rule, PbrMaterialContext context) {
-        if (rule.has("enabled") && !rule.get("enabled").getAsBoolean()) return false;
-        if (!matchesGlob(rule, "model", context.modelId().toString())) return false;
-        if (!matchesGlob(rule, "texture", context.textureId().toString())) return false;
-        if (!matchesGlob(rule, "local_name", context.localName())) return false;
-        if (!matchesGlob(rule, "english_name", context.englishName())) return false;
-        if (rule.has("material_index") && rule.get("material_index").getAsInt() != context.materialIndex()) return false;
-        if (rule.has("min_shininess") && context.shininess() < rule.get("min_shininess").getAsFloat()) return false;
-        return !rule.has("max_shininess") || context.shininess() <= rule.get("max_shininess").getAsFloat();
+    private static boolean matches(RuleInput rule, PbrMaterialContext context) {
+        return rule.enabled && matchesGlob(rule.model, context.modelId().toString())
+                && matchesGlob(rule.texture, context.textureId().toString())
+                && matchesGlob(rule.localName, context.localName()) && matchesGlob(rule.englishName, context.englishName())
+                && (rule.materialIndex == null || rule.materialIndex == context.materialIndex())
+                && (rule.minShininess == null || context.shininess() >= rule.minShininess)
+                && (rule.maxShininess == null || context.shininess() <= rule.maxShininess);
     }
 
-    private static boolean matchesGlob(JsonObject rule, String key, String value) {
-        return !rule.has(key) || globMatches(rule.get(key).getAsString(), value);
+    private static boolean matchesGlob(String pattern, String value) {
+        return pattern == null || globMatches(pattern, value);
     }
 
     static boolean globMatches(String pattern, String value) {
@@ -101,21 +93,41 @@ public final class PbrUserConfig {
         return pIndex == p.length();
     }
 
-    private static PbrConversionSettings applyOverrides(JsonObject object, PbrConversionSettings current) {
-        float smoothness = getFloat(object, "smoothness", current.smoothness());
-        int f0Code = getInt(object, "f0_code", current.f0Code());
-        float subsurface = getFloat(object, "subsurface", current.subsurface());
-        float normalStrength = getFloat(object, "normal_strength", current.normalStrength());
-        float emission = getFloat(object, "emission", current.emission());
-        return new PbrConversionSettings(smoothness, f0Code, subsurface, normalStrength, emission);
+    private static PbrConversionSettings applyOverrides(Overrides input, PbrConversionSettings current) {
+        return new PbrConversionSettings(input.smoothness == null ? current.smoothness() : input.smoothness,
+                input.f0Code == null ? current.f0Code() : input.f0Code,
+                input.subsurface == null ? current.subsurface() : input.subsurface,
+                input.normalStrength == null ? current.normalStrength() : input.normalStrength,
+                input.emission == null ? current.emission() : input.emission);
     }
 
-    private static float getFloat(JsonObject object, String key, float fallback) {
-        return object.has(key) ? object.get(key).getAsFloat() : fallback;
+    private static class Overrides { Float smoothness, subsurface, normalStrength, emission; Integer f0Code; }
+    private static final class RuleInput extends Overrides {
+        Boolean enabled = true;
+        String model, texture, localName, englishName;
+        Integer materialIndex;
+        Float minShininess, maxShininess;
     }
-
-    private static int getInt(JsonObject object, String key, int fallback) {
-        return object.has(key) ? object.get(key).getAsInt() : fallback;
+    private static final class ConfigInput {
+        Boolean enabled = true;
+        @JsonAdapter(DefaultsAdapter.class) Overrides defaults;
+        @JsonAdapter(RulesAdapter.class) java.util.List<RuleInput> rules = java.util.List.of();
+    }
+    private static final class DefaultsAdapter implements JsonDeserializer<Overrides> {
+        @Override public Overrides deserialize(JsonElement json, java.lang.reflect.Type type,
+                com.google.gson.JsonDeserializationContext context) {
+            return json.isJsonObject() ? context.deserialize(json, Overrides.class) : new Overrides();
+        }
+    }
+    private static final class RulesAdapter implements JsonDeserializer<java.util.List<RuleInput>> {
+        @Override public java.util.List<RuleInput> deserialize(JsonElement json, java.lang.reflect.Type type,
+                com.google.gson.JsonDeserializationContext context) {
+            java.util.List<RuleInput> result = new java.util.ArrayList<>();
+            if (json.isJsonArray()) for (JsonElement rule : json.getAsJsonArray()) {
+                if (rule.isJsonObject()) result.add(context.deserialize(rule, RuleInput.class));
+            }
+            return result;
+        }
     }
 
     private static JsonObject defaultConfig() {

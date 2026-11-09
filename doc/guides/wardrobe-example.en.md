@@ -1,6 +1,6 @@
 # Real-Asset Wardrobe Swap and MC Equipment Example
 
-Development example class: `lib.kasuga.rendering.models.mc.api.WardrobeExample`, in the `contentTesting` source set.
+Development example class: `test.kasuga.modelling.demo.wardrobe.WardrobeExample`, in the `contentTesting` source set.
 It loads user-supplied assets through the production PMX Reader, then uses only the generic `Model`, the assembly cache, material instances,
 Skeleton Anchor and the MC equipment adapters. The example code does not ship in the release package.
 

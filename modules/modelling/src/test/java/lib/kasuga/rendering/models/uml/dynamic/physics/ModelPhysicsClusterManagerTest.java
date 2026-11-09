@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.uml.dynamic.physics;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.SkeletonInstance;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.DistanceJoint;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.uml.structure.Model;
@@ -27,6 +28,176 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @Tag("box3d")
 class ModelPhysicsClusterManagerTest {
+
+    @Test
+    void failedFirstAttachmentClosesItsNewSceneAndEnvironment() {
+        try (ModelInstance instance = freeBodyInstance();
+             ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(20, 30, 1)) {
+            ModelPhysicsScene[] allocated = {null};
+            boolean[] released = {false};
+            manager.setEnvironmentFactory((scene, origin) -> {
+                allocated[0] = scene;
+                class Environment implements lib.kasuga.rendering.models.uml.dynamic.physics.core.CollisionEnvironment, AutoCloseable {
+                    @Override public void update(lib.kasuga.rendering.models.uml.dynamic.physics.core.RigidBodyWorld world) {}
+                    @Override public void close() { released[0] = true; }
+                }
+                return new Environment();
+            });
+            var bad = SkeletonRagdoll.Profile.of(new SkeletonRagdoll.Registration(9999, SkeletonRagdoll.BodyRole.PELVIS));
+            assertThrows(IllegalArgumentException.class, () -> manager.attach(instance, bad));
+            assertNotNull(allocated[0]);
+            assertTrue(allocated[0].closed(), "a failed first attachment must not leak the destination native world");
+            assertTrue(released[0]);
+        }
+    }
+
+    @Test
+    void initialClusterAttachmentEvaluatesTheRigOnlyInItsDestinationScene() {
+        try (ModelInstance instance = freeBodyInstance();
+             ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(20, 30, 1)) {
+            int[] calls = {0};
+            instance.getTickLoop().addPreIk("creation-count", new lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.ModelTickLoopModule() {
+                @Override public void tick(lib.kasuga.rendering.models.uml.structure.Model model,
+                        lib.kasuga.rendering.models.uml.dynamic.tick_loop.PendingTransform[] transforms,
+                        lib.kasuga.rendering.models.uml.dynamic.tick_loop.ModelTickLoop loop, float dt) { calls[0]++; }
+                @Override public void destroy(lib.kasuga.rendering.models.uml.structure.Model model) {}
+            });
+            var state = manager.attach(instance);
+            assertSame(manager.sceneOf(instance), state.physicsScene());
+            assertEquals(1, calls[0], "first attach must not build/evaluate a throwaway standalone world");
+        }
+    }
+
+    @Test
+    void automaticRemovalClearsSeparationTimersWhileOtherMembersRemain() throws Exception {
+        try (ModelInstance a = freeBodyInstance(); ModelInstance b = freeBodyInstance();
+             ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(20, 30, 1)) {
+            manager.attach(a); manager.attach(b);
+            b.getSkeletonInstance().transformRoot(new Transform().translate(50, 0, 0));
+            manager.recluster(0.1f);
+            var field = ModelPhysicsClusterManager.class.getDeclaredField("pairSeparationTimers");
+            field.setAccessible(true);
+            var timers = (java.util.Map<?, ?>) field.get(manager);
+            assertFalse(timers.isEmpty(), "fixture must retain a pending separated pair");
+            a.close();
+            manager.recluster(0.1f);
+            assertTrue(timers.isEmpty(), "closed instances must not remain strongly referenced by pair timers");
+            assertNotNull(manager.sceneOf(b));
+        }
+    }
+
+    @Test
+    void resumedAnimationStaysAnimatedAndNativeDisabledAcrossReclusterSplitAndMerge() {
+        try (ModelInstance paused = freeBodyInstance();
+             ModelInstance neighbor = freeBodyInstance();
+             ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(20.0, 30.0, 4)) {
+            neighbor.getSkeletonInstance().enableFloatingOrigin(new Vector3d(10.0, 0.0, 0.0));
+            manager.setSplitGraceSeconds(0.0);
+            manager.setVelocityLookaheadSeconds(0.0);
+            SkeletonRagdoll relaxation = manager.attach(paused);
+            manager.attach(neighbor);
+            SkeletonRagdoll.Body body = relaxation.bodies().getFirst();
+            paused.getSkeletonInstance().resumeAnimation();
+            Vector3d position = relaxation.worldPosition(body);
+
+            manager.recluster(0f);
+            assertResumedClusterMember(paused, relaxation, body);
+
+            manager.setRadii(2.0, 3.0);
+            manager.recluster(0f);
+            assertEquals(2, manager.clusterCount(), "the test must actually split the native scenes");
+            assertResumedClusterMember(paused, relaxation, body);
+            assertEquals(position, relaxation.worldPosition(body));
+
+            manager.setRadii(20.0, 30.0);
+            manager.recluster(0f);
+            assertEquals(1, manager.clusterCount(), "the test must merge the scenes again");
+            assertResumedClusterMember(paused, relaxation, body);
+            manager.step(1f / 30f);
+            assertResumedClusterMember(paused, relaxation, body);
+            assertEquals(position, relaxation.worldPosition(body),
+                    "reclustering must not reactivate resumed bodies under native gravity");
+        }
+    }
+
+    @Test
+    void skeletonPoseDriveSurvivesReclusterSplitAndMergeAndStillProducesNativeForce() {
+        try (ModelInstance driven = freeBodyInstance();
+             ModelInstance neighbor = freeBodyInstance();
+             ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(20.0, 30.0, 4)) {
+            neighbor.getSkeletonInstance().enableFloatingOrigin(new Vector3d(10.0, 0.0, 0.0));
+            manager.setSplitGraceSeconds(0.0);
+            manager.setVelocityLookaheadSeconds(0.0);
+            SkeletonRagdoll relaxation = manager.attach(driven);
+            manager.attach(neighbor);
+            SkeletonInstance skeleton = driven.getSkeletonInstance();
+            assertSame(relaxation, skeleton.drivePose(new SkeletonInstance.PoseDrive(4f, 1f, 1000f, 1000f, 1f)));
+            skeleton.transform("root", new Transform().translate(1f, 0f, 0f));
+
+            manager.recluster(0f);
+            assertEquals(SkeletonInstance.MotionState.DRIVEN, skeleton.getMotionState());
+            assertSame(relaxation, skeleton.getRelaxation());
+
+            manager.setRadii(2.0, 3.0);
+            manager.recluster(0f);
+            assertEquals(2, manager.clusterCount());
+            assertEquals(SkeletonInstance.MotionState.DRIVEN, skeleton.getMotionState());
+            assertSame(relaxation, skeleton.getRelaxation());
+
+            manager.setRadii(20.0, 30.0);
+            manager.recluster(0f);
+            assertEquals(1, manager.clusterCount());
+            assertEquals(SkeletonInstance.MotionState.DRIVEN, skeleton.getMotionState());
+            assertSame(relaxation, skeleton.getRelaxation());
+            manager.activeScenes().forEach(scene -> scene.world().setGravity(new Vector3f()));
+
+            manager.step(1f / 120f);
+
+            assertEquals(SkeletonInstance.MotionState.DRIVEN, skeleton.getMotionState());
+            assertSame(manager.sceneOf(driven), relaxation.physicsScene());
+            assertTrue(relaxation.bodies().getFirst().linearVelocity().x > 0f,
+                    "retained settings must still drive the real native body after scene migration");
+        }
+    }
+
+    @Test
+    void reclusterAndFrameUpdatesRemoveClosedModelsWithoutResurrectingTheirRelaxation() {
+        try (ModelInstance removed = freeBodyInstance();
+             ModelInstance survivor = freeBodyInstance();
+             ModelPhysicsClusterManager manager = new ModelPhysicsClusterManager(20.0, 30.0, 4)) {
+            survivor.getSkeletonInstance().enableFloatingOrigin(new Vector3d(10.0, 0.0, 0.0));
+            SkeletonRagdoll closedRelaxation = manager.attach(removed);
+            manager.attach(survivor);
+            removed.getSkeletonInstance().drivePose(new SkeletonInstance.PoseDrive(4f, 1f, 1000f, 1000f, 1f));
+            removed.close();
+
+            assertDoesNotThrow(() -> manager.recluster(0f));
+            assertDoesNotThrow(() -> manager.step(1f / 120f));
+            assertDoesNotThrow(() -> manager.evaluateFrame(0.5f, 1f / 120f));
+
+            assertEquals(1, manager.instanceCount());
+            assertEquals(List.of(survivor), manager.instances());
+            assertNull(manager.sceneOf(removed));
+            assertNull(removed.getSkeletonInstance().getRelaxation());
+            assertNull(removed.getRagdoll());
+            assertEquals(SkeletonInstance.MotionState.ANIMATED, removed.getSkeletonInstance().getMotionState());
+            assertFalse(closedRelaxation.enabled());
+            assertTrue(manager.activeScenes().stream().allMatch(scene ->
+                    !scene.ragdolls().contains(closedRelaxation)));
+            assertThrows(IllegalStateException.class, () -> manager.attach(removed),
+                    "a closed model must be rejected before it enters the cluster registry");
+            assertEquals(List.of(survivor), manager.instances());
+        }
+    }
+
+    private static void assertResumedClusterMember(ModelInstance instance, SkeletonRagdoll relaxation,
+                                                   SkeletonRagdoll.Body body) {
+        assertEquals(SkeletonInstance.MotionState.ANIMATED, instance.getSkeletonInstance().getMotionState(),
+                "recluster must preserve resumeAnimation rather than call relax again");
+        assertSame(relaxation, instance.getSkeletonInstance().getRelaxation());
+        assertFalse(relaxation.enabled());
+        assertFalse(relaxation.physicsScene().world().bodyEnabled(body));
+    }
 
     @Test
     void distantInstancesFormSeparateClustersWithLocalizedOrigins() {

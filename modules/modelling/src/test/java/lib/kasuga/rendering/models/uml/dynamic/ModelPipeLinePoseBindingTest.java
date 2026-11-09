@@ -22,22 +22,24 @@ class ModelPipeLinePoseBindingTest {
     void createInstanceInstallsTheDriverThroughModelPoseBinding() {
         TestBridge bridge = new TestBridge();
         TestBackend backend = new TestBackend();
-        ModelPipeLine<Object, Object, String, String, Object> pipeline =
+        ModelPipeLine<String, String> pipeline =
                 new ModelPipeLine.Builder<Object, Object, String, String, Object>()
                         .withBridge("bridge", bridge)
                         .withBackend("backend", backend)
                         .buildForPublishedModels();
         Model model = ModelInstanceFixture.minimal().getModel();
-        pipeline.publishModels(Map.of("model", model));
-        PoseDriver source = new PoseDriver() {};
+        try (ModelPublicationBatch<String> publication = new ModelPublicationBatch<>()) {
+            publication.put(pipeline, Map.of("model", model));
+            PoseDriver source = new PoseDriver() {};
 
-        ModelInstance instance = pipeline.createInstance(
-                "model", "instance", null, null, null, source);
+            ModelInstance instance = pipeline.createInstance(
+                    "model", "instance", null, null, null, source);
 
-        assertNotNull(instance);
-        assertTrue(instance.getPoseDriver() instanceof ModelPoseBinding);
-        ModelPoseBinding binding = (ModelPoseBinding) instance.getPoseDriver();
-        assertSame(source, binding.source());
+            assertNotNull(instance);
+            assertTrue(instance.getPoseDriver() instanceof ModelPoseBinding);
+            ModelPoseBinding binding = (ModelPoseBinding) instance.getPoseDriver();
+            assertSame(source, binding.source());
+        }
     }
 
     private static final class TestBridge implements Bridge<Object> {

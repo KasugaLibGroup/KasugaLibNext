@@ -321,6 +321,8 @@ public class MyModFactories {
 
 ### 3.4 缺工厂的行为：warn 跳过，不是报错
 
+例外：声明 `state_properties` 的方块要求支持该能力的工厂；缺工厂或不支持时会记录加载错误。扩展方法见[方块状态属性](../../reference/data-driven/block-state-properties.md)。
+
 如果 JSON 的 `type` 没有对应工厂，`RegTypeHandler.createRegistration` 按约定返回 `null`，模板随即打一条 WARN 并 return（`RegTypeHandler.apply:70-74`）：
 
 ```java

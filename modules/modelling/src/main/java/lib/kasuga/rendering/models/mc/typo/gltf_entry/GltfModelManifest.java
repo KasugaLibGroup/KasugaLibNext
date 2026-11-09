@@ -1,10 +1,7 @@
 package lib.kasuga.rendering.models.mc.typo.gltf_entry;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import lib.kasuga.rendering.models.mc.util.ModelJson;
 import com.google.gson.JsonParseException;
-import com.google.gson.JsonParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -33,14 +30,10 @@ public record GltfModelManifest(Vector3f modelScale, ResourceLocation ragdollCon
         Resource resource = manager.getResource(manifestLocation).orElse(null);
         if (resource == null) return new GltfModelManifest(DEFAULT_MODEL_SCALE, null);
         try (var reader = resource.openAsReader()) {
-            JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
-            Vector3f scale = parseScale(json.get("model_scale"));
-            ResourceLocation ragdoll = null;
-            if (json.has("ragdoll") && !json.get("ragdoll").isJsonNull()) {
-                ragdoll = ResourceLocation.tryParse(json.get("ragdoll").getAsString());
-                if (ragdoll == null) throw new JsonParseException("ragdoll must be a resource location");
-            }
-            return new GltfModelManifest(scale, ragdoll);
+            Input input = Objects.requireNonNull(ModelJson.GSON.fromJson(reader, Input.class), "manifest");
+            ResourceLocation ragdoll = input.ragdoll == null ? null : ResourceLocation.tryParse(input.ragdoll);
+            if (input.ragdoll != null && ragdoll == null) throw new JsonParseException("ragdoll must be a resource location");
+            return new GltfModelManifest(input.modelScale.value(), ragdoll);
         } catch (RuntimeException exception) {
             throw new IOException("Invalid glTF model manifest: " + manifestLocation, exception);
         }
@@ -54,24 +47,8 @@ public record GltfModelManifest(Vector3f modelScale, ResourceLocation ragdollCon
         return ResourceLocation.fromNamespaceAndPath(modelLocation.getNamespace(), base + ".gltf.json");
     }
 
-    private static Vector3f parseScale(JsonElement value) {
-        if (value == null) return new Vector3f(DEFAULT_MODEL_SCALE);
-        if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isNumber()) {
-            return validated(new Vector3f(value.getAsFloat()));
-        }
-        if (value.isJsonArray()) {
-            JsonArray values = value.getAsJsonArray();
-            if (values.size() != 3) throw new JsonParseException("model_scale array must contain three numbers");
-            return validated(new Vector3f(values.get(0).getAsFloat(), values.get(1).getAsFloat(),
-                    values.get(2).getAsFloat()));
-        }
-        throw new JsonParseException("model_scale must be a number or a three-number array");
-    }
-
-    private static Vector3f validated(Vector3f scale) {
-        if (!scale.isFinite() || scale.x <= 0f || scale.y <= 0f || scale.z <= 0f) {
-            throw new JsonParseException("model_scale components must be finite and positive");
-        }
-        return scale;
+    private static final class Input {
+        ModelJson.Scale modelScale = new ModelJson.Scale(DEFAULT_MODEL_SCALE);
+        String ragdoll;
     }
 }

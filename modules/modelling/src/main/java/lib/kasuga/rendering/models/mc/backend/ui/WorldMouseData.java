@@ -1,7 +1,6 @@
 package lib.kasuga.rendering.models.mc.backend.ui;
 
 import lombok.Getter;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector2f;
@@ -33,10 +32,9 @@ public class WorldMouseData {
     }
 
     public void updatePosition(Vector2f position) {
-        this.lastMotion = position;
+        this.lastPosition.set(this.position);
         this.position = new Vector2f(position);
-        this.lastMotion =  new Vector2f();
-        lastMotion.add(this.position).sub(lastPosition);
+        this.lastMotion.set(this.position).sub(lastPosition);
         motionHasBeenConsumed = false;
     }
 

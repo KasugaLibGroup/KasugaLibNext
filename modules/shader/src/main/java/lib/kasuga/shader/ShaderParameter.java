@@ -130,7 +130,10 @@ public record ShaderParameter(
                 throw new IllegalArgumentException("Shader parameter " + name
                         + " cannot be represented by a 32-bit shader float");
             }
-            if (!range.contains(value)) {
+            boolean inRange = type.integral()
+                    ? range.contains(value)
+                    : (float) value >= (float) range.minimum() && (float) value <= (float) range.maximum();
+            if (!inRange) {
                 throw new IllegalArgumentException("Shader parameter " + name + " value " + value
                         + " is outside [" + range.minimum() + ", " + range.maximum() + "]");
             }

@@ -36,7 +36,9 @@ public final class PostProcessTargetPool {
         }
         if (existing != null) existing.target().destroyBuffers();
 
-        TextureTarget target = new TextureTarget(width, height, descriptor.useDepth(), Minecraft.ON_OSX);
+        RenderTarget target = descriptor.colorAttachments().equals(java.util.List.of(PostProcessTargetDescriptor.ColorFormat.RGBA8))
+                ? new TextureTarget(width, height, descriptor.useDepth(), Minecraft.ON_OSX)
+                : new MultiAttachmentRenderTarget(descriptor, width, height);
         target.setFilterMode(descriptor.filter().glConstant());
         target.setClearColor(
                 descriptor.clearRed(), descriptor.clearGreen(),
@@ -92,5 +94,5 @@ public final class PostProcessTargetPool {
         source.bindWrite(true);
     }
 
-    private record Entry(PostProcessTargetDescriptor descriptor, TextureTarget target) {}
+    private record Entry(PostProcessTargetDescriptor descriptor, RenderTarget target) {}
 }

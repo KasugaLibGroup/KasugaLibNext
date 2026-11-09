@@ -79,6 +79,25 @@ class ShaderParameterBlockTest {
     }
 
     @Test
+    void decimalRangeEndpointsSurviveComponentUpdatesAndReset() {
+        ShaderParameter vector = ShaderParameter.builder("Tint", "Decimal endpoints", ShaderParameterType.VEC3)
+                .range(-0.3, 0.3)
+                .defaultValues(-0.3, 0.3, 0.3)
+                .build();
+        ShaderParameterBlock block = new ShaderParameterBlock(ShaderParameterSchema.of(List.of(vector)));
+
+        double[] values = block.values("Tint");
+        values[1] = 0;
+        block.set(vector, values);
+        assertArrayEquals(new double[]{-0.3f, 0, 0.3f}, block.values("Tint"));
+        assertThrows(IllegalArgumentException.class, () -> block.set(vector, -0.31, 0, 0.3));
+        assertThrows(IllegalArgumentException.class, () -> block.set(vector, -0.3, 0, 0.31));
+        block.reset(vector);
+        block.set(vector, block.values("Tint"));
+        assertTrue(block.isDefault("Tint"));
+    }
+
+    @Test
     void preservesFullSignedIntegerPrecision() {
         ShaderParameter largeInteger = ShaderParameter.intParameter(
                 "LargeInteger", "Full precision integer", 0, Integer.MIN_VALUE, Integer.MAX_VALUE

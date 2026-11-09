@@ -73,6 +73,26 @@ class ManagedAnimationScopeTest {
     }
 
     @Test
+    void subStepDeltasAccumulateUntilAFixedStepCanBePublished() {
+        ManagedAnimationScope scope = ManagedAnimationScope.builder(
+                        SCOPE_ID, LogicalStepPolicy.fixed(0.05, 4))
+                .build();
+
+        ScopeAdvanceResult first =
+                scope.advance(new ScopeAdvance(0.02, ScopeAdvanceCause.GAME_TICK));
+        ScopeAdvanceResult second =
+                scope.advance(new ScopeAdvance(0.02, ScopeAdvanceCause.GAME_TICK));
+        ScopeAdvanceResult third =
+                scope.advance(new ScopeAdvance(0.02, ScopeAdvanceCause.GAME_TICK));
+
+        assertTrue(first.steps().isEmpty());
+        assertTrue(second.steps().isEmpty());
+        assertEquals(1, third.steps().size());
+        assertEquals(0.05, scope.view().currentTime(), 1e-9);
+        assertEquals(1, scope.view().revision());
+    }
+
+    @Test
     void playbackViewDistinguishesCompletionFromExplicitPause() {
         ManagedAnimationScope scope = ManagedAnimationScope.builder(
                         SCOPE_ID, LogicalStepPolicy.fixed(0.05, 4))

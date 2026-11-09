@@ -321,6 +321,8 @@ Symbol sources: for the use of `BlockReg.of(...).withDefaultBlockItem(id)` see `
 
 ### 3.4 When a factory is missing: warn and skip, not an error
 
+Exception: a block with `state_properties` requires an opted-in factory; a missing or incompatible factory is recorded as a loading error. See [block-state properties](../../reference/data-driven/block-state-properties.en.md).
+
 If JSON's `type` has no matching factory, `RegTypeHandler.createRegistration` returns `null` by convention and the template immediately logs a WARN and returns (`RegTypeHandler.apply:70-74`):
 
 ```java

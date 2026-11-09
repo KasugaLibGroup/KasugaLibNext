@@ -99,7 +99,9 @@ public final class PostProcessGraph {
         return allocatedTargetIds;
     }
 
-    private ResourceLocation allocatedTargetId(PostProcessGraphTarget target) {
+    /** Resolves a declared managed target's graph-scoped pool ID for diagnostics and explicit release. */
+    public ResourceLocation allocatedTargetId(PostProcessGraphTarget target) {
+        if (!targets.containsKey(target)) throw new IllegalArgumentException("Undeclared managed target: " + target);
         ResourceLocation logical = Objects.requireNonNull(target.id());
         return ResourceLocation.fromNamespaceAndPath(
                 id.getNamespace(), id.getPath() + "/targets/" + logical.getNamespace() + "/" + logical.getPath()

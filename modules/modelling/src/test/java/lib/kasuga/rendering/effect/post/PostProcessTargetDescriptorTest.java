@@ -38,4 +38,21 @@ class PostProcessTargetDescriptorTest {
         assertEquals(1, tiny.resolveWidth(10));
         assertEquals(1, tiny.resolveHeight(10));
     }
+
+    @Test
+    void preservesMrtFormatsAndDepthWhenGraphScopesTheTargetId() {
+        var descriptor = PostProcessTargetDescriptor.builder(ID).useDepth(true)
+                .colorAttachments(PostProcessTargetDescriptor.ColorFormat.RGBA16F,
+                        PostProcessTargetDescriptor.ColorFormat.RGBA16F,
+                        PostProcessTargetDescriptor.ColorFormat.RGBA32F).build();
+        var scoped = descriptor.withId(ResourceLocation.fromNamespaceAndPath("test", "graph/gbuffer"));
+        assertEquals(descriptor.colorAttachments(), scoped.colorAttachments());
+        assertEquals(3, scoped.colorAttachments().size());
+        assertEquals(true, scoped.useDepth());
+        assertThrows(UnsupportedOperationException.class, () -> scoped.colorAttachments().clear());
+        assertThrows(IllegalArgumentException.class, () -> PostProcessTargetDescriptor.builder(ID)
+                .colorAttachments().build());
+        assertThrows(IllegalArgumentException.class, () -> PostProcessTargetDescriptor.builder(ID)
+                .screenScale(Float.POSITIVE_INFINITY).build());
+    }
 }

@@ -103,6 +103,13 @@ pose/follow、动画、view ID 和输出订阅。当前帧和回调继续使用�
 `withVerticalFov`、`zoom` 和 `apply(view)`。Free 修改投影会停止自身动画；更新渲染配置不会停止动画。
 窗口拥有的 Free Camera 以实际 framebuffer/DPI 尺寸为准。
 
+`WorldCameraView.forward(Vector3f out)`、`inverseView(Matrix4f out)` 和
+`projection(float near, float far, Matrix4f out)` 将姿态转换为统一的方向、camera-to-world 和
+OpenGL 透视矩阵，写入并返回传入对象。方向沿 Minecraft yaw/pitch 约定；逆视图包含 roll，
+投影使用该视图的 FOV 与宽高比，要求有限的 `0 < near < far`。
+自定义局部场景应先在同一局部参照系构造 view，避免直接把远世界坐标转为 float。
+[Nebula demo](../guides/nebula-demo.md) 用同一组矩阵驱动 OBJ 光栅化与体积射线。
+
 ## 宿主扩展与生命周期
 
 纯 Java 宿主使用 `CameraSource.Player(ViewProvider)`、`CameraSource.Free(Supplier<WorldCameraView>)`

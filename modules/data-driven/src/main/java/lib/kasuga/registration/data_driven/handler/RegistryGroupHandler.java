@@ -1,6 +1,8 @@
 package lib.kasuga.registration.data_driven.handler;
 
 import com.google.gson.JsonObject;
+import lib.kasuga.registration.data_driven.json.DataJson;
+import java.util.Objects;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.data_driven.context.BuildContext;
 import lib.kasuga.registration.data_driven.context.JsonRegistryGroup;
@@ -24,12 +26,9 @@ public class RegistryGroupHandler extends MetaTypeHandler<RegistryGroupDef> {
 
     @Override
     public RegistryGroupDef parse(JsonObject json) {
-        return new RegistryGroupDef(
-            json.get("id").getAsString(),
-            json.has("parent") ? json.get("parent").getAsString() : null,
-            json.has("properties") ? json.getAsJsonObject("properties") : null,
-            json.has("item_properties") ? json.getAsJsonObject("item_properties") : null
-        );
+        RegistryGroupDef definition = DataJson.GSON.fromJson(json, RegistryGroupDef.class);
+        Objects.requireNonNull(definition.id(), "id");
+        return definition;
     }
 
     @Override
@@ -70,10 +69,8 @@ public class RegistryGroupHandler extends MetaTypeHandler<RegistryGroupDef> {
             }
         }
 
-        if (definition.itemProperties() != null && definition.itemProperties().has("tab")) {
-            String tabStr = definition.itemProperties().get("tab").getAsString();
-            context.setRegistryGroupCreativeTab(definition.id(), ResourceLocation.parse(tabStr));
-        }
+        String tab = DataJson.creativeTab(definition.itemProperties());
+        if (tab != null) context.setRegistryGroupCreativeTab(definition.id(), ResourceLocation.parse(tab));
 
         // Parse remaining item_properties into the group's property chain
         // (tab is skipped by JsonItemParser). Block-level item_properties will

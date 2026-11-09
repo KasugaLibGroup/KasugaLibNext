@@ -1,10 +1,10 @@
 package lib.kasuga.rendering.models.mc.java_and_bedrock.data.je;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import lib.kasuga.utils.json.JsonFieldPolicy.NonNullFields;
 import lib.kasuga.rendering.models.mc.util.Direction;
-import lib.kasuga.rendering.models.mc.util.JsonHelper;
+import lib.kasuga.rendering.models.mc.util.ModelJson;
+import lib.kasuga.utils.json.JsonFieldPolicy.DefaultOnMismatch;
 import lombok.Getter;
 import org.joml.Vector2f;
 
@@ -69,47 +69,21 @@ public class JEFace {
     }
 
     public static JEFace fromJson(JsonObject input) {
-        Objects.requireNonNull(input, "input must not be null");
+        return ModelJson.GSON.fromJson(Objects.requireNonNull(input), Input.class).build();
+    }
 
-        if (!input.has("texture")) {
-            throw new IllegalArgumentException("face texture must not be null");
+    @NonNullFields
+    static final class Input {
+        String texture, cullface;
+        float[] uv = new float[4];
+        @DefaultOnMismatch Integer tintindex = -1, rotation = 0;
+        JEFace build() {
+            if (texture == null) throw new IllegalArgumentException("face texture must not be null");
+            if (uv == null || uv.length != 4) throw new IllegalArgumentException("Expected 4 uv values");
+            if (rotation < 0 || rotation % 90 != 0 || rotation > 270)
+                throw new IllegalArgumentException("Invalid rotation " + rotation + ", only 0/90/180/270 allowed");
+            Direction direction = cullface == null || cullface.isEmpty() ? null : Direction.fromString(cullface);
+            return new JEFace(texture, new Vector2f(uv[0], uv[1]), new Vector2f(uv[2], uv[3]), tintindex, direction, rotation);
         }
-        String texture = input.get("texture").getAsString();
-
-        Vector2f uvFrom;
-        Vector2f uvTo;
-        
-        if (input.has("uv")) {
-            JsonArray uvArray = input.getAsJsonArray("uv");
-            if (uvArray.size() != 4) {
-                throw new IllegalArgumentException("Expected 4 uv values, found: " + uvArray.size());
-            }
-            float u1 = uvArray.get(0).getAsFloat();
-            float v1 = uvArray.get(1).getAsFloat();
-            float u2 = uvArray.get(2).getAsFloat();
-            float v2 = uvArray.get(3).getAsFloat();
-            uvFrom = new Vector2f(u1, v1);
-            uvTo = new Vector2f(u2, v2);
-        } else {
-            uvFrom = new Vector2f(0, 0);
-            uvTo = new Vector2f(0, 0);
-        }
-        
-        int tintIndex = JsonHelper.jsonToInt(input, "tintindex", -1);
-        
-        Direction cullface = null;
-        if (input.has("cullface")) {
-            String cullfaceStr = input.get("cullface").getAsString();
-            if (!cullfaceStr.isEmpty()) {
-                cullface = Direction.fromString(cullfaceStr);
-            }
-        }
-        
-        int rotation = JsonHelper.jsonToInt(input, "rotation", 0);
-        if (rotation < 0 || rotation % 90 != 0 || rotation / 90 > 3) {
-            throw new IllegalArgumentException("Invalid rotation " + rotation + " found, only 0/90/180/270 allowed");
-        }
-        
-        return new JEFace(texture, uvFrom, uvTo, tintIndex, cullface, rotation);
     }
 }

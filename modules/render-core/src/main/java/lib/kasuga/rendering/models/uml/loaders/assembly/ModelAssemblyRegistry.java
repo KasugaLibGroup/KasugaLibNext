@@ -35,16 +35,21 @@ public final class ModelAssemblyRegistry<K, I> {
         return next;
     }
 
-    /** Removes results borrowing a retired source; recipes survive and resolve against the next generation. */
-    public Set<I> invalidate(Model source) {
-        cache.invalidate(source);
+    /** Finds results borrowing a source without changing the registry. */
+    public Set<I> dependentIds(Model source) {
         Set<I> affected = new LinkedHashSet<>();
-        resolved.entrySet().removeIf(entry -> {
-            boolean match = entry.getValue().request().parts().stream().anyMatch(part -> part.source().model() == source);
-            if (match) affected.add(entry.getKey());
-            return match;
+        resolved.forEach((id, assembly) -> {
+            if (assembly.request().parts().stream().anyMatch(part -> part.source().model() == source)) affected.add(id);
         });
         return Set.copyOf(affected);
+    }
+
+    /** Removes results borrowing a retired source; recipes survive and resolve against the next generation. */
+    public Set<I> invalidate(Model source) {
+        Set<I> affected = dependentIds(source);
+        cache.invalidate(source);
+        affected.forEach(resolved::remove);
+        return affected;
     }
     public void clearResolved() { resolved.clear(); cache.clear(); }
     public ModelAssemblyCache.Stats cacheStats() { return cache.stats(); }

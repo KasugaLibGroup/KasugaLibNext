@@ -50,6 +50,11 @@ graphics program checks, at build time, the names and types of vertex outputs an
 consistency of uniform and sampler declarations across stages. The current backend converts IR into GLSL 150 and
 Minecraft core-shader resources.
 
+The optional `shader-graal` frontend calls these same builders in an independent GraalJS context.
+Callbacks still execute immediately during construction; the returned program contains only Java IR,
+and the context closes when construction ends. Scripts do not run per pixel or per frame.
+See [GraalJS scripting](../reference/shader-dsl.en.md#graaljs-scripting) for dependencies and usage.
+
 ## Effect instances and post-processing graphs
 
 Effects of the same kind share a renderer and pipeline state, and each instance holds position, lifetime, and

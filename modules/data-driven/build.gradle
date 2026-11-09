@@ -70,6 +70,13 @@ neoForge {
         client {
             client()
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            def clientDirectory = providers.gradleProperty('kasugaStatePropertyClientDirectory')
+            if (clientDirectory.isPresent()) gameDirectory = file(clientDirectory.get())
+            def quickPlayWorld = providers.gradleProperty('kasugaStatePropertyQuickPlayWorld')
+            if (quickPlayWorld.isPresent()) programArguments.addAll '--quickPlaySingleplayer', quickPlayWorld.get()
+            if (providers.gradleProperty('kasugaStatePropertyClientSmoke').map { it.toBoolean() }.getOrElse(false)) {
+                systemProperty 'kasuga.testStatePropertyClient', 'true'
+            }
         }
 
         server {
@@ -107,6 +114,7 @@ configurations {
 }
 
 dependencies {
+    implementation(project(":modules:utils")) { transitive = false }
     implementation("io.micronaut:micronaut-inject:4.9.10") {
         exclude group: 'org.slf4j', module: 'slf4j-api'
     }
