@@ -36,6 +36,8 @@ public final class SceneModels implements AutoCloseable {
     private final RenderPipelineScope scope;
     private final List<Entry> models = new ArrayList<>();
     private boolean closed;
+    private lib.kasuga.rendering.models.mc.backend.ui.PreviewRenderBuffers buffers;
+    private long resourceGeneration=-1;
 
     private SceneModels(ClientLevel level) {
         this.level = java.util.Objects.requireNonNull(level);
@@ -73,6 +75,12 @@ public final class SceneModels implements AutoCloseable {
         if (closed || context.level() != level) return;
         var camera = context.camera().getPosition();
         float partial = context.partialTick().getGameTimeDeltaPartialTick(false);
+        long generation=lib.kasuga.rendering.models.mc.scene.ModelPreviewResources.generation();
+        if (generation!=resourceGeneration) {
+            if (buffers!=null) buffers.close();buffers=null;resourceGeneration=generation;
+        }
+        if (buffers==null) buffers=new lib.kasuga.rendering.models.mc.backend.ui.PreviewRenderBuffers();
+        buffers.begin(context.mainRenderTarget().frameBufferId,context.mainRenderTarget().width,context.mainRenderTarget().height);
         try {
             for (Entry entry : models) if (entry.visible) {
                 var snapshot = entry.source.snapshot(entry.layout, partial);
@@ -81,11 +89,11 @@ public final class SceneModels implements AutoCloseable {
                 try {
                     context.poseStack().translate(entry.position.x - camera.x, entry.position.y - camera.y, entry.position.z - camera.z);
                     context.poseStack().mulPose(entry.transform);
-                    snapshot.render(new MinecraftModelSource.Context(context.poseStack(), context.bufferSource(), context.projectionMatrix(),
+                    snapshot.render(new MinecraftModelSource.Context(context.poseStack(), buffers, context.projectionMatrix(),
                             partial, LevelRenderer.getLightColor(level, BlockPos.containing(entry.position)), context.modelViewMatrix()));
                 } finally { context.poseStack().popPose(); }
             }
-        } finally { context.bufferSource().endBatch(); }
+        } finally { buffers.flush(); }
     }
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
         for (var scene : List.copyOf(ACTIVE)) if (Minecraft.getInstance().level != scene.level) scene.close();
@@ -93,7 +101,7 @@ public final class SceneModels implements AutoCloseable {
     @Override public void close() {
         if (closed) return;
         closed = true; ACTIVE.remove(this);
-        try { scope.close(); }
+        try { try { scope.close(); } finally { if (buffers!=null) buffers.close(); } }
         finally {
             RuntimeException failure = null;
             for (Entry entry : models) try { entry.source.close(); }

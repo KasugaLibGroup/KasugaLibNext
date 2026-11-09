@@ -209,9 +209,13 @@ public final class CreateModelSources {
                 @Override public void draw() {}
                 @Override public void draw(RenderType type) {}
             });
+            // Create's shaded SBB colors depend on the current view/light directions. Keep that
+            // native pass live, while the static fluids and layer fallback use the shared cache.
+            super.renderAssembled(context);
+        }
+        @Override protected void renderStaticAssembled(Context context) {
             // Upstream helper distance-culls against the game camera; UI uses its own camera.
             renderFluids(new Slice(LayerLayout.Axis.Y, 0, geometryElements(), false), context);
-            renderBlockEntities(new Slice(LayerLayout.Axis.Y, 0, geometryElements(), false), context);
         }
         @Override public void close() {
             if (closed) return;

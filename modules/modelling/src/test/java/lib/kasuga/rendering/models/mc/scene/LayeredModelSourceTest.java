@@ -11,6 +11,29 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class LayeredModelSourceTest {
+    @Test void immutableGeometryIsPlannedOnceWhileRotationAndLayoutsRemainLive() {
+        class Planned extends LayeredModelSource {
+            Object key = new Object(); int reads;
+            @Override protected Object geometryKey() { return key; }
+            @Override protected List<Element> elements() {
+                reads++;
+                return List.of(new Element(1, 2, 0, new ModelBounds(1,2,0,2,3,1)),
+                        new Element(1, 4, 0, new ModelBounds(1,4,0,2,5,1)));
+            }
+            @Override protected void renderSlice(Slice slice, Context context) {}
+            @Override protected Matrix4f localTransform(float partial) { return new Matrix4f().rotateZ(partial); }
+        }
+        var source = new Planned();
+        var first = source.snapshot(LayerLayout.ASSEMBLED, 0);
+        var rotated = source.snapshot(LayerLayout.ASSEMBLED, .7f);
+        assertNotEquals(first.bounds(), rotated.bounds());
+        for (int i=0;i<100;i++) source.snapshot(LayerLayout.ASSEMBLED.range(4,4).separation(i*.02), .4f);
+        assertEquals(1,source.reads,"Unchanged geometry was scanned every displayed frame");
+        source.snapshot(LayerLayout.ASSEMBLED.axis(LayerLayout.Axis.X),0);
+        assertEquals(2,source.reads,"Each axis builds a separate layer plan");
+        source.key=new Object();source.snapshot(LayerLayout.ASSEMBLED,0);
+        assertEquals(3,source.reads,"Changed geometry must invalidate its cached layer plan");
+    }
     private static final class Source extends LayeredModelSource {
         private final List<Element> geometry = List.of(
                 new Element(-2, -3, 4, new ModelBounds(-2, -3, 4, -1, -2, 5)),

@@ -55,6 +55,21 @@ UI 自动化与世界自动化是独立任务。用隔离世界运行，查看 J
 三种模式中跨 tick 的角度与实际几何深度像素都在变化。两种 smoke 分别写入
 `debug/external-schematic/report.json` 与 `debug/windmill/report.json`。
 
+性能与缓存验收（使用独立游戏目录，保持蓝图/分辨率/相机一致）：
+
+```sh
+JAVA_TOOL_OPTIONS='-Dkasuga.testSchematicPerformance=true -Dkasuga.schematicPerformance.output=/absolute/path/to/report' \
+  ./gradlew :modules:create:runClientHeadless -PkasugaPreviewSchematic=/absolute/path/to/structure.nbt \
+  -PkasugaClientDirectory=/absolute/path/to/isolated-client -PkasugaQuickPlayWorld=preview
+JAVA_TOOL_OPTIONS='-Dkasuga.testGeometryCache=true' \
+  ./gradlew :modules:create:runClientHeadless -PkasugaPreviewSchematic=/absolute/path/to/structure.nbt \
+  -PkasugaClientDirectory=/absolute/path/to/isolated-client -PkasugaQuickPlayWorld=preview
+```
+
+性能报告分别列出完整、局部层、局部爆炸和全部爆炸的首帧、稳态 CPU/提交纳秒、分配量与 JFR；
+它们是预览绘制耗时，不是纯 GPU 时间或游戏 FPS。缓存验收在同帧对比即时/缓存 RGBA，
+检查改变视图/间距不重建几何、实际资源重载后重建以及关闭后 VBO 回收。
+
 The development-only gallery uses the public source and scene APIs. `/kasuga_create_gallery`
 opens a floating native Create contraption in a disposable dimension with creative flight;
 `/kasuga_create_gallery stop` restores the original player state. It is a visual model, with no

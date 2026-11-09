@@ -27,6 +27,16 @@ public class BlockModelSource extends LayeredModelSource {
     protected final Map<BlockPos, BlockEntity> blockEntities = new LinkedHashMap<>();
     protected final PreviewLevel level;
     private final BlockPos origin;
+    private final Map<SliceKey,CachedBlockGeometry> geometry = new java.util.HashMap<>();
+    private final Map<SliceKey,List<Element>> entitySlices = new java.util.HashMap<>();
+    private long bakedGeneration = -1;
+    private LayerLayout.Axis cachedAxis;
+    private record SliceKey(LayerLayout.Axis axis,int layer,boolean isolated) {
+        static SliceKey of(Slice slice) { return new SliceKey(slice.isolated()?slice.axis():LayerLayout.Axis.Y, slice.isolated()?slice.coordinate():0,slice.isolated()); }
+    }
+    private long geometryBuilds;
+    /** Diagnostic count: camera, layout spacing and time changes must not retessellate static geometry. */
+    public long geometryBuilds() { return geometryBuilds; }
 
     public BlockModelSource(Level host, List<StructureBlockInfo> infos) {
         this(host, infos, BlockPos.ZERO);
@@ -41,7 +51,9 @@ public class BlockModelSource extends LayeredModelSource {
             if (states.put(info.pos().immutable(), info.state()) != null)
                 throw new IllegalArgumentException("Duplicate structure position " + info.pos());
         }
-        blocks = Map.copyOf(states);
+        // BlockPos hashes are highly clustered for dense structures. MapN's linear probing can
+        // turn neighbor reads into long scans; keep an immutable facade over a bucketed map.
+        blocks = java.util.Collections.unmodifiableMap(new java.util.HashMap<>(states));
         elements = blocks.keySet().stream().map(p -> p.subtract(origin)).map(p -> new Element(p.getX(), p.getY(), p.getZ(),
                 new ModelBounds(p.getX(), p.getY(), p.getZ(), (double) p.getX() + 1, (double) p.getY() + 1, (double) p.getZ() + 1))).toList();
         validateSpan(elements);
@@ -68,6 +80,7 @@ public class BlockModelSource extends LayeredModelSource {
     }
 
     @Override protected List<Element> elements() { return elements; }
+    @Override protected Object geometryKey() { return elements; }
     @Override protected java.util.Optional<BlockHit> pickSlice(Slice slice, net.minecraft.world.phys.Vec3 from, net.minecraft.world.phys.Vec3 to) {
         var base = new net.minecraft.world.phys.Vec3(origin.getX(), origin.getY(), origin.getZ());
         var start = from.add(base); var end = to.add(base);
@@ -94,9 +107,38 @@ public class BlockModelSource extends LayeredModelSource {
     @Nullable public BlockEntity blockEntity(BlockPos position) { return blockEntities.get(position); }
 
     @Override protected void renderSlice(Slice slice, Context context) {
-        renderBlocks(slice, context);
-        renderFluids(slice, context);
+        drawStatic(slice,context,false);
         renderBlockEntities(slice, context);
+    }
+    @Override protected void renderAssembled(Context context) {
+        var slice = new Slice(LayerLayout.Axis.Y,0,elements,false);
+        drawStatic(slice,context,true); renderBlockEntities(slice,context);
+    }
+    protected void renderStaticAssembled(Context context) {
+        var slice = new Slice(LayerLayout.Axis.Y,0,elements,false);
+        renderBlocks(slice,context);renderFluids(slice,context);
+    }
+    private void drawStatic(Slice slice,Context context,boolean assembled) {
+        if (!(context.buffers() instanceof CachedBlockGeometry.Sink)) {
+            if (assembled) renderStaticAssembled(context); else {renderBlocks(slice,context);renderFluids(slice,context);} return;
+        }
+        long generation=ModelPreviewResources.generation();
+        if (generation!=bakedGeneration || slice.isolated() && cachedAxis!=null && cachedAxis!=slice.axis()) {
+            clearGeometry();bakedGeneration=generation;
+        }
+        if (slice.isolated()) cachedAxis=slice.axis();
+        var key=SliceKey.of(slice);
+        var cached=geometry.get(key);
+        if (cached==null) {
+            cached=CachedBlockGeometry.build(local -> {
+                if (assembled) renderStaticAssembled(local); else {renderBlocks(slice,local);renderFluids(slice,local);}
+            });
+            geometry.put(key,cached);geometryBuilds++;
+        }
+        cached.render(context);
+    }
+    private void clearGeometry() {
+        geometry.values().forEach(CachedBlockGeometry::close);geometry.clear();cachedAxis=null;
     }
 
     protected void renderBlocks(Slice slice, Context context) {
@@ -163,7 +205,9 @@ public class BlockModelSource extends LayeredModelSource {
     }
 
     protected void renderBlockEntities(Slice slice, Context context) {
-        for (var element : slice.elements()) {
+        var selected=entitySlices.computeIfAbsent(SliceKey.of(slice),ignored -> slice.elements().stream()
+                .filter(element -> blockEntities.containsKey(new BlockPos(element.x(),element.y(),element.z()).offset(origin))).toList());
+        for (var element : selected) {
             var pos = new BlockPos(element.x(), element.y(), element.z()).offset(origin);
             var entity = blockEntities.get(pos);
             if (entity == null || !shouldRenderBlockEntity(entity)) continue;
@@ -198,6 +242,7 @@ public class BlockModelSource extends LayeredModelSource {
     @Override public void close() {
         if (closed) return;
         super.close();
+        clearGeometry();entitySlices.clear();
         if (level != null) level.close();
         blockEntities.clear();
     }

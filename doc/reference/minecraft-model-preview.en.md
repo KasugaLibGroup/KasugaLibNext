@@ -68,6 +68,13 @@ Model appearance/connected textures always use the full original neighbor contex
 filter cut-face visibility while retaining stored block states. Create's cached schematic renderer
 has a separate 1048576-cell volume bound; the actual block count limit remains unchanged.
 
+Static block/fluid geometry is cached per assembled model or axis/layer. View changes and explosion
+spacing update matrices; block entities, actors, contraption rotation and animated textures remain live.
+Transparent quads retain the shared sort. New layouts build once; reload rebuilds geometry and
+close/world changes release it. Assembled Create schematics retain native live directional shading.
+Custom `LayeredModelSource` subclasses can opt into cached planning with an immutable `geometryKey()`;
+replace the key when geometry changes. The default `null` preserves live per-frame planning.
+
 ```java
 var combined = MinecraftModelSources.compose(
         new MinecraftModelSources.Placement(structure, new Matrix4f()),

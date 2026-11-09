@@ -68,6 +68,12 @@ preview.setLayers(LayerLayout.ASSEMBLED);                 // 恢复原状
 预览不会 tick 方块实体、播放声音、发送包或改变真实实体姿态。
 Create 缓存蓝图 renderer 的 bounding volume 单独限制为 1048576 格；实际方块数仍遵循上述上限。
 
+静态方块和流体几何按完整模型或轴/层缓存；旋转、平移、缩放和爆炸间距只改变显示矩阵。
+方块实体、actor、真实 Contraption 转角和动画贴图仍继续更新，透明四边形保留共享排序。
+首次进入一种层布局需要构建几何；资源重载会重建缓存，关闭或换世界会释放。
+Create 完整蓝图保留原生的实时方向光着色。自定义 `LayeredModelSource` 可用 `geometryKey()`
+返回不可变几何的身份值，几何改变时换 key；默认 `null` 保留动态逐帧规划。
+
 同一个画布里组合 UML 模型与 Minecraft 内容：
 
 ```java

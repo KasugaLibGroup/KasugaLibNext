@@ -64,7 +64,7 @@ public final class PreviewLevel extends Level {
                 host.dimensionTypeRegistration(), host.getProfilerSupplier(), true, false, 0, 0);
         if (states.size() > MinecraftModelSources.MAX_BLOCKS) throw new IllegalArgumentException("Too many preview blocks");
         this.host = host;
-        this.blocks = Map.copyOf(states);
+        this.blocks = java.util.Collections.unmodifiableMap(new HashMap<>(states));
         int min = states.keySet().stream().mapToInt(BlockPos::getY).min().orElse(0);
         int max = states.keySet().stream().mapToInt(BlockPos::getY).max().orElse(0);
         if ((long) max - min > MinecraftModelSources.MAX_SPAN) throw new IllegalArgumentException("Preview height exceeds limit");
