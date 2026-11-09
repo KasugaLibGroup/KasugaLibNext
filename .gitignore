@@ -60,6 +60,9 @@ logs/
 # .agents/skills/feature-impact-analysis/SKILL.md "产出位置".
 /doc/local/
 
+# User-supplied Cobalt blue music, prepared locally from the selected recording.
+/modules/modelling/src/contentTesting/resources/assets/kasuga_demo/sounds/cobalt/instant_blue.ogg
+
 # Local contentTesting model assets; keep out of commits (see AGENTS.md 4.3)
 /modules/modelling/src/contentTesting/resources/assets/kasuga_lib/models/pmx/
 /modules/modelling/src/contentTesting/resources/assets/kasuga_lib/animations/vmd/

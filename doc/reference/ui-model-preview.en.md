@@ -1,5 +1,9 @@
 # UI model previews
 
+Create machines, contraptions, schematics, vanilla structure NBT and `.litematic` files use
+`GuiModelPreview(MinecraftModelSource)`. See [Minecraft structures and Create previews](minecraft-model-preview.en.md)
+for layers, exploded views, UML composition and post-processing.
+
 `GuiModelPreview` displays a model published by the existing model loader. Resource locations and
 optional MMD entry names follow the normal registration contract. Each preview owns a local
 `ModelInstance`, material state, GPU buffers and transparent depth canvas. It does not mount its

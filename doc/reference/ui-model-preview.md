@@ -1,5 +1,9 @@
 # UI 模型预览
 
+Create 机器、ContraptionEntity、Create 蓝图、原版建筑 NBT 和 `.litematic` 使用同一个
+`GuiModelPreview(MinecraftModelSource)` 入口；逐层显示、爆炸图、混合 Kasuga 模型与后处理见
+[Minecraft 结构与 Create 模型预览](minecraft-model-preview.md)。
+
 `GuiModelPreview` 在 UI 内显示模型加载管线已发布的模型。模型资源地址和可选的 MMD 内部模型名沿用
 `model_loader` 的注册方式。预览创建独立 `ModelInstance`、材质状态、GPU 缓冲和透明深度画布；
 不会挂载到世界后端，也不会改变世界中已有实例的位置或姿态。

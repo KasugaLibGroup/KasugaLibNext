@@ -9,10 +9,24 @@ import org.spongepowered.asm.mixin.injection.At;
 
 @Mixin(RenderSystem.class)
 abstract class HeadlessRenderSystemMixin {
+    @WrapOperation(method = "flipFrame", at = @At(value = "INVOKE", target = "Lorg/lwjgl/glfw/GLFW;glfwSwapBuffers(J)V"))
+    private static void kasuga$present(long window, Operation<Void> original) {
+        // Offscreen outputs are consumed from their FBO. Swapping a hidden Cocoa window can
+        // wait indefinitely for presentation even with swap interval zero.
+        if (!HeadlessClient.enabled()) original.call(window);
+    }
+
     @WrapOperation(method = "limitDisplayFPS", at = @At(value = "INVOKE", target = "Lorg/lwjgl/glfw/GLFW;glfwWaitEventsTimeout(D)V"))
     private static void kasuga$wait(double seconds, Operation<Void> original) {
-        // GLFW Null's event wait is a no-op; MC otherwise spins until the frame deadline.
-        if (HeadlessClient.egl()) java.util.concurrent.locks.LockSupport.parkNanos(Math.max(1, (long) (seconds * 1_000_000_000L)));
-        else original.call(seconds);
+        // A hidden macOS window can remain in GLFW's native event wait after
+        // focus is lost, even though Minecraft's active-window query is forced
+        // true. Headless clients do not need native event delivery, so use the
+        // same deterministic frame pacing for both hidden and EGL backends.
+        if (HeadlessClient.enabled()) {
+            java.util.concurrent.locks.LockSupport.parkNanos(Math.max(1,
+                    (long) (seconds * 1_000_000_000L)));
+        } else {
+            original.call(seconds);
+        }
     }
 }

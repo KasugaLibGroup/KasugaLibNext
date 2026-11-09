@@ -1,0 +1,16 @@
+{
+  "vertex": "kasuga_lib:water/clear_surface",
+  "fragment": "kasuga_lib:water/clear_surface",
+  "samplers": [{"name":"SceneSampler"},{"name":"DepthSampler"},{"name":"HeightSampler"}],
+  "uniforms": [
+    {"name":"InverseViewProjection","type":"matrix4x4","count":16,"values":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},
+    {"name":"ViewProjection","type":"matrix4x4","count":16,"values":[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},
+    {"name":"Eye","type":"float","count":3,"values":[0,0,0]},
+    {"name":"WaterDomain","type":"float","count":4,"values":[0,0,48,64.32]},
+    {"name":"Time","type":"float","count":1,"values":[0]},
+    {"name":"CellSize","type":"float","count":1,"values":[0.25]},
+    {"name":"WaterAbsorption","type":"float","count":3,"values":[3.6,1.6,0.24]},
+    {"name":"WaterScattering","type":"float","count":3,"values":[0.008,0.075,0.46]},
+    {"name":"ShorelineFoam","type":"float","count":1,"values":[0]}
+  ]
+}

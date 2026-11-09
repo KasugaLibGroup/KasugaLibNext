@@ -2,6 +2,7 @@ package lib.kasuga.rendering.models.mc.dynamic.physics;
 
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.GenericRigidBody;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.BodyShape;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.Block;
@@ -37,21 +38,25 @@ public final class MinecraftBlockRigidBody {
 
     private final BlockState state;
     private final GenericRigidBody body;
+    private final BlockPos lightAnchor;
+    private int lastLight;
+    private final PhysicsLightSampler.Tracker lighting = new PhysicsLightSampler.Tracker();
 
     private MinecraftBlockRigidBody(BlockState state, Vec3 center, float mass,
-                                    List<? extends BodyShape> collisionShapes) {
+                                    List<? extends BodyShape> collisionShapes, BlockPos lightAnchor) {
         this.state = state;
         this.body = GenericRigidBody.compound(collisionShapes, mass)
                 .at((float) center.x, (float) center.y, (float) center.z)
                 .friction(blockFriction(state))
                 .restitution(0.05f)
                 .filter(COLLISION_GROUP, 0);
+        this.lightAnchor = Objects.requireNonNull(lightAnchor, "lightAnchor").immutable();
     }
 
     /** Creates a falling/tumbling physics block at the supplied world-space center. */
     public static MinecraftBlockRigidBody spawnDynamic(BlockState state, Vec3 center) {
         return new MinecraftBlockRigidBody(state, center, blockMass(state),
-                List.of(new BodyShape.Box(BLOCK_BOX)));
+                List.of(new BodyShape.Box(BLOCK_BOX)), anchor(center));
     }
 
     /**
@@ -66,7 +71,7 @@ public final class MinecraftBlockRigidBody {
             throw new IllegalArgumentException("a physics block requires a non-empty collision shape");
         }
         return new MinecraftBlockRigidBody(Objects.requireNonNull(state, "state"),
-                Objects.requireNonNull(center, "center"), blockMass(state), shapes);
+                Objects.requireNonNull(center, "center"), blockMass(state), shapes, anchor(center));
     }
 
     /** Converts a Minecraft voxel shape into local Box3D box shapes. */
@@ -124,5 +129,21 @@ public final class MinecraftBlockRigidBody {
     public BlockPos blockPosition() {
         Vector3f p = body.positionRef();
         return BlockPos.containing(p.x - HALF_EXTENT, p.y - HALF_EXTENT, p.z - HALF_EXTENT);
+    }
+
+    /** Samples the current light while preserving the last valid world-space value. */
+    public PhysicsLightSampler.Sample lightSample(ClientLevel level) {
+        Vector3f p = body.positionRef();
+        PhysicsLightSampler.Sample sample = lighting.sample(level,
+                new Vec3(p.x, p.y, p.z), new Vec3(HALF_EXTENT, HALF_EXTENT, HALF_EXTENT),
+                lightAnchor, lastLight, body.rotationRef());
+        if (!sample.fallback() && sample.packedLight() != 0) lastLight = sample.packedLight();
+        return sample;
+    }
+
+    public BlockPos lightAnchor() { return lightAnchor; }
+
+    private static BlockPos anchor(Vec3 center) {
+        return BlockPos.containing(center.x - HALF_EXTENT, center.y - HALF_EXTENT, center.z - HALF_EXTENT);
     }
 }

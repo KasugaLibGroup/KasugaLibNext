@@ -1,0 +1,5 @@
+{
+  "vertex": "kasuga_demo:minecraft_preview_tint",
+  "fragment": "kasuga_demo:minecraft_preview_tint",
+  "samplers": [{"name": "ModelColor"}, {"name": "ModelDepth"}]
+}

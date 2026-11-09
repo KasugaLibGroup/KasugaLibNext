@@ -64,6 +64,7 @@ public class UIBackend implements AutoCloseable {
 
     /** HEAD hook: consume before vanilla updates KeyMapping, opens chat, or handles Escape. */
     public static boolean interceptKey(long window, int key, int scanCode, int action, int modifiers) {
+        if (lib.kasuga.scene.SceneControls.intercept(window, key, action)) return true;
         Minecraft mc = Minecraft.getInstance();
         UIBackend backend = Constants.UI_BACKEND;
         return backend != null && window == mc.getWindow().getWindow()

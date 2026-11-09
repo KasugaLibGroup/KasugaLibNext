@@ -21,6 +21,9 @@ public final class GuiRenderScope implements AutoCloseable {
     private final VertexSorting sorting = RenderSystem.getVertexSorting();
     private final ShaderInstance shader = RenderSystem.getShader();
     private final float[] color = RenderSystem.getShaderColor().clone();
+    private final float fogStart = RenderSystem.getShaderFogStart(), fogEnd = RenderSystem.getShaderFogEnd();
+    private final float[] fog = RenderSystem.getShaderFogColor().clone();
+    private final com.mojang.blaze3d.shaders.FogShape fogShape = RenderSystem.getShaderFogShape();
     private final int program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
     private final boolean depth = GL11.glIsEnabled(GL11.GL_DEPTH_TEST), blend = GL11.glIsEnabled(GL11.GL_BLEND);
     private final boolean cull = GL11.glIsEnabled(GL11.GL_CULL_FACE), scissor = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
@@ -64,6 +67,9 @@ public final class GuiRenderScope implements AutoCloseable {
         RenderSystem.setShader(() -> shader);
         GlStateManager._glUseProgram(program);
         RenderSystem.setShaderColor(color[0], color[1], color[2], color[3]);
+        RenderSystem.setShaderFogStart(fogStart); RenderSystem.setShaderFogEnd(fogEnd);
+        RenderSystem.setShaderFogColor(fog[0], fog[1], fog[2], fog[3]);
+        RenderSystem.setShaderFogShape(fogShape);
         if (depth) RenderSystem.enableDepthTest(); else RenderSystem.disableDepthTest();
         if (blend) RenderSystem.enableBlend(); else RenderSystem.disableBlend();
         if (cull) RenderSystem.enableCull(); else RenderSystem.disableCull();

@@ -1,0 +1,15 @@
+{
+  "type": "kasuga_demo:cobalt_ocean_stage",
+  "generator": {
+    "type": "minecraft:flat",
+    "settings": {
+      "biome": "minecraft:the_void",
+      "lakes": false,
+      "features": false,
+      "structure_overrides": [],
+      "layers": [
+        {"height": 1, "block": "minecraft:air"}
+      ]
+    }
+  }
+}

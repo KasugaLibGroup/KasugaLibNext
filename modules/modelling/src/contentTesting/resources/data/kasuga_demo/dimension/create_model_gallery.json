@@ -1,0 +1,13 @@
+{
+  "type": "kasuga_demo:cobalt_stage",
+  "generator": {
+    "type": "minecraft:flat",
+    "settings": {
+      "biome": "minecraft:the_void",
+      "lakes": false,
+      "features": false,
+      "structure_overrides": [],
+      "layers": []
+    }
+  }
+}

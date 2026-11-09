@@ -15,11 +15,18 @@ import java.util.Objects;
 public final class WorldUiFramebuffer implements AutoCloseable {
     public static final float GUI_VIEW_Z = -11000;
     private final FramebufferScope.Restorer restorer;
+    private final boolean sampleDepth;
     private int framebuffer, texture, depth, width, height;
     private boolean closed;
 
     public WorldUiFramebuffer() { this(FramebufferScope.OPENGL); }
-    public WorldUiFramebuffer(FramebufferScope.Restorer restorer) { this.restorer = Objects.requireNonNull(restorer); }
+    public WorldUiFramebuffer(FramebufferScope.Restorer restorer) { this(restorer, false); }
+    public WorldUiFramebuffer(FramebufferScope.Restorer restorer, boolean sampleDepth) {
+        this.restorer = Objects.requireNonNull(restorer);
+        this.sampleDepth = sampleDepth;
+    }
+    /** Borrowed sampleable depth, or zero when this canvas uses the default renderbuffer. */
+    public int depthTextureId() { return sampleDepth ? depth : 0; }
 
     /** GUI depth stays local; one unit of padding preserves shadows at MIN/MAX_GUI_Z. */
     public static Matrix4f guiProjection(int width, int height) {
@@ -58,20 +65,32 @@ public final class WorldUiFramebuffer implements AutoCloseable {
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
             GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, nextWidth, nextHeight,
                     0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, 0L);
-            nextDepth = GL30.glGenRenderbuffers();
-            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, nextDepth);
-            GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL14.GL_DEPTH_COMPONENT24, nextWidth, nextHeight);
+            if (sampleDepth) {
+                nextDepth = GL11.glGenTextures();
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, nextDepth);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+                GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL14.GL_DEPTH_COMPONENT24, nextWidth, nextHeight,
+                        0, GL11.GL_DEPTH_COMPONENT, GL11.GL_UNSIGNED_INT, 0L);
+            } else {
+                nextDepth = GL30.glGenRenderbuffers();
+                GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, nextDepth);
+                GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL14.GL_DEPTH_COMPONENT24, nextWidth, nextHeight);
+            }
             nextFramebuffer = GL30.glGenFramebuffers();
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, nextFramebuffer);
             GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, nextTexture, 0);
-            GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT, GL30.GL_RENDERBUFFER, nextDepth);
+            if (sampleDepth) GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT, GL11.GL_TEXTURE_2D, nextDepth, 0);
+            else GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT, GL30.GL_RENDERBUFFER, nextDepth);
             if (nextTexture == 0 || nextDepth == 0 || nextFramebuffer == 0
                     || GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE) {
                 throw new IllegalStateException("Cannot allocate complete world UI canvas");
             }
         } catch (RuntimeException | Error failure) {
             if (nextFramebuffer != 0) GL30.glDeleteFramebuffers(nextFramebuffer);
-            if (nextDepth != 0) GL30.glDeleteRenderbuffers(nextDepth);
+            if (nextDepth != 0) { if (sampleDepth) GL11.glDeleteTextures(nextDepth); else GL30.glDeleteRenderbuffers(nextDepth); }
             if (nextTexture != 0) GL11.glDeleteTextures(nextTexture);
             throw failure;
         } finally {
@@ -110,7 +129,7 @@ public final class WorldUiFramebuffer implements AutoCloseable {
     private void deleteAttachments() {
         if (framebuffer != 0) GL30.glDeleteFramebuffers(framebuffer);
         if (texture != 0) GL11.glDeleteTextures(texture);
-        if (depth != 0) GL30.glDeleteRenderbuffers(depth);
+        if (depth != 0) { if (sampleDepth) GL11.glDeleteTextures(depth); else GL30.glDeleteRenderbuffers(depth); }
         framebuffer = texture = depth = 0;
     }
 

@@ -23,10 +23,9 @@ repositories {
 }
 
 useModProject(project(':modules:core'))
-// `false`: do not fold modelling's contentTesting fixtures into this mod layer. They are another
-// module's demos (PostFX presets, particle demos, the fan blocks) whose @EventBusSubscriber classes
-// would load here and pull dependencies this run configuration does not need.
-useModProject(project(':modules:modelling'), false)
+// The Create preview demos reuse modelling's selector and smoke fixtures, so both
+// main and contentTesting must share the mod layer and its runtime dependencies below.
+useModProject(project(':modules:modelling'))
 // NeoForge source-set registration is not transitive. Keep the rendering classes in the
 // same mod class loader as their Minecraft callers in dev runs and integration tests.
 useModProject(project(':modules:render-core'))
@@ -95,9 +94,24 @@ neoForge {
     runs {
         client {
             client()
+            gameDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/client'))
+            def world = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (world.isPresent()) programArguments.addAll '--quickPlaySingleplayer', world.get()
 
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        clientHeadless {
+            client()
+            gameDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/headless-client'))
+            systemProperty 'kasuga.headless', providers.gradleProperty('kasugaHeadlessBackend').getOrElse('hidden')
+            systemProperty 'kasuga.headless.fps', '60'
+            systemProperty 'java.awt.headless', 'true'
+            def world = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (world.isPresent()) programArguments.addAll '--quickPlaySingleplayer', world.get()
+            def glfw = providers.gradleProperty('kasugaHeadlessGlfwLibrary')
+            if (glfw.isPresent()) systemProperty 'org.lwjgl.glfw.libname', file(glfw.get()).absolutePath
         }
 
         server {
@@ -119,6 +133,22 @@ neoForge {
         // applies to all the run configs above
         configureEach {
             systemProperty 'forge.logging.markers', 'REGISTRIES'
+            if (providers.gradleProperty('kasugaTestMinecraftPreview').getOrElse('false').toBoolean()) {
+                systemProperty 'kasuga.testMinecraftPreview', 'true'
+            }
+            if (providers.gradleProperty('kasugaMinecraftPreviewInteractive').getOrElse('false').toBoolean()) {
+                systemProperty 'kasuga.minecraftPreview.interactive', 'true'
+            }
+            if (providers.gradleProperty('kasugaCreateGallery').getOrElse('false').toBoolean()) {
+                systemProperty 'kasuga.createGallery.auto', 'true'
+            }
+            if (providers.gradleProperty('kasugaTestCreateGallery').getOrElse('false').toBoolean()) {
+                systemProperty 'kasuga.testCreateGallery', 'true'
+            }
+            def previewSchematic = providers.gradleProperty('kasugaPreviewSchematic')
+            if (previewSchematic.isPresent()) systemProperty 'kasuga.minecraftPreview.schematic', file(previewSchematic.get()).absolutePath
+            def previewOutput = providers.gradleProperty('kasugaMinecraftPreviewOutput')
+            if (previewOutput.isPresent()) systemProperty 'kasuga.minecraftPreview.output', rootProject.file(previewOutput.get()).absolutePath
 
             logLevel = org.slf4j.event.Level.DEBUG
         }
@@ -143,6 +173,20 @@ neoForge {
     }
 }
 
+tasks.register('prepareHeadlessClient') {
+    def directory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/headless-client'))
+    doLast {
+        def config = new File(directory, 'config/fml.toml')
+        config.parentFile.mkdirs()
+        def text = config.exists() ? config.getText('UTF-8') : ''
+        text = text.replaceAll(/(?m)^\s*earlyWindowControl\s*=.*$/, '')
+        config.setText(text + '\nearlyWindowControl = false\n', 'UTF-8')
+    }
+}
+tasks.matching { it.name in ['runClientHeadless', 'prepareClientHeadlessRun'] }.configureEach {
+    dependsOn 'prepareHeadlessClient'
+}
+
 configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
@@ -159,7 +203,6 @@ dependencies {
     additionalRuntimeClasspath ("io.micronaut:micronaut-aop:4.9.10") {
         exclude group : 'org.slf4j', module: 'slf4j-api'
     }
-
     additionalRuntimeClasspath 'com.google.zxing:core:3.5.3'
 
     implementation project(":modules:inject")
