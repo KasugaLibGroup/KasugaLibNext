@@ -23,6 +23,10 @@ repositories {
 }
 
 useModProject(project(':modules:core'))
+useModProject(project(':modules:modelling'))
+useModProject(project(':modules:render-core'))
+useModProject(project(':modules:render-opengl'))
+useModProject(project(':modules:data-driven'))
 
 
 
@@ -70,9 +74,24 @@ neoForge {
     runs {
         client {
             client()
+            gameDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/client'))
+            def world = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (world.isPresent()) programArguments.addAll '--quickPlaySingleplayer', world.get()
 
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+
+        clientHeadless {
+            client()
+            gameDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/headless-client'))
+            systemProperty 'kasuga.headless', providers.gradleProperty('kasugaHeadlessBackend').getOrElse('hidden')
+            systemProperty 'kasuga.headless.fps', '60'
+            systemProperty 'java.awt.headless', 'true'
+            def world = providers.gradleProperty('kasugaQuickPlayWorld')
+            if (world.isPresent()) programArguments.addAll '--quickPlaySingleplayer', world.get()
+            def glfw = providers.gradleProperty('kasugaHeadlessGlfwLibrary')
+            if (glfw.isPresent()) systemProperty 'org.lwjgl.glfw.libname', file(glfw.get()).absolutePath
         }
 
         server {
@@ -94,6 +113,20 @@ neoForge {
         // applies to all the run configs above
         configureEach {
             systemProperty 'forge.logging.markers', 'REGISTRIES'
+            if (providers.gradleProperty('kasugaTestMinecraftPreview').getOrElse('false').toBoolean()) {
+                systemProperty 'kasuga.testMinecraftPreview', 'true'
+            }
+            if (providers.gradleProperty('kasugaMinecraftPreviewInteractive').getOrElse('false').toBoolean()) {
+                systemProperty 'kasuga.minecraftPreview.interactive', 'true'
+            }
+            if (providers.gradleProperty('kasugaCreateGallery').getOrElse('false').toBoolean()) {
+                systemProperty 'kasuga.createGallery.auto', 'true'
+            }
+            if (providers.gradleProperty('kasugaTestCreateGallery').getOrElse('false').toBoolean()) {
+                systemProperty 'kasuga.testCreateGallery', 'true'
+            }
+            def previewOutput = providers.gradleProperty('kasugaMinecraftPreviewOutput')
+            if (previewOutput.isPresent()) systemProperty 'kasuga.minecraftPreview.output', rootProject.file(previewOutput.get()).absolutePath
 
             logLevel = org.slf4j.event.Level.DEBUG
         }
@@ -106,6 +139,20 @@ neoForge {
             sourceSet(sourceSets.contentTesting)
         }
     }
+}
+
+tasks.register('prepareHeadlessClient') {
+    def directory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/headless-client'))
+    doLast {
+        def config = new File(directory, 'config/fml.toml')
+        config.parentFile.mkdirs()
+        def text = config.exists() ? config.getText('UTF-8') : ''
+        text = text.replaceAll(/(?m)^\s*earlyWindowControl\s*=.*$/, '')
+        config.setText(text + '\nearlyWindowControl = false\n', 'UTF-8')
+    }
+}
+tasks.matching { it.name in ['runClientHeadless', 'prepareClientHeadlessRun'] }.configureEach {
+    dependsOn 'prepareHeadlessClient'
 }
 
 configurations {
@@ -124,6 +171,14 @@ dependencies {
     additionalRuntimeClasspath ("io.micronaut:micronaut-aop:4.9.10") {
         exclude group : 'org.slf4j', module: 'slf4j-api'
     }
+    // The Create development host mirrors modelling's classes, so it also needs its non-mod libraries.
+    additionalRuntimeClasspath project(':modules:shader')
+    additionalRuntimeClasspath project(':modules:formula')
+    additionalRuntimeClasspath 'de.javagl:jgltf-model:2.0.4'
+    additionalRuntimeClasspath 'de.javagl:jgltf-impl-v2:2.0.4'
+    additionalRuntimeClasspath files(project(':modules:render-core').file('libs/caliko-1.3.8.jar'))
+    additionalRuntimeClasspath 'org.jgrapht:jgrapht-core:1.5.2'
+    additionalRuntimeClasspath 'com.google.zxing:core:3.5.3'
 
     implementation project(":modules:inject")
 

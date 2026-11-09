@@ -96,6 +96,8 @@ public class Constants {
         BillboardEffects.initialize(pipelines);
         BlackHoleEffects.initialize(pipelines);
         lib.kasuga.rendering.effect.builtin.cloud.CloudEffects.initialize(pipelines);
+        lib.kasuga.rendering.effect.builtin.water.WaterEffects.initialize(pipelines);
+        lib.kasuga.scene.SceneProps.initialize(pipelines);
         RenderPipelineDescriptor opaque = RenderPipelineDescriptor.builder(
                         ResourceLocation.fromNamespaceAndPath(KasugaLib.MODID, "models_opaque"),
                         RenderPhase.AFTER_ENTITIES)

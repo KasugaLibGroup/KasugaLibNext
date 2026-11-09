@@ -237,6 +237,12 @@ neoForge {
             }
             def worldUiInputSmoke = providers.gradleProperty('kasugaTestWorldUiInput')
             if (worldUiInputSmoke.isPresent()) systemProperty 'kasuga.testWorldUiInput', worldUiInputSmoke.get()
+            def minecraftPreviewSmoke = providers.gradleProperty('kasugaTestMinecraftPreview')
+            if (minecraftPreviewSmoke.isPresent()) systemProperty 'kasuga.testMinecraftPreview', minecraftPreviewSmoke.get()
+            def minecraftPreviewInteractive = providers.gradleProperty('kasugaMinecraftPreviewInteractive')
+            if (minecraftPreviewInteractive.isPresent()) systemProperty 'kasuga.minecraftPreview.interactive', minecraftPreviewInteractive.get()
+            def minecraftPreviewOutput = providers.gradleProperty('kasugaMinecraftPreviewOutput')
+            if (minecraftPreviewOutput.isPresent()) systemProperty 'kasuga.minecraftPreview.output', rootProject.file(minecraftPreviewOutput.get()).absolutePath
             def cameraPerformance = providers.gradleProperty('kasugaTestCameraPerformance')
             if (cameraPerformance.isPresent()) systemProperty 'kasuga.testCameraPerformance', cameraPerformance.get()
             def cameraMotion = providers.gradleProperty('kasugaTestCameraMotion')

@@ -1,6 +1,8 @@
 package lib.kasuga.rendering.models.mc.dynamic.physics;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import lib.kasuga.rendering.effect.RenderPipelineRegistrar;
+import lib.kasuga.rendering.effect.WorldRenderPipelineContext;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.BodyContact;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.CollisionEnvironment;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.Frames;
@@ -11,7 +13,6 @@ import lib.kasuga.rendering.models.uml.dynamic.physics.box3d.NativeBox3D;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
@@ -25,7 +26,6 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
-import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
@@ -82,6 +82,11 @@ public final class MinecraftBlockPhysics {
 
     private MinecraftBlockPhysics() {}
 
+    /** Registers the shared physics block render resources through Kasuga's pipeline API. */
+    public static void initialize(RenderPipelineRegistrar registrar) {
+        PhysicsBlockRenderer.initialize(registrar);
+    }
+
     // ------------------------------------------------------------------
     // Public control surface
     // ------------------------------------------------------------------
@@ -136,6 +141,11 @@ public final class MinecraftBlockPhysics {
 
     public static synchronized int activeCount() {
         return PROPS.size();
+    }
+
+    /** Current native contacts, without altering simulation or collision ownership. */
+    public static synchronized List<BodyContact> contacts(MinecraftBlockRigidBody prop) {
+        return world == null || !PROPS.contains(prop) ? List.of() : List.copyOf(world.contacts(prop.body()));
     }
 
     private static void Objects_requireLevel(ClientLevel level) {
@@ -356,20 +366,19 @@ public final class MinecraftBlockPhysics {
     // Rendering
     // ------------------------------------------------------------------
 
-    @SubscribeEvent
-    public static void onRenderLevelStage(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
-        Minecraft minecraft = Minecraft.getInstance();
+    /** Renders physics blocks into a host-owned Kasuga world pipeline. */
+    public static void renderInto(WorldRenderPipelineContext context) {
+        Minecraft minecraft = context.minecraft();
         List<MinecraftBlockRigidBody> snapshot;
         synchronized (MinecraftBlockPhysics.class) {
             if (PROPS.isEmpty()) return;
             snapshot = new ArrayList<>(PROPS);
         }
-        ClientLevel level = minecraft.level;
+        ClientLevel level = context.level();
         if (level == null) return;
-        PoseStack poses = event.getPoseStack();
-        MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
-        Vec3 camera = event.getCamera().getPosition();
+        PoseStack poses = context.poseStack();
+        MultiBufferSource.BufferSource buffers = context.bufferSource();
+        Vec3 camera = context.camera().getPosition();
         for (MinecraftBlockRigidBody prop : snapshot) {
             Vector3f position = prop.body().positionRef();
             Quaternionf rotation = prop.body().rotationRef();
@@ -378,11 +387,9 @@ public final class MinecraftBlockPhysics {
             poses.mulPose(rotation);
             poses.translate(-MinecraftBlockRigidBody.HALF_EXTENT,
                     -MinecraftBlockRigidBody.HALF_EXTENT, -MinecraftBlockRigidBody.HALF_EXTENT);
-            int light = LevelRenderer.getLightColor(level, prop.blockPosition());
-            minecraft.getBlockRenderer().renderSingleBlock(prop.state(), poses, buffers,
-                    light, OverlayTexture.NO_OVERLAY);
+            PhysicsBlockRenderer.renderTerrain(minecraft.getBlockRenderer(), prop.state(), poses, buffers,
+                    prop.lightSample(level), OverlayTexture.NO_OVERLAY, level, prop.position(), rotation, prop.lightAnchor());
             poses.popPose();
         }
-        buffers.endBatch();
     }
 }
