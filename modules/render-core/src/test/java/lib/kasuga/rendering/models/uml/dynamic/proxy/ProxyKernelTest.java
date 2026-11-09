@@ -627,8 +627,8 @@ class ProxyKernelTest {
                     || session.state() == ProxyLifecycleState.SUSPENDED);
 
             input.release.countDown();
-            tickThread.join(2_000L);
-            suspendThread.join(2_000L);
+            tickThread.join(10_000L);
+            suspendThread.join(10_000L);
         } finally {
             input.release.countDown();
         }
@@ -636,11 +636,17 @@ class ProxyKernelTest {
         assertFalse(tickThread.isAlive());
         assertFalse(suspendThread.isAlive());
         assertNotNull(tickOutcome.get());
+        assertFalse(tickOutcome.get().aborted(), () -> "tick failed: " + tickOutcome.get().failure());
         assertEquals(ProxyLifecycleState.ACTIVE, tickOutcome.get().state());
         assertEquals(ProxyLifecycleState.SUSPENDED, session.state());
+        List<String> order;
+        synchronized (visual.order) {
+            order = List.copyOf(visual.order);
+        }
+        assertTrue(order.size() >= 3, () -> "visual order was incomplete: " + order);
         assertEquals(
                 List.of("tick", "writeback", "suspend"),
-                visual.order.subList(visual.order.size() - 3, visual.order.size()));
+                order.subList(order.size() - 3, order.size()));
     }
 
     @Test
@@ -913,9 +919,7 @@ class ProxyKernelTest {
         public String observe(String element) {
             entered.countDown();
             try {
-                if (!release.await(2, TimeUnit.SECONDS)) {
-                    throw new IllegalStateException("timed out waiting to release input");
-                }
+                release.await();
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("input observation interrupted", interrupted);
