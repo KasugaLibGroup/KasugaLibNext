@@ -7,6 +7,7 @@ This section holds recipes and examples for readers arriving with a concrete tas
 | [Build and Verification Entry](verification.md) | Gradle tasks, standalone GL, client acceptance, and evidence boundaries |
 | [Real-Asset Outfit Swap and MC Equipment Example](wardrobe-example.md) | RibbonDress texture/model swap, MC held items, client screenshots, and performance comparison |
 | [Content Integration: Block and Item Model Resources](model-content.md) | blockstate variant rules, the placeholder model's role, the two item-model forms, three-step BEWLR setup, and the display transform table |
+| [Integrating Content With the Proxy Kernel](proxy-integration.en.md) | Define ports, assemble a composition, register a session, attach automatically, manage lifecycle, and troubleshoot |
 | [Offscreen Output and Multi-Camera Rendering](offline-rendering.md) | API, startup, and operating reference; standalone windows and FBO consumption |
 | [Data-Driven Getting Started](data-driven/intro.md) | From an empty directory to a block that moves: the two phases, the minimal path, and common errors |
 | [Path 1: Adding Content with Data-Driven Files](data-driven/guide-content.md) | Add blocks, items, groups, state machines, and animation clips with JSON alone, without writing Java |

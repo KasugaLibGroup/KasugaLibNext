@@ -20,6 +20,7 @@ References are organized against the current source; historical performance/clie
 | [Cameras and animation](camera-animation.md) | Direct control, keyframes, JSON, shared timeline, and model clip binding |
 | [FSM](fsm.md) | State variables, layers/states/transitions, pose schema, and host binding |
 | [Multiplexer](multiplexer.md) | Variant selection DSL, Builder, instance state, and FSM composition |
+| [Proxy integration guide](../guides/proxy-integration.en.md) | Definition/type registration, automatic session attachment, typed ports, tick/frame, lifecycle, and troubleshooting |
 
 ## Rendering and Output
 

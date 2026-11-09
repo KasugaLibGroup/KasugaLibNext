@@ -20,6 +20,7 @@
 | [摄像机与动画](camera-animation.md) | 直接控制、关键帧、JSON、共享时间轴与模型片段绑定 |
 | [FSM](fsm.md) | 状态变量、层/状态/转移、姿态 schema 与宿主绑定 |
 | [Multiplexer](multiplexer.md) | 变体选择 DSL、Builder、实例状态及 FSM 组合 |
+| [Proxy 接入指南](../guides/proxy-integration.md) | Definition/Type 注册、Session 自动挂载、typed Port、tick/frame、生命周期与故障排查 |
 
 ## 渲染与输出
 
