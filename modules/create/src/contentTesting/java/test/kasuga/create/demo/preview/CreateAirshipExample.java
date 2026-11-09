@@ -31,11 +31,11 @@ public final class CreateAirshipExample {
         for (int x = -3; x <= 3; x++) for (int z = -6; z <= 6; z++)
             put(blocks, x, 0, z, block(Math.abs(x) == 3 || Math.abs(z) == 6 ? "create:brass_casing" : "minecraft:spruce_planks"));
         for (int x : new int[]{-3, 3}) for (int z : new int[]{-4, 4}) {
-            for (int y = 1; y <= 6; y++) put(blocks, x, y, z, block("create:metal_girder"));
+            for (int y = 1; y <= 6; y++) put(blocks, x, y, z, girder("y"));
             for (int xx = -3; xx <= 3; xx++) put(blocks, xx, 6, z, block("create:andesite_casing"));
         }
         for (int z = -4; z <= 4; z++) for (int x : new int[]{-3, 3})
-            put(blocks, x, 6, z, block("create:metal_girder"));
+            put(blocks, x, 6, z, girder("z"));
         // Twin exposed drive trains, including large wheels and shafts with native BE renderers.
         for (int x : new int[]{-5, 5}) {
             for (int z = -4; z <= 4; z++) {
@@ -56,7 +56,7 @@ public final class CreateAirshipExample {
                 }
             }
             for (int z = -4; z <= 4; z += 4) for (int xx = Math.min(x, -3); xx <= Math.max(x, 3); xx++)
-                if (Math.signum(xx) == Math.signum(x) && Math.abs(xx) >= 3) put(blocks, xx, 1, z, block("create:metal_girder"));
+                if (Math.signum(xx) == Math.signum(x) && Math.abs(xx) >= 3) put(blocks, xx, 1, z, girder("x"));
         }
         // Glazed cabin, a visible central flywheel train, and a row of downward deployers.
         for (int x = -1; x <= 1; x++) for (int z = 2; z <= 5; z++) {
@@ -93,6 +93,12 @@ public final class CreateAirshipExample {
     }
     private static BlockState block(String name) {
         return BuiltInRegistries.BLOCK.getOptional(ResourceLocation.parse(name)).orElseThrow(() -> new IllegalArgumentException("Missing demo block " + name)).defaultBlockState();
+    }
+    private static BlockState girder(String axis) {
+        var state = property(block("create:metal_girder"), "axis", axis);
+        state = property(property(state, "top", "true"), "bottom", "true");
+        if (!axis.equals("y")) state = property(state, axis, "true");
+        return state;
     }
     @SuppressWarnings({"rawtypes", "unchecked"}) private static BlockState property(BlockState state, String name, String value) {
         Property property = state.getBlock().getStateDefinition().getProperty(name);

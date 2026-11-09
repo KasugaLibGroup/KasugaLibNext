@@ -103,6 +103,7 @@ public class BlockModelSource extends LayeredModelSource {
         var dispatcher = Minecraft.getInstance().getBlockRenderer();
         var random = RandomSource.create(42);
         var view = renderView(slice);
+        var appearance = appearanceView(slice);
         for (Element element : slice.elements()) {
             var pos = new BlockPos(element.x(), element.y(), element.z()).offset(origin);
             BlockState state = blocks.get(pos);
@@ -112,7 +113,7 @@ public class BlockModelSource extends LayeredModelSource {
                 context.pose().translate(element.x(), element.y(), element.z());
                 if (state.getRenderShape() == RenderShape.MODEL) {
                     var model = dispatcher.getBlockModel(state);
-                    var data = model.getModelData(view, pos, state, entity == null ? ModelData.EMPTY : entity.getModelData());
+                    var data = model.getModelData(appearance, pos, state, entity == null ? ModelData.EMPTY : entity.getModelData());
                     random.setSeed(state.getSeed(pos));
                     for (RenderType type : model.getRenderTypes(state, random, data)) {
                         dispatcher.renderBatched(state, pos, view, context.pose(), context.buffers().getBuffer(type), true,
@@ -122,6 +123,8 @@ public class BlockModelSource extends LayeredModelSource {
             } finally { context.pose().popPose(); }
         }
     }
+    /** Model appearance is distinct from the view used to reveal cut faces. */
+    protected net.minecraft.world.level.BlockAndTintGetter appearanceView(Slice slice) { return level; }
 
     private net.minecraft.world.level.BlockAndTintGetter renderView(Slice slice) {
         // Neighbor culling sees just this slice, so faces hidden in the assembled structure become visible.

@@ -49,6 +49,7 @@ public final class CreateModelGallery {
             try {
                 next.stage = MinecraftStage.open(player, DIMENSION, new Vec3(0, 106, 24), 180, 0, stage -> {});
                 if (session != next) { next.stage.close(); return; }
+                next.nativeWindmill = CreateWindmillExample.install(next.stage);
                 player.setGameMode(GameType.CREATIVE);
                 player.getAbilities().flying = true; player.onUpdateAbilities();
                 next.entered = true;
@@ -63,6 +64,31 @@ public final class CreateModelGallery {
         Minecraft.getInstance().setScreen(new InspectionScreen(session)); return true;
     }
     static LayerLayout layout() { return session.layout; }
+    static com.simibubi.create.content.contraptions.ControlledContraptionEntity windmillEntity() {
+        var current = session;
+        if (current == null || current.nativeWindmill == null || Minecraft.getInstance().level == null) return null;
+        var entity = Minecraft.getInstance().level.getEntity(current.nativeWindmill.entityId);
+        return entity instanceof com.simibubi.create.content.contraptions.ControlledContraptionEntity rotor ? rotor : null;
+    }
+    static boolean selectWindmill(boolean windmill) {
+        var current = session;
+        if (current == null || windmill && current.windmillEntry == null) return false;
+        current.windmillSelected = windmill;
+        current.rigEntry.visible(!windmill);
+        if (current.windmillEntry != null) current.windmillEntry.visible(windmill);
+        current.entry = windmill ? current.windmillEntry : current.rigEntry;
+        current.baseTransform = windmill ? current.windmillBase : current.rigBase;
+        current.minimumLayer = windmill ? current.windmillMinimum : current.rigMinimum;
+        current.maximumLayer = windmill ? current.windmillMaximum : current.rigMaximum;
+        current.layer = current.maximumLayer;
+        current.layout = LayerLayout.ASSEMBLED; current.scale = 1; current.all = current.cumulative = true; current.selected = null;
+        current.entry.layers(current.layout).transform(current.baseTransform);
+        return true;
+    }
+    @SubscribeEvent public static void serverTick(net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) {
+        var current = session;
+        if (current != null && current.nativeWindmill != null) current.nativeWindmill.tick();
+    }
     @SubscribeEvent public static void key(net.neoforged.neoforge.client.event.InputEvent.Key event) {
         if (active() && Minecraft.getInstance().screen == null && event.getKey() == org.lwjgl.glfw.GLFW.GLFW_KEY_I
                 && event.getAction() == org.lwjgl.glfw.GLFW.GLFW_PRESS) openControls();
@@ -87,7 +113,7 @@ public final class CreateModelGallery {
     @SubscribeEvent public static void hud(net.neoforged.neoforge.client.event.RenderGuiEvent.Post event) {
         var current = session; var mc = Minecraft.getInstance();
         if (current == null || current.scene == null) return;
-        event.getGuiGraphics().drawString(mc.font, "Create gallery | I layers / explode | Click inspect | WASD fly | Space up | Shift down", 8, 8, 0xFFF0F8FF);
+        event.getGuiGraphics().drawString(mc.font, "Create gallery | I layers / explode / windmill | Click inspect | WASD fly | Space up | Shift down", 8, 8, 0xFFF0F8FF);
         if (current.selected != null && System.nanoTime() < current.selectedUntil)
             lib.kasuga.rendering.models.mc.backend.ui.ModelBlockInfo.draw(event.getGuiGraphics(), mc.font, current.selected, 8, 24);
     }
@@ -101,7 +127,23 @@ public final class CreateModelGallery {
         if (mc.level == null || mc.player == null || current.failure != null) { stop(); return; }
         if (current.scene != null && !mc.level.dimension().equals(DIMENSION)) { stop(); return; }
         if (!current.entered || !mc.level.dimension().equals(DIMENSION) || mc.getOverlay() != null) return;
-        if (current.scene != null) return;
+        if (current.scene != null) {
+            var rotor = windmillEntity();
+            if (current.windmillEntry == null && rotor != null && rotor.getContraption() != null && rotor.isReadyForRender()) {
+                var windmill = lib.kasuga.create.client.model.CreateModelSources.contraption(rotor.getContraption());
+                try {
+                    var bounds = windmill.snapshot(LayerLayout.ASSEMBLED, 0).bounds();
+                    var center = bounds.minimum().add(bounds.maximum()).mul(.5f);
+                    current.windmillBase = new Matrix4f().translate(-center.x, -center.y, -center.z);
+                    var layered = windmill.snapshot(LayerLayout.ASSEMBLED.separation(.001), 0);
+                    current.windmillMinimum = layered.parts().stream().mapToInt(part -> part.layer()).min().orElse(0);
+                    current.windmillMaximum = layered.parts().stream().mapToInt(part -> part.layer()).max().orElse(0);
+                    current.windmillEntry = current.scene.add(windmill, CENTER).transform(current.windmillBase).visible(false);
+                    LogUtils.getLogger().info("CREATE_WINDMILL_PREVIEW_READY entity={} backlink={}", rotor.getId(), rotor.getContraption().entity == rotor);
+                } catch (Exception error) { windmill.close(); LogUtils.getLogger().error("Cannot preview native windmill", error); }
+            }
+            return;
+        }
         lib.kasuga.rendering.models.mc.scene.MinecraftModelSource source = null;
         try {
             source = CreateAirshipExample.create();
@@ -112,8 +154,10 @@ public final class CreateModelGallery {
             current.maximumLayer = layerFrame.parts().stream().mapToInt(part -> part.layer()).max().orElse(0);
             current.layer = current.maximumLayer;
             current.baseTransform = new Matrix4f().translate(-center.x, -center.y, -center.z);
+            current.rigBase = current.baseTransform; current.rigMinimum = current.minimumLayer; current.rigMaximum = current.maximumLayer;
             current.scene = SceneModels.open(mc.level);
             current.entry = current.scene.add(source, CENTER).transform(current.baseTransform);
+            current.rigEntry = current.entry;
             LogUtils.getLogger().info("CREATE_MODEL_GALLERY_READY center={} layers={}..{}", CENTER, bounds.minY(), bounds.maxY());
         } catch (Exception failure) {
             if (source != null && current.entry == null) source.close();
@@ -125,7 +169,10 @@ public final class CreateModelGallery {
         if (previous == null) return;
         if (Minecraft.getInstance().screen instanceof InspectionScreen) Minecraft.getInstance().setScreen(null);
         if (previous.scene != null) previous.scene.close();
-        previous.server.execute(() -> { if (previous.stage != null) previous.stage.close(); });
+        previous.server.execute(() -> {
+            if (previous.nativeWindmill != null) previous.nativeWindmill.close();
+            if (previous.stage != null) previous.stage.close();
+        });
     }
     private static boolean reject(String text) {
         if (Minecraft.getInstance().player != null) Minecraft.getInstance().player.displayClientMessage(Component.literal(text), false);
@@ -136,7 +183,12 @@ public final class CreateModelGallery {
         volatile MinecraftStage stage;
         volatile boolean entered;
         volatile String failure;
+        volatile CreateWindmillExample nativeWindmill;
         SceneModels scene; SceneModels.Entry entry;
+        SceneModels.Entry rigEntry, windmillEntry;
+        Matrix4f rigBase, windmillBase;
+        int rigMinimum, rigMaximum, windmillMinimum, windmillMaximum;
+        boolean windmillSelected;
         lib.kasuga.rendering.models.mc.scene.MinecraftModelSource.BlockHit selected;
         long selectedUntil;
         LayerLayout layout = LayerLayout.ASSEMBLED;
@@ -186,6 +238,10 @@ public final class CreateModelGallery {
             }).bounds(200, bottom - 28, 70, 20).build());
             addRenderableWidget(net.minecraft.client.gui.components.Button.builder(Component.literal("Done / fly"), button -> onClose())
                     .bounds(278, bottom - 28, 90, 20).build());
+            var target = addRenderableWidget(net.minecraft.client.gui.components.Button.builder(Component.literal(state.windmillSelected ? "Windmill / Rig" : "Rig / Windmill"), button -> {
+                if (selectWindmill(!state.windmillSelected)) rebuildWidgets();
+            }).bounds(376, bottom - 28, 112, 20).build());
+            target.active = state.windmillEntry != null;
         }
         @Override public void render(net.minecraft.client.gui.GuiGraphics graphics, int x, int y, float partialTick) {
             graphics.fill(4, height - 85, width - 4, height - 4, 0xDD101926);

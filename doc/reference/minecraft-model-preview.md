@@ -33,8 +33,10 @@ minecraft.setScreen(new MinecraftModelPreviewScreen(Component.literal("末地城
 | 外部投影 / 自定义方块数据 | `MinecraftModelSources.blocks(level, List<StructureBlockInfo>)` |
 | Create 机器区域 | `CreateModelSources.machine(level, minimum, maximum)` |
 | Create 活动结构实体 | `CreateModelSources.contraption(AbstractContraptionEntity)` |
+| 已关联实体的 Create Contraption | `CreateModelSources.contraption(Contraption)`，使用 Create 自己的 `entity` 反向引用 |
 | Create 蓝图物品 | `CreateModelSources.schematic(level, ItemStack)` |
 | Create 已加载的蓝图模板 | `CreateModelSources.schematic(level, StructureTemplate)` |
+| 本机 Create 结构 NBT | `CreateModelSources.schematic(level, Path)` |
 
 Create 工厂位于可选的 `modules/create`，包名为 `lib.kasuga.create.client.model`。公共建模模块
 不直接依赖 Create。完整 Contraption 使用 Create 自己的 `ContraptionRenderInfo` 几何与
@@ -61,8 +63,10 @@ preview.setLayers(LayerLayout.ASSEMBLED);                 // 恢复原状
 
 层坐标属于源的局部空间，默认按 Y 分组。空层间隔仍会保留；隐藏层不改变其余层的位移，
 相机始终使用整份爆炸模型的边界，逐层显示时不会反复缩放。被剥开的层会重新暴露原来被邻层遮住的面。
+连接纹理和模型数据始终读取完整原结构；分层仅改变切面遮挡，保留方块本身的朝向与连接状态。
 默认最多接受 131072 个方块、4096 层、每轴 4096 格跨度，以及解压后 64 MiB 的 NBT。
 预览不会 tick 方块实体、播放声音、发送包或改变真实实体姿态。
+Create 缓存蓝图 renderer 的 bounding volume 单独限制为 1048576 格；实际方块数仍遵循上述上限。
 
 同一个画布里组合 UML 模型与 Minecraft 内容：
 
@@ -125,6 +129,8 @@ scene.pick(eye, eye.add(direction.scale(64)), partialTick).ifPresent(hit -> insp
 Create gallery 里准星对准模型后左击，会显示 5 秒信息，点击不会破坏方块。
 按 I 打开透明的世界模型控制面板，支持逐层/单层/全部、爆炸间距、整体缩放与重置；
 Done 或 Esc 关闭后继续绕行，当前分层和爆炸状态仍然保留。
+面板中的 `Rig / Windmill` 可切换真实风车实体：原生轴承负责 tick 与同步，显示源持续读取
+`ControlledContraptionEntity` 的转角，分层、单层和爆炸图仍继续旋转。
 
 验证命令：
 

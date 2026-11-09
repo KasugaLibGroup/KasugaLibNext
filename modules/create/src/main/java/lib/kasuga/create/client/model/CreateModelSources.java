@@ -42,6 +42,14 @@ public final class CreateModelSources {
         if (!entity.level().isClientSide()) throw new IllegalArgumentException("Contraption preview requires a client entity");
         return new ContraptionSource(Objects.requireNonNull(entity));
     }
+    /** Uses Create's own Contraption -> entity backlink; no parallel entity registry is needed. */
+    public static MinecraftModelSource contraption(Contraption contraption) {
+        Objects.requireNonNull(contraption);
+        var entity = contraption.entity;
+        if (entity == null || entity.getContraption() != contraption)
+            throw new IllegalArgumentException("Contraption is not attached to its Create entity");
+        return contraption(entity);
+    }
 
     /** Copies the item, loads through Create's loader, and applies its mirror/rotation to a private schematic level. */
     public static MinecraftModelSource schematic(Level host, ItemStack schematic) {
@@ -55,6 +63,15 @@ public final class CreateModelSources {
 
     public static MinecraftModelSource schematic(Level host, StructureTemplate template) {
         return new SchematicSource(host, template, new net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings());
+    }
+    /** Read-only Create/structure NBT import with the same bounded palette validation as other sources. */
+    public static MinecraftModelSource schematic(Level host, java.nio.file.Path path) throws java.io.IOException {
+        var tag = net.minecraft.nbt.NbtIo.readCompressed(path, net.minecraft.nbt.NbtAccounter.create(SchematicModelData.MAX_NBT_BYTES));
+        SchematicModelData.structure(tag, host.holderLookup(net.minecraft.core.registries.Registries.BLOCK), 0);
+        tag = net.minecraft.util.datafix.DataFixTypes.STRUCTURE.updateToCurrentVersion(net.minecraft.util.datafix.DataFixers.getDataFixer(),
+                tag, net.minecraft.nbt.NbtUtils.getDataVersion(tag, 500));
+        var template = new StructureTemplate(); template.load(host.holderLookup(net.minecraft.core.registries.Registries.BLOCK), tag);
+        return schematic(host, template);
     }
 
     /** Create machines already in the world retain their state/speed in private block entities. */
@@ -208,7 +225,7 @@ public final class CreateModelSources {
         var size = template.getSize();
         if (size.getX() <= 0 || size.getY() <= 0 || size.getZ() <= 0 || size.getX() > MinecraftModelSources.MAX_SPAN
                 || size.getY() > MinecraftModelSources.MAX_SPAN || size.getZ() > MinecraftModelSources.MAX_SPAN
-                || (long) size.getX() * size.getY() * size.getZ() > MinecraftModelSources.MAX_BLOCKS)
+                || (long) size.getX() * size.getY() * size.getZ() > 1048576)
             throw new IllegalArgumentException("Invalid Create schematic size");
         SchematicLevel level = new SchematicLevel(host) {
             @Override public Iterable<BlockEntity> getRenderedBlockEntities() { return List.of(); }

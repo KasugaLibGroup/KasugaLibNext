@@ -69,6 +69,14 @@ public final class MinecraftPreviewClientSmoke {
         try {
             if (!started) {
                 started = true;
+                class Neighbors extends BlockModelSource {
+                    Neighbors() { super(mc.level, java.util.List.of(
+                            new net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo(net.minecraft.core.BlockPos.ZERO, net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), null),
+                            new net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo(net.minecraft.core.BlockPos.ZERO.above(), net.minecraft.world.level.block.Blocks.GLASS.defaultBlockState(), null))); }
+                    boolean preservesAppearance() { return appearanceView(new Slice(LayerLayout.Axis.Y, 0, geometryElements(), true))
+                            .getBlockState(net.minecraft.core.BlockPos.ZERO.above()).is(net.minecraft.world.level.block.Blocks.GLASS); }
+                }
+                try (var probe = new Neighbors()) { check(probe.preservesAppearance(), "Layer filtering changed the neighbors used by connected-texture model data"); }
                 SCENARIOS.addAll(test.kasuga.modelling.demo.preview.MinecraftPreviewDemo.examples().stream()
                         .filter(example -> !example.name().equals("create-airship")).toList());
                 Files.createDirectories(OUTPUT);

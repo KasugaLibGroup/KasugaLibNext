@@ -14,6 +14,9 @@ R 重置，底部按钮控制逐层/单层和爆炸间距。
 准星对准模型后左击，会显示方块信息 5 秒，点击不向真实世界发送破坏动作。
 按 I 打开世界模型的 inspection 面板：逐层/单层/全部、爆炸间距、整体缩放和重置。
 面板保持世界画面可见；Done、I 或 Esc 关闭面板，再继续飞行环绕。
+面板的 `Rig / Windmill` 切换到真实风车。风车由服务器原生 `WindmillBearingBlockEntity`
+装配并运行 `ControlledContraptionEntity`；显示端通过 `contraption.entity` 关联借用它。
+转子物理源与展示位置分开，分层、爆炸和单层模式继续采样实时转角，不暂停或修改实体运动。
 `/kasuga_create_gallery stop` 清理模型并恢复进入前的世界、位置、模式和飞行状态。
 
 模型是客户端 scene 内容，不是真实放置的建筑，也不参与动力网络、碰撞或破坏。
@@ -37,6 +40,20 @@ UI 自动化与世界自动化是独立任务。用隔离世界运行，查看 J
 
 报告分别为 `ksg_debug/minecraft-preview/report.json` 和 `debug/create-gallery/report.json`。
 后者包含正面、两侧、背面、爆炸图、隐藏和返回原世界检查，截图来自实际游戏帧缓冲。
+
+只读打开本机 Create 结构 NBT：
+
+```sh
+./gradlew :modules:create:runClient -PkasugaMinecraftPreviewInteractive=true \
+  -PkasugaPreviewSchematic=/absolute/path/to/structure.nbt \
+  -PkasugaClientDirectory=/absolute/path/to/isolated-client -PkasugaQuickPlayWorld=preview
+```
+
+在菜单选择 `external-create-schematic`。源文件不会复制到资源包或提交。
+`JAVA_TOOL_OPTIONS=-Dkasuga.testExternalSchematic=true` 可运行导入与实际截图验收；
+`JAVA_TOOL_OPTIONS=-Dkasuga.testWindmill=true` 则验证真实转子在 assembled、exploded、single slice
+三种模式中跨 tick 的角度与实际几何深度像素都在变化。两种 smoke 分别写入
+`debug/external-schematic/report.json` 与 `debug/windmill/report.json`。
 
 The development-only gallery uses the public source and scene APIs. `/kasuga_create_gallery`
 opens a floating native Create contraption in a disposable dimension with creative flight;

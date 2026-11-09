@@ -125,6 +125,8 @@ neoForge {
             if (providers.gradleProperty('kasugaTestCreateGallery').getOrElse('false').toBoolean()) {
                 systemProperty 'kasuga.testCreateGallery', 'true'
             }
+            def previewSchematic = providers.gradleProperty('kasugaPreviewSchematic')
+            if (previewSchematic.isPresent()) systemProperty 'kasuga.minecraftPreview.schematic', file(previewSchematic.get()).absolutePath
             def previewOutput = providers.gradleProperty('kasugaMinecraftPreviewOutput')
             if (previewOutput.isPresent()) systemProperty 'kasuga.minecraftPreview.output', rootProject.file(previewOutput.get()).absolutePath
 

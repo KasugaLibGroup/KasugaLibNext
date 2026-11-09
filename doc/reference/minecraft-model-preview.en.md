@@ -35,7 +35,9 @@ A short left click inspects a block's name, registry ID and source coordinates; 
 | External projection data | `MinecraftModelSources.blocks(level, List<StructureBlockInfo>)` |
 | Create machine region | `CreateModelSources.machine(level, minimum, maximum)` |
 | Create contraption entity | `CreateModelSources.contraption(AbstractContraptionEntity)` |
+| Attached Create contraption | `CreateModelSources.contraption(Contraption)` uses Create's own `entity` backlink |
 | Create schematic item / template | `CreateModelSources.schematic(level, ItemStack or StructureTemplate)` |
+| Local Create structure NBT | `CreateModelSources.schematic(level, Path)` |
 
 Create factories live in the optional `modules/create`, in `lib.kasuga.create.client.model`.
 The common modelling module does not link Create classes. Assembled structures reuse
@@ -62,6 +64,9 @@ Coordinates are source-local Minecraft blocks, with Y as the default layer axis.
 retain their spacing. Hiding a layer changes neither remaining offsets nor the full framing bounds.
 Limits are 131072 blocks, 4096 layers, 4096 blocks per axis, and 64 MiB of decoded NBT. Sources do not
 tick block entities, play sounds, send packets or change live entity poses.
+Model appearance/connected textures always use the full original neighbor context; isolated layers
+filter cut-face visibility while retaining stored block states. Create's cached schematic renderer
+has a separate 1048576-cell volume bound; the actual block count limit remains unchanged.
 
 ```java
 var combined = MinecraftModelSources.compose(
@@ -115,6 +120,9 @@ to display the block information for five seconds without breaking blocks.
 Press I for transparent world inspection controls: cumulative layers, single slices, all layers,
 explosion spacing, whole-model scale and reset. Close with Done or Esc to keep flying around the
 model with its current layout retained.
+The `Rig / Windmill` button switches to a real windmill assembled and ticked by Create's native
+bearing. Its `ControlledContraptionEntity` keeps driving rotation in assembled, isolated-layer and
+exploded modes; the display adapter reads the entity without ticking or changing it.
 
 ```bash
 ./gradlew :modules:modelling:modelUnitTest --tests 'lib.kasuga.rendering.models.mc.scene.*'
