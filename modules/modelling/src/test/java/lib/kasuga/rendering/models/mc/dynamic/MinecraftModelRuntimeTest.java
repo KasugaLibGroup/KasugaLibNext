@@ -4,6 +4,7 @@ import lib.kasuga.rendering.models.mc.dynamic.physics.MinecraftRagdollConfig;
 import lib.kasuga.rendering.models.mc.dynamic.physics.MinecraftRagdollRuntime;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstanceFixture;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
 import lib.kasuga.rendering.models.uml.dynamic.physics.ModelPhysicsScene;
 import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
@@ -117,7 +118,7 @@ class MinecraftModelRuntimeTest {
     void unregisteringDuringAFrameDoesNotInvalidateTheSnapshot() {
         try (ModelInstance instance = ModelInstanceFixture.minimal()) {
             AtomicInteger samples = new AtomicInteger();
-            instance.setPoseDriver(new PoseDriver() {
+            ModelPoseBinding.install(instance, new PoseDriver() {
                 @Override public void sample(float partialTick) {
                     samples.incrementAndGet();
                     MinecraftModelRuntime.unregister(instance);
@@ -296,7 +297,7 @@ class MinecraftModelRuntimeTest {
 
     private static AtomicInteger samples(ModelInstance instance) {
         AtomicInteger count = new AtomicInteger();
-        instance.setPoseDriver(new PoseDriver() {
+        ModelPoseBinding.install(instance, new PoseDriver() {
             @Override public void sample(float partialTick) { count.incrementAndGet(); }
         });
         return count;

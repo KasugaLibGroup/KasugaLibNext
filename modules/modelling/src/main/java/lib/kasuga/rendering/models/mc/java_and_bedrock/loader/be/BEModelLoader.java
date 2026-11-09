@@ -120,7 +120,7 @@ public class BEModelLoader extends Loader<JsonObject, ResourceLocation, String> 
 
     /**
      * 模型注册 key 必须是模型文件的 ResourceLocation（文件路径），
-     * 与 PipelineBindingRegistry 中 RenderFeature.modelKey 的语义一致——
+     * 与模型管线中 RenderFeature 的 modelKey 语义一致——
      * createInstance(modelKey) 按文件路径查找 models 存储。
      * 不能使用 JSON 内的 identifier（可能含中文/空格，tryBuild 返回 null，
      * 且与 modelKey 对不上）。

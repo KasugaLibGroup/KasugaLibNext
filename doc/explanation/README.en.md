@@ -11,6 +11,9 @@ This directory explains algorithms, data flow, module boundaries, timing, and re
 | Camera component tracks, optical zoom, and shared clock | [Camera Animation](camera-animation.md) |
 | Layered states, actions, and pose blending | [FSM](fsm.md) |
 | Shared variant definitions and per-instance selection state | [Multiplexer](multiplexer.md) |
+| Logical time, input/control transactions, and same-generation publication | [Animation Scope](animation/animation-scope.md) |
+| Typed output slots, continuity, and safe rebinding | [Animation Target](animation/animation-target.md) |
+| Element adaptation, registration/session ownership, typed ports, tick/frame boundaries, and lifecycle | [Proxy](proxy/README.en.md) |
 | Descriptor/execution separation, shader preparation, effects, and post-processing graphs | [Custom Rendering](effect-rendering.md) |
 | Layer responsibilities, mount publishing, and in-flight GPU reads | [UML Framework](uml-render-framework.md) |
 | Core, graphics API, and host adaptation boundaries | [Rendering Backends](rendering-backends.md) |

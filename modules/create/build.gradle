@@ -23,6 +23,22 @@ repositories {
 }
 
 useModProject(project(':modules:core'))
+// `false`: do not fold modelling's contentTesting fixtures into this mod layer. They are another
+// module's demos (PostFX presets, particle demos, the fan blocks) whose @EventBusSubscriber classes
+// would load here and pull dependencies this run configuration does not need.
+useModProject(project(':modules:modelling'), false)
+// NeoForge source-set registration is not transitive. Keep the rendering classes in the
+// same mod class loader as their Minecraft callers in dev runs and integration tests.
+useModProject(project(':modules:render-core'))
+useModProject(project(':modules:render-opengl'))
+
+// Create-side content is meant to be data-driven eventually (bogey/track registrations come from
+// JSON), so the index reader is a real dependency rather than a later addition. It arrives on the
+// classpath through modelling's `implementation` dependency, but that is not transitive for
+// compilation -- hence the explicit dependency in the `dependencies` block below. The mods{} mirror
+// needs the source set before it is evaluated, otherwise the cross-project lookup silently resolves
+// to the root project's source sets.
+evaluationDependsOn(':modules:data-driven')
 
 
 
@@ -41,6 +57,15 @@ sourceSets {
         compileClasspath += sourceSets.main.compileClasspath
         runtimeClasspath += sourceSets.main.runtimeClasspath
     }
+
+    test {
+        compileClasspath += sourceSets.contentTesting.output
+        runtimeClasspath += sourceSets.contentTesting.output
+    }
+}
+
+tasks.named('processContentTestingResources', ProcessResources) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 configurations {
@@ -104,7 +129,17 @@ neoForge {
             // Inlcude the core subproject as a dependency.
             sourceSet(sourceSets.main)
             sourceSet(sourceSets.contentTesting)
+            // Mirror: data-driven is on this module's classpath (see the dependencies block) and must
+            // therefore also be part of the mod layer, otherwise NeoForge loads it a second time through
+            // the classpath loader and its @Context beans end up with a different Class identity than the
+            // core types they inject (NoSuchBeanDefinitionException).
+            sourceSet(project(':modules:data-driven').sourceSets.main)
         }
+    }
+
+    unitTest {
+        enable()
+        testedMod = mods.named(mod_id)
     }
 }
 
@@ -125,13 +160,39 @@ dependencies {
         exclude group : 'org.slf4j', module: 'slf4j-api'
     }
 
+    additionalRuntimeClasspath 'com.google.zxing:core:3.5.3'
+
     implementation project(":modules:inject")
 
     implementation project(":modules:utils")
 
+    // Data-driven index reader for Create-side content (bogey/track registrations). modelling carries
+    // it as `implementation`, which is not on this module's compile classpath, so it is declared again
+    // here; the mods{} mirror above keeps a single Class identity at runtime.
+    implementation project(":modules:data-driven")
+
+    // modelling is mirrored into this mod layer through useModProject(), which only contributes
+    // compileOnly. A real dependency is needed so its runtime-only libraries (formula, shader, utils,
+    // twelvemonkeys) are on this run configuration's classpath.
+    implementation project(":modules:modelling")
+
+    // modelling lists these as additionalRuntimeClasspath/shadowLibrary, which are not transitive:
+    // its pipeline loads them at class-init time (post-processing, glTF, IK), so mirror them here.
+    // shader/formula are `api` deps of modelling and are on runtimeClasspath, but ModDev assembles
+    // the run's legacy classpath from this configuration, so they must be listed explicitly too.
+    additionalRuntimeClasspath project(":modules:shader")
+    additionalRuntimeClasspath project(":modules:formula")
+    additionalRuntimeClasspath 'org.jgrapht:jgrapht-core:1.5.2'
+    additionalRuntimeClasspath("de.javagl:jgltf-model:2.0.4")
+    additionalRuntimeClasspath("de.javagl:jgltf-impl-v2:2.0.4")
+    additionalRuntimeClasspath files(project(':modules:render-core').file('libs/caliko-1.3.8.jar'))
+
+    testImplementation project(":modules:core")
+
     implementation("cc.tweaked:cc-tweaked-$minecraft_version-forge:$cct_version")
 
     annotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
+    contentTestingAnnotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
 
 
     implementation("com.simibubi.create:create-${minecraft_version}:${create_version}:slim") { transitive = false }
@@ -144,6 +205,7 @@ dependencies {
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.7.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation "net.neoforged:testframework:${project.neo_version}"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

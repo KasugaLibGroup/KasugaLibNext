@@ -64,6 +64,7 @@ Documentation:
 
 - [API reference index](doc/reference/README.md): interfaces, builders, configuration schemas, examples and commands.
 - [Architecture and principles](doc/explanation/README.md): data flow, ownership, algorithms and implementation boundaries.
+- [Proxy kernel and content integration](doc/explanation/proxy/README.en.md): sessions, typed ports, lifecycle, and a practical integration guide.
 - [Skeleton physics, IK and diamond constraints](doc/reference/skeleton-dynamics.md).
 - [Model loading and rendering](doc/reference/modelling/README.en.md) / [中文](doc/reference/modelling/README.md).
 - [Formula API](doc/reference/formula/README.en.md) / [中文](doc/reference/formula/README.md).

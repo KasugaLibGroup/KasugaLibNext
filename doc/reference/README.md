@@ -20,6 +20,7 @@
 | [摄像机与动画](camera-animation.md) | 直接控制、关键帧、JSON、共享时间轴与模型片段绑定 |
 | [FSM](fsm.md) | 状态变量、层/状态/转移、姿态 schema 与宿主绑定 |
 | [Multiplexer](multiplexer.md) | 变体选择 DSL、Builder、实例状态及 FSM 组合 |
+| [Proxy 接入指南](../guides/proxy-integration.md) | Definition/Type 注册、Session 自动挂载、typed Port、tick/frame、生命周期与故障排查 |
 
 ## 渲染与输出
 
@@ -29,6 +30,7 @@
 | [UML framework](uml-render-framework.md) | backend/context/factory、调度与 buffer 的公共接口和生命周期契约 |
 | [后端扩展](rendering-backends.md) | 独立后端模块、宿主帧上下文、上传与输出适配 |
 | [调度与模型句柄](render-scheduling.md) | McModelHandle、可见性、Entity/BlockEntity renderer 接入 |
+| [物品模型渲染](item-model-renderers.md) | `ItemModelRenderers` 映射、共享 BEWLR、`builtin/entity` 前提、显示变换与调度 |
 | [世界 UI 与自由光标](world-ui-input.md) | 透明输入层、屏幕反投影、世界面板、拖拽捕获与键盘焦点 |
 | [最终画面输出](frame-output.md) | 订阅、共享帧、MIRROR/OFFSCREEN_ONLY、异常与关闭 |
 | [Player / Free / Fixed Camera](cameras.md) | 相机分类、创建、通用跟随目标、实体绑定、投影和运行时渲染配置 |

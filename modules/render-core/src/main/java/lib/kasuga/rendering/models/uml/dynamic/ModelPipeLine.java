@@ -173,7 +173,7 @@ public class ModelPipeLine<K, I> {
      * Create an instance and attach a {@link PoseDriver} in one step. Intended for non-FSM drivers that do not
      * depend on the instance at construction time. FSM drivers ({@code FsmPoseDriver}) have a chicken-and-egg
      * with the machine build (the machine needs the instance for its sink, the driver needs the machine), so
-     * they use the two-step form: {@code createInstance(...)} then {@code instance.setPoseDriver(driver)}.
+     * they use the two-step form: {@code createInstance(...)} then {@code ModelPoseBinding.install(instance, driver)}.
      *
      * @param driver the pose driver to attach, or {@code null} to leave the instance static
      */
@@ -185,7 +185,7 @@ public class ModelPipeLine<K, I> {
                                                 @Nullable PoseDriver driver) {
         ModelInstance instance = createInstance(modelName, instanceIdentifier, transform, instanceData, skeletonInstanceData);
         if (instance != null && driver != null) {
-            instance.setPoseDriver(driver);
+            ModelPoseBinding.install(instance, driver);
         }
         return instance;
     }

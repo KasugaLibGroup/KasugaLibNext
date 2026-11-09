@@ -2,6 +2,9 @@
 
 `modules/modelling` 提供 KasugaLib 的客户端模型加载、模型实例生命周期、Minecraft 渲染后端、纹理图集集成，以及相关的动画和物理功能。
 
+方块实体通过 Proxy Session 驱动模型时，先阅读 [Proxy 系统原理](../../explanation/proxy/README.md) 和
+[Proxy 接入指南](../../guides/proxy-integration.md)。
+
 本文说明模组随资源包发布模型时的标准接入流程，以及开发该模块时应使用的验证与调试方法。实现仅限客户端使用，不能从专用服务端访问渲染 API。
 
 ## 前置条件

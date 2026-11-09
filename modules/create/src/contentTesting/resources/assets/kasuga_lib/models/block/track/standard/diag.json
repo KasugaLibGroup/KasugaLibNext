@@ -1,0 +1,7 @@
+{
+	"parent": "kasuga_lib:block/track/standard/obj_track",
+	"loader": "neoforge:obj",
+	"flip_v": true,
+	"render_type": "minecraft:cutout_mipped",
+	"model": "kasuga_lib:models/block/track/standard/diag.obj"
+}

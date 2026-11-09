@@ -1,24 +1,34 @@
 package lib.kasuga.rendering.output.camera;
 
 import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationClip;
-import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationPlayback;
+import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationSource;
 import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationTimeline;
 import lib.kasuga.rendering.output.WorldCameraView;
 
 import java.util.Objects;
 import java.util.function.Supplier;
 
-/** Camera write adapter over the shared animation playback engine. Operations belong to the render thread. */
+/** Camera write adapter over a private animation Scope. Operations belong to the render thread. */
 public final class CameraAnimationPlayer {
     private Supplier<WorldCameraView> provider;
     private final Runnable checkAccess;
-    private final AnimationPlayback<CameraAnimationClip, CameraPose> playback = new AnimationPlayback<>();
+    private final AnimationSource<CameraAnimationClip, CameraPose> source;
+    private final ScopedCameraPosePlayback playback = new ScopedCameraPosePlayback();
 
     public CameraAnimationPlayer(Supplier<WorldCameraView> provider) { this(provider, () -> {}); }
 
     CameraAnimationPlayer(Supplier<WorldCameraView> provider, Runnable checkAccess) {
+        this(provider, checkAccess, CameraClipSampler.INSTANCE);
+    }
+
+    CameraAnimationPlayer(
+            Supplier<WorldCameraView> provider,
+            Runnable checkAccess,
+            AnimationSource<CameraAnimationClip, CameraPose> source
+    ) {
         this.provider = Objects.requireNonNull(provider, "provider");
         this.checkAccess = Objects.requireNonNull(checkAccess, "checkAccess");
+        this.source = Objects.requireNonNull(source, "source");
     }
 
     void updatePose(Supplier<WorldCameraView> provider) {
@@ -31,7 +41,7 @@ public final class CameraAnimationPlayer {
 
     /** Standalone playback owns its clock. Missing channels retain the live pose provider's values. */
     public void play(CameraAnimationClip clip, boolean loop) {
-        checkAccess.run(); playback.play(CameraClipSampler.INSTANCE, clip, loop);
+        checkAccess.run(); playback.play(source, clip, loop);
     }
 
     public void play(AnimationClip clip, String camera, boolean loop) {
@@ -40,7 +50,12 @@ public final class CameraAnimationPlayer {
 
     /** Follow an external timeline shared with models or other cameras; camera ticks will not advance it. */
     public void follow(CameraAnimationClip clip, AnimationTimeline timeline) {
-        checkAccess.run(); playback.follow(CameraClipSampler.INSTANCE, clip, timeline);
+        checkAccess.run();
+        if (playback.ownedTimeline() == Objects.requireNonNull(timeline, "timeline")) {
+            throw new IllegalArgumentException(
+                    "Cannot follow this camera's owned clock; use an external timeline");
+        }
+        playback.follow(source, clip, timeline);
     }
 
     public void follow(AnimationClip clip, String camera, AnimationTimeline timeline) {

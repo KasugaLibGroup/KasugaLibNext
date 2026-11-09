@@ -149,7 +149,7 @@ public final class ModelPhysicsScene implements AutoCloseable {
         if (!(deltaSeconds > 0f) || !Float.isFinite(deltaSeconds)) return;
         if (!Float.isFinite(partialTick)) throw new IllegalArgumentException("partialTick must be finite");
         for (SkeletonRagdoll state : ragdolls) {
-            state.modelInstance().prepareFrameSample(partialTick);
+            state.modelInstance().beginFrameSample(partialTick);
         }
         step(deltaSeconds);
         for (SkeletonRagdoll state : ragdolls) {

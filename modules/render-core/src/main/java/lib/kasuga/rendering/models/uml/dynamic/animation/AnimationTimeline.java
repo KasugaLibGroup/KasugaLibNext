@@ -1,36 +1,76 @@
 package lib.kasuga.rendering.models.uml.dynamic.animation;
 
+import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Shared playback clock. One host advances it once per tick; any number of targets sample its immutable
  * volatile snapshot. Controls and tick are serialized; sampling never writes or advances the clock.
  */
 public final class AnimationTimeline {
+    private static final Logger LOG = LoggerFactory.getLogger(AnimationTimeline.class);
+
     private volatile Snapshot snapshot;
     private final boolean owned;
+    private final CopyOnWriteArrayList<ObserverRegistration> observers =
+            new CopyOnWriteArrayList<>();
 
     public AnimationTimeline() { this(false); }
     private AnimationTimeline(boolean owned) { this.owned = owned; }
-    static AnimationTimeline owned() { return new AnimationTimeline(true); }
+    /** Creates a compatibility view whose ticks belong to an owning Scope adapter. */
+    public static AnimationTimeline owned() { return new AnimationTimeline(true); }
     public boolean isOwned() { return owned; }
+
+    /** Observes committed clock changes; the callback runs on the thread that changed the timeline. */
+    public AutoCloseable observe(Consumer<Snapshot> observer) {
+        Objects.requireNonNull(observer, "observer");
+        ObserverRegistration registration =
+                new ObserverRegistration(observers, observer, new AtomicBoolean(true));
+        observers.add(registration);
+        return registration;
+    }
 
     public synchronized void play(float duration, boolean loop) {
         if (!Float.isFinite(duration) || duration < 0)
             throw new IllegalArgumentException("Duration must be finite and non-negative");
         snapshot = new Snapshot(0, 0, duration, 1, loop, true);
+        notifyObservers();
     }
 
-    public synchronized void stop() { snapshot = null; }
+    public synchronized void stop() { snapshot = null; notifyObservers(); }
     public Snapshot snapshot() { return snapshot; }
     public boolean isPlaying() { var current = snapshot; return current != null && current.playing(); }
     public double currentTime() { var current = snapshot; return current == null ? 0 : current.seconds(); }
 
+    /** Updates an owned compatibility view from its Scope. */
+    public synchronized void mirrorOwned(
+            double previous,
+            double seconds,
+            float duration,
+            float speed,
+            boolean loop,
+            boolean playing
+    ) {
+        if (!owned) {
+            throw new IllegalStateException("Only an owned player may mirror its Scope clock");
+        }
+        snapshot = new Snapshot(previous, seconds, duration, speed, loop, playing);
+        notifyObservers();
+    }
+
     public synchronized void pause() {
         if (snapshot != null) snapshot = snapshot.at(snapshot.seconds(), false);
+        notifyObservers();
     }
 
     public synchronized void resume() {
         if (snapshot != null && (snapshot.loop() || snapshot.seconds() < snapshot.duration()))
             snapshot = snapshot.at(snapshot.seconds(), true);
+        notifyObservers();
     }
 
     public synchronized void seek(float seconds) {
@@ -39,6 +79,7 @@ public final class AnimationTimeline {
         if (snapshot == null) return;
         double time = snapshot.loop() ? seconds : Math.min(seconds, snapshot.duration());
         snapshot = snapshot.at(time, snapshot.playing() && (snapshot.loop() || time < snapshot.duration()));
+        notifyObservers();
     }
 
     public synchronized void setSpeed(float speed) {
@@ -46,6 +87,7 @@ public final class AnimationTimeline {
             throw new IllegalArgumentException("Speed must be finite and non-negative");
         if (snapshot != null) snapshot = new Snapshot(snapshot.seconds(), snapshot.seconds(),
                 snapshot.duration(), speed, snapshot.loop(), snapshot.playing());
+        notifyObservers();
     }
 
     /** Invalid deltas are ignored, preserving the model driver's tick contract. */
@@ -65,6 +107,7 @@ public final class AnimationTimeline {
         double previous = current.loop() ? current.previous() : Math.min(current.previous(), duration);
         snapshot = new Snapshot(previous, seconds, duration, current.speed(), current.loop(),
                 current.playing() && (current.loop() || seconds < duration));
+        notifyObservers();
     }
 
     private synchronized void advance(float dt) {
@@ -73,12 +116,49 @@ public final class AnimationTimeline {
         if (!current.playing()) {
             // Retire the last interpolation interval after completion; later frames hold the endpoint.
             if (current.previous() != current.seconds()) snapshot = current.at(current.seconds(), false);
+            notifyObservers();
             return;
         }
         double next = current.seconds() + (double) dt * current.speed();
         if (!current.loop()) next = Math.min(next, current.duration());
         snapshot = new Snapshot(current.seconds(), next, current.duration(), current.speed(), current.loop(),
                 current.loop() || next < current.duration());
+        notifyObservers();
+    }
+
+    private void notifyObservers() {
+        Snapshot current = snapshot;
+        for (ObserverRegistration registration : observers) {
+            if (!registration.active().get()) {
+                observers.remove(registration);
+                continue;
+            }
+            try {
+                registration.observer().accept(current);
+            } catch (RuntimeException failure) {
+                LOG.error("Animation timeline observer failed", failure);
+            }
+        }
+    }
+
+    private record ObserverRegistration(
+            CopyOnWriteArrayList<ObserverRegistration> owner,
+            Consumer<Snapshot> observer,
+            AtomicBoolean active
+    ) implements AutoCloseable {
+
+        private ObserverRegistration {
+            Objects.requireNonNull(owner, "owner");
+            Objects.requireNonNull(observer, "observer");
+            Objects.requireNonNull(active, "active");
+        }
+
+        @Override
+        public void close() {
+            if (active.compareAndSet(true, false)) {
+                owner.remove(this);
+            }
+        }
     }
 
     public record Snapshot(double previous, double seconds, float duration, float speed, boolean loop, boolean playing) {

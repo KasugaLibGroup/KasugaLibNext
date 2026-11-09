@@ -156,7 +156,8 @@ public record AnimationClip(
 
     /**
      * One bone's formula-driven track: each axis of the chosen channel is a formula
-     * expression string evaluated per-frame against a {@code lib.kasuga.formula} namespace.
+     * expression string evaluated against a {@code lib.kasuga.formula} namespace at each committed
+     * logical step. Render frames interpolate the resulting poses; they do not re-evaluate formulas.
      * A blank axis string means "leave that component at its identity value"
      * (rotate 0 / translate 0 / scale 1).
      */

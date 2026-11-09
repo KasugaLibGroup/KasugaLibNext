@@ -58,7 +58,7 @@ class FanDataDrivenReloadTest {
         assertTrue(manifest.declaredOnRegister(), "the fan block content file must be on_register");
         assertTrue(manifest.declaredOnReload(), "the fan clip file must be on_reload");
         assertEquals(List.of(
-                        "kasuga_lib_content/fan_formula_data_driven.json",
+                        "kasuga_lib_content/example_fan_data_driven.json",
                         "kasuga_lib_content/fsm_blocks.json"),
                 manifest.onRegisterPaths(),
                 "the on_register domain must carry both the fan block content and the FSM block content");

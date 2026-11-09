@@ -3,6 +3,7 @@ package lib.kasuga.rendering.models.uml.typo.miku_miku_dance.vmd;
 import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationPlayer;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstanceFixture;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.ApplyMode;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Pose;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.State;
@@ -75,13 +76,16 @@ class VmdSamplerTest {
     void playsThroughAnimationPlayer() {
         ModelInstance instance = ModelInstanceFixture.minimal();
         AnimationPlayer<VmdMotion> player = new AnimationPlayer<>(instance);
-        instance.setPoseDriver(player);
+        ModelPoseBinding.install(instance, player);
         VmdMotion motion = motion();
         player.play(new VmdSampler(new Vector3f(0.5f)), motion, false);
-        player.tick(5f / VmdSampler.FRAMES_PER_SECOND); // 0.1667s → frame 5
+        player.tick(3f / VmdSampler.FRAMES_PER_SECOND); // one committed 0.05s logical step
         player.sample(1f);
-        assertEquals(new Vector3f(5, 10, 15),
-                instance.getSkeletonInstance().getTransforms().values().iterator().next().getPosition());
+        Vector3f actual = instance.getSkeletonInstance().getTransforms().values()
+                .iterator().next().getPosition();
+        assertEquals(3f, actual.x, 1e-3f);
+        assertEquals(6f, actual.y, 1e-3f);
+        assertEquals(9f, actual.z, 1e-3f);
     }
 
     @Test

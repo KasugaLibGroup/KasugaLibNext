@@ -1,0 +1,7 @@
+{
+  "replace": false,
+  "values": [
+    "kasuga_lib:standard_track",
+    "kasuga_lib:tieless_track"
+  ]
+}

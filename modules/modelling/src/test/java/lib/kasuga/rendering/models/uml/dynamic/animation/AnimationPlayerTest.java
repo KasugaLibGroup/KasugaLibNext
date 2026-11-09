@@ -2,16 +2,20 @@ package lib.kasuga.rendering.models.uml.dynamic.animation;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstanceFixture;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
+import lib.kasuga.rendering.models.uml.dynamic.fsm.Pose;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.codec.TransformDefinition;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -41,7 +45,7 @@ class AnimationPlayerTest {
     private static AnimationPlayer<AnimationClip> newPlayer() {
         ModelInstance instance = ModelInstanceFixture.minimal();
         AnimationPlayer<AnimationClip> player = new AnimationPlayer<>(instance);
-        instance.setPoseDriver(player);
+        ModelPoseBinding.install(instance, player);
         return player;
     }
 
@@ -100,6 +104,10 @@ class AnimationPlayerTest {
         assertFalse(player.isPlaying());
         player.sample(1f); // completed clip → final frame (180°) is still written
         assertEquals(180.0, rootAngle(player), 1.0);
+        player.tick(0.05f);
+        player.sample(0.5f);
+        assertEquals(180.0, rootAngle(player), 1.0,
+                "the completed interval must collapse to the final frame");
     }
 
     @Test
@@ -150,6 +158,58 @@ class AnimationPlayerTest {
     }
 
     @Test
+    void rebindBeforePlayUsesTheFreshModel() {
+        AnimationPlayer<AnimationClip> player = newPlayer();
+        ModelInstance fresh = ModelInstanceFixture.minimal();
+        player.rebind(fresh);
+        player.play(ClipSampler.INSTANCE, wheelClip(), true);
+        player.tick(1f / 20f);
+        player.sample(1f);
+
+        assertEquals(9.0, rootAngle(player), 1.0);
+    }
+
+    @Test
+    void followingTheSameExternalTimelineAgainIsAllowed() {
+        AnimationPlayer<AnimationClip> player = newPlayer();
+        AnimationTimeline timeline = new AnimationTimeline();
+        timeline.play(1f, true);
+
+        player.follow(ClipSampler.INSTANCE, wheelClip(), timeline);
+        player.follow(ClipSampler.INSTANCE, wheelClip(), timeline);
+        timeline.tick(0.05f);
+        player.sample(1f);
+
+        assertEquals(9.0, rootAngle(player), 1.0);
+    }
+
+    @Test
+    void invalidStandalonePlayKeepsTheExistingFollowBinding() {
+        AnimationPlayer<AnimationClip> player = newPlayer();
+        AnimationTimeline timeline = new AnimationTimeline();
+        timeline.play(1f, true);
+        player.follow(ClipSampler.INSTANCE, wheelClip(), timeline);
+        AnimationSampler<AnimationClip> invalid = new AnimationSampler<>() {
+            @Override
+            public float duration(AnimationClip data) {
+                return Float.NaN;
+            }
+
+            @Override
+            public Pose sample(AnimationClip data, float time) {
+                return ClipSampler.INSTANCE.sample(data, time);
+            }
+        };
+
+        assertThrows(IllegalArgumentException.class,
+                () -> player.play(invalid, wheelClip(), true));
+        timeline.tick(0.05f);
+        player.sample(1f);
+
+        assertEquals(9.0, rootAngle(player), 1.0);
+    }
+
+    @Test
     void currentTimeAndDataReflectSnapshot() {
         AnimationPlayer<AnimationClip> player = newPlayer();
         AnimationClip clip = wheelClip();
@@ -174,5 +234,71 @@ class AnimationPlayerTest {
         player.tick(1f); // prev=0.5, seconds=1.5
         player.sample(1f); // elapsed = 1.5 → wraps to time 0.5 → 90°
         assertEquals(atHalf, rootAngle(player), 0.1);
+    }
+
+    @Test
+    void renderSamplingDoesNotResampleAnimationSource() {
+        AnimationClip clip = wheelClip();
+        AtomicInteger samples = new AtomicInteger();
+        AnimationSampler<AnimationClip> counting = new AnimationSampler<>() {
+            @Override
+            public float duration(AnimationClip data) {
+                return data.durationSeconds();
+            }
+
+            @Override
+            public Pose sample(AnimationClip data, float time) {
+                samples.incrementAndGet();
+                return ClipSampler.INSTANCE.sample(data, time);
+            }
+        };
+        AnimationPlayer<AnimationClip> player = newPlayer();
+        player.play(counting, clip, true);
+        player.tick(1f / 20f);
+        int samplesAfterTick = samples.get();
+
+        player.sample(0f);
+        player.sample(0.5f);
+        player.sample(1f);
+
+        assertEquals(samplesAfterTick, samples.get());
+        assertEquals(9.0, rootAngle(player), 1.0);
+    }
+
+    @Test
+    void ownedPauseFreezesAndResumeContinuesFromTheCommittedPose() {
+        AnimationPlayer<AnimationClip> player = newPlayer();
+        player.play(ClipSampler.INSTANCE, wheelClip(), true);
+        player.tick(1f / 20f);
+        player.sample(1f);
+
+        player.pause();
+        player.tick(1f / 20f);
+        player.sample(1f);
+
+        assertEquals(9.0, rootAngle(player), 1.0);
+        assertFalse(player.isPlaying());
+        player.resume();
+        player.tick(1f / 20f);
+        player.sample(1f);
+        assertEquals(18.0, rootAngle(player), 1.0);
+    }
+
+    @Test
+    void ownedSeekAndSpeedControlTheScopePlayback() {
+        AnimationPlayer<AnimationClip> player = newPlayer();
+        player.play(ClipSampler.INSTANCE, wheelClip(), true);
+        player.setSpeed(2f);
+        player.tick(1f / 20f);
+        player.sample(1f);
+        assertEquals(18.0, rootAngle(player), 1.0);
+
+        player.seek(0.4f);
+        player.sample(1f);
+        assertEquals(72.0, rootAngle(player), 1.0);
+        player.setSpeed(0f);
+        player.tick(1f);
+        player.sample(1f);
+        assertEquals(72.0, rootAngle(player), 1.0);
     }
 }

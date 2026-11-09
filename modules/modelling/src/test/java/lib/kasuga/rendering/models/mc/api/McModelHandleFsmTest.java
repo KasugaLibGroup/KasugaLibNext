@@ -3,8 +3,7 @@ package lib.kasuga.rendering.models.mc.api;
 import com.mojang.serialization.Codec;
 import lib.kasuga.rendering.models.mc.dynamic.fsm.FsmAnimatedModel;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
-import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
-import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmPoseDriver;
+import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmPoseEvaluator;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.State;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
@@ -63,22 +62,24 @@ class McModelHandleFsmTest {
         assertTrue(handle.mount());
 
         StateMachine<Object> machine = simpleMachine();
-        McModelHandle.LocalFsmBinding binding = handle.attachLocalStateMachine(machine);
+        McModelHandle.LocalFsmBinding fsmBinding = handle.attachLocalStateMachine(machine);
 
-        assertTrue(handle.instance().getPoseDriver() instanceof FsmPoseDriver,
-                "the driver must be plugged into the mounted instance");
-        assertSame(machine, binding.machine());
-        assertSame(handle.instance(), binding.driver().model());
+        assertNull(handle.instance().getPoseDriver(),
+                "the unified FSM path writes through a result target, not the legacy pose slot");
+        assertNotNull(handle.instance().getAnimationRenderPort());
+        assertSame(machine, fsmBinding.machine());
+        assertTrue(fsmBinding.evaluator() instanceof FsmPoseEvaluator);
+        assertSame(machine, fsmBinding.evaluator().machine());
 
         // 逻辑端 tick 推进机器（触发转移）并发布姿态目标；渲染采样由管线完成。
         machine.mutableVars().set(OPEN, true);
         int versionBefore = machine.version();
-        binding.tick();
-        assertTrue(binding.driver().machine().version() >= versionBefore,
+        fsmBinding.tick();
+        assertTrue(fsmBinding.evaluator().machine().version() >= versionBefore,
                 "the logic tick must advance the machine");
 
-        binding.dispose();
-        assertNull(handle.instance().getPoseDriver());
+        fsmBinding.dispose();
+        assertNull(handle.instance().getAnimationRenderPort());
         ModelRenderScheduler.detach(instance);
     }
 
@@ -89,6 +90,29 @@ class McModelHandleFsmTest {
         assertFalse(handle.isMounted());
         assertThrows(IllegalStateException.class,
                 () -> handle.attachLocalStateMachine(simpleMachine()));
+    }
+
+    @Test
+    void localStateMachineRebindsToAFreshInstanceAfterRemount() {
+        McModelHandle handle = McModelHandle.custom(MODEL, null, INSTANCE,
+                pose -> fixture(null), loc -> null);
+        assertTrue(handle.mount());
+        ModelInstance first = handle.instance();
+        StateMachine<Object> machine = simpleMachine();
+        McModelHandle.LocalFsmBinding binding = handle.attachLocalStateMachine(machine);
+
+        handle.unmount();
+        assertTrue(handle.mount());
+        ModelInstance fresh = handle.instance();
+
+        assertTrue(first != fresh);
+        assertNull(first.getAnimationRenderPort());
+        assertSame(binding.scope().renderPort(), fresh.getAnimationRenderPort());
+        binding.tick();
+        assertTrue(machine.tickCount() > 0);
+
+        binding.dispose();
+        assertNull(fresh.getAnimationRenderPort());
     }
 
     @Test

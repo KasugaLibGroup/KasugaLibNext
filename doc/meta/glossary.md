@@ -41,8 +41,8 @@
 | 变体 | variant | 不要写 version / edition：那两个词在这里指资源版本 |
 | 变体选择器 | variant selector | |
 | 上下文 | context | Multiplexer 的上下文快照；与渲染框架里的「宿主帧上下文」不是同一个概念 |
-| 重定向 | retargeting | 不同骨架之间的拓扑重定向由接入方负责；代码入口 `AnimationPlayback.retarget` |
-| 公式轨道 | formula track | 每帧求值 |
+| 重定向 | retargeting | 不同骨架之间的拓扑重定向由接入方负责；播放片段切换入口为 `AnimationPlayer.rebind(fresh, sampler, data)` |
+| 公式轨道 | formula track | 每个已提交逻辑步求值；渲染帧插值结果 Pose |
 
 ### 骨骼、物理与布娃娃
 

@@ -20,6 +20,7 @@ References are organized against the current source; historical performance/clie
 | [Cameras and animation](camera-animation.md) | Direct control, keyframes, JSON, shared timeline, and model clip binding |
 | [FSM](fsm.md) | State variables, layers/states/transitions, pose schema, and host binding |
 | [Multiplexer](multiplexer.md) | Variant selection DSL, Builder, instance state, and FSM composition |
+| [Proxy integration guide](../guides/proxy-integration.en.md) | Definition/type registration, automatic session attachment, typed ports, tick/frame, lifecycle, and troubleshooting |
 
 ## Rendering and Output
 
@@ -29,6 +30,7 @@ References are organized against the current source; historical performance/clie
 | [UML framework](uml-render-framework.md) | backend/context/factory, the public interfaces and lifecycle contracts for scheduling and buffers |
 | [Backend extension](rendering-backends.md) | Standalone backend modules, host frame context, upload and output adaptation |
 | [Scheduling and model handles](render-scheduling.md) | McModelHandle, visibility, Entity/BlockEntity renderer integration |
+| [Item model rendering](item-model-renderers.md) | `ItemModelRenderers` mapping, the shared BEWLR, the `builtin/entity` precondition, display transforms, and scheduling |
 | [World UI and free cursor](world-ui-input.en.md) | Transparent input layer, screen unprojection, world panels, drag capture, and keyboard focus |
 | [Final frame output](frame-output.md) | Subscriptions, shared frames, MIRROR/OFFSCREEN_ONLY, exceptions, and closing |
 | [Player / Free / Fixed Camera](cameras.md) | Camera types, creation, generic follow targets, entity binding, projection, and runtime render configuration |

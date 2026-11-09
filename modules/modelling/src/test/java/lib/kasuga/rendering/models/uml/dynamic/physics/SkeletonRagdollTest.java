@@ -5,6 +5,7 @@ import lib.kasuga.rendering.models.uml.dynamic.physics.core.RayHit;
 import lib.kasuga.rendering.models.uml.dynamic.physics.core.RigidBodyWorld;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
 import lib.kasuga.rendering.models.uml.dynamic.SkeletonInstance;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.ModelTickLoop;
@@ -61,7 +62,7 @@ class SkeletonRagdollTest {
         try (ModelInstance instance = freeBodyInstance(0f);
              ModelPhysicsScene scene = new ModelPhysicsScene(new Vector3d(), 1)) {
             int[] samples = {0};
-            instance.setPoseDriver(new PoseDriver() {
+            ModelPoseBinding.install(instance, new PoseDriver() {
                 @Override public void sample(float partialTick) { samples[0]++; }
             });
             scene.attach(instance);
@@ -490,7 +491,7 @@ class SkeletonRagdollTest {
             List<String> events = new ArrayList<>();
             List<Float> sampledInputs = new ArrayList<>();
             List<Float> evaluatedOutputs = new ArrayList<>();
-            instance.setPoseDriver(new PoseDriver() {
+            ModelPoseBinding.install(instance, new PoseDriver() {
                 @Override public void sample(float partialTick) {
                     events.add("sample");
                     assertEquals(0.5f, partialTick, 0f);
@@ -1331,7 +1332,7 @@ class SkeletonRagdollTest {
         var skeleton = instance.getSkeletonInstance();
         instance.getTickLoop().boneTransform(0).setOffsetX(7f);
         skeleton.transform("root", new Transform().translate(1f, 0f, 0f));
-        instance.setPoseDriver(new PoseDriver() {
+        ModelPoseBinding.install(instance, new PoseDriver() {
             @Override public void sample(float partialTick) {
                 events.add("sample:" + name);
                 skeleton.transform("root", new Transform().translate(9f, 0f, 0f));

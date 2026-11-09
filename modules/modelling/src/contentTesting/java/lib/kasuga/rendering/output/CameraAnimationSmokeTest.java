@@ -85,7 +85,7 @@ public final class CameraAnimationSmokeTest {
                         List.of(), List.of(), List.of(), List.of(new AnimationClip.CameraTrack("shot", cameraClip.tracks())));
                 timeline = new AnimationTimeline();
                 model = new AnimationPlayer<>(testModel());
-                model.model().setPoseDriver(model);
+                lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding.install(model.model(), model);
                 model.follow(ClipSampler.INSTANCE, clip, timeline);
                 camera.animation().follow(clip, "shot", timeline);
                 timeline.play(2, true);
@@ -114,7 +114,11 @@ public final class CameraAnimationSmokeTest {
         model.model().sample(mc.getTimer().getGameTimeDeltaPartialTick(true));
         double modelX = model.model().getSkeletonInstance().getTransforms().values().iterator().next().getPosition().x;
         if (!direct && Math.abs(modelX - (actual.x() - originX)) > 1e-5)
-            throw new IllegalStateException("Model and world camera did not sample the same native clip time");
+            throw new IllegalStateException("Model and world camera did not sample the same native clip time: "
+                    + "modelX=" + modelX + ", cameraX=" + (actual.x() - originX)
+                    + ", partialTick=" + mc.getTimer().getGameTimeDeltaPartialTick(true)
+                    + ", timeline=" + timeline.snapshot()
+                    + ", cameraTime=" + camera.animation().currentTime());
         modelSamples++;
         if (!expected.equals(actual)) throw new IllegalStateException("Rendered camera did not use the interpolated track pose");
         var projection = MinecraftWorldViews.projection(128);

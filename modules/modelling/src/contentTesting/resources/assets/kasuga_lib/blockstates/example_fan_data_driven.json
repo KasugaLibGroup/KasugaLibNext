@@ -1,0 +1,6 @@
+{
+  "variants": {
+    "running=false": {"model": "kasuga_lib:block/fsm_test_block"},
+    "running=true": {"model": "kasuga_lib:block/fsm_test_block"}
+  }
+}

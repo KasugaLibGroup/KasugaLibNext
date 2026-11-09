@@ -53,8 +53,10 @@ public final class TransformLerp {
         mt.getTranslation(scratch.translationTo);
         scratch.translationFrom.lerp(scratch.translationTo, alpha, scratch.translation);
 
-        mf.getNormalizedRotation(scratch.rotationFrom);
-        mt.getNormalizedRotation(scratch.rotationTo);
+        // getNormalizedRotation assumes an already unit-length basis. Authored and motion matrices
+        // commonly carry scale, so strip that scale before normalizing the quaternion.
+        mf.getUnnormalizedRotation(scratch.rotationFrom).normalize();
+        mt.getUnnormalizedRotation(scratch.rotationTo).normalize();
         scratch.rotationFrom.slerp(scratch.rotationTo, alpha, scratch.rotation);
 
         scaleOf(mf, scratch.scaleFrom);

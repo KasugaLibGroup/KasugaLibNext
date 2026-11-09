@@ -78,6 +78,11 @@ public final class KasugaModelPipelines {
         }
         ModelInstance instance = pipeline.createInstance(loc, instanceLoc, rootTransform, null, null);
         if (instance == null) {
+            // Silent before: the model resource is either not loaded yet or the loader rejected it.
+            if (warned.add("unpublished:" + loc + "@" + instanceLoc)) {
+                LOGGER.debug("[KasugaModelPipelines] model '{}' not published for instance '{}' "
+                        + "(waiting for the resource pack, or the loader rejected the file)", loc, instanceLoc);
+            }
             return null; // model not published yet (resource loading); retry lazily
         }
         pipeline.addToRenderer(loc, instanceLoc, BRIDGE, BACKEND);
@@ -112,11 +117,37 @@ public final class KasugaModelPipelines {
         return removed;
     }
 
+    /**
+     * Permanently removes an FSM-owned instance from the pipeline backend and instance registry.
+     * Use this for terminal host removal; {@link #unbind} remains available for callers that intend
+     * to re-mount the same registered instance later.
+     */
+    public static boolean remove(ResourceLocation modelLoc, @Nullable String modelName,
+                                 ResourceLocation instanceLoc) {
+        ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = route(modelLoc);
+        if (pipeline == null) {
+            return false;
+        }
+        ResourceLocation loc = resolveLoc(modelLoc, modelName, pipeline);
+        if (loc == null) {
+            return false;
+        }
+        boolean removed = pipeline.removeInstance(loc, instanceLoc);
+        if (removed) {
+            LOGGER.info("[KasugaModelPipelines] removed '{}' instance '{}'", loc, instanceLoc);
+        }
+        return removed;
+    }
+
     //region routing
 
     @Nullable
     private static ModelPipeLine<ResourceLocation, ResourceLocation> route(@Nullable ResourceLocation modelLoc) {
-        if (modelLoc == null || !PipelineRegistry.isInitialized()) {
+        if (modelLoc == null) return null;
+        if (!PipelineRegistry.isInitialized()) {
+            if (warned.add("uninitialized:" + modelLoc)) {
+                LOGGER.debug("[KasugaModelPipelines] pipeline registry not initialized yet; deferring '{}'", modelLoc);
+            }
             return null;
         }
         ModelPipeLine<ResourceLocation, ResourceLocation> pipeline = PipelineRegistry.resolve(modelLoc);

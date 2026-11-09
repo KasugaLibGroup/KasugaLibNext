@@ -84,7 +84,9 @@ Bone local inputs under compatible names, morph activation values, IK switches a
 Temporary per-frame IK targets, physics simulation results, custom tick-loop modules and anchor callbacks are not copied; reconfigure them in the callback.
 Manual material frames that need per-part remapping are handled in the callback as well.
 
-The generic `ModelPosing`, `AnimationPlayer` and `FsmPoseDriver` implement `RebindablePoseDriver`.
+The generic `ModelPosing`, `AnimationPlayer` and compatibility-path `FsmPoseDriver` implement `RebindablePoseDriver`.
+New FSM hosts use `FsmPoseEvaluator + ManagedAnimationScope + ModelPoseTarget`; `FsmPoseDriver`
+is retained only for existing callers that rely on render-thread formula resampling.
 A named ModelPosing refreshes its data from the new Model's clip library and keeps the original timeline, playback time, speed and paused state;
 a missing clip restores an empty pose. An external shared clock is not restarted, and other targets following that player's own clock keep the same clock.
 The rebind of a plain AnimationPlayer/FSM migrates into the target; when its external clip data needs updating, hook that in the callback.
@@ -230,14 +232,15 @@ interface RebindablePoseDriver extends PoseDriver { void rebind(ModelInstance fr
 void ModelPosing.rebind(ModelInstance fresh);
 ModelInstance ModelPosing.model();
 void AnimationPlayer<T>.rebind(ModelInstance fresh, AnimationSampler<T> sampler, T data);
-void AnimationPlayback<T,R>.retarget(AnimationSource<T,R> source, T data);
 void SkeletonInstance.copyPoseInputsTo(SkeletonInstance target);
 void MorphInstance<Id>.copyInputsTo(MorphInstance<Id> target);
 ```
 
 Skeleton migration copies only named local transforms, IK switches and persistent targets; the root transform and floating origin are migrated separately by the host.
 Morph migration copies the activation value/factor corresponding to the identity, and does not copy result caches or source structure objects. Names that do not exist on the target are ignored.
-`AnimationPlayback.retarget` keeps the clock object/ownership; an own clock is updated to the new clip's duration, and an external clock is not modified.
+`AnimationPlayer.rebind(fresh, sampler, data)` replaces clip data and the target model while
+retaining the current Scope clock. Standalone and externally shared playback continue to follow
+their respective clock-ownership rules.
 These control operations must run serially with tick, and the render sample consumes the existing snapshot mechanism.
 
 

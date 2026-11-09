@@ -28,9 +28,16 @@ tan(newFov / 2) = tan(baseFov / 2) / zoom
 
 ## 模型与摄像机通道
 
-模型姿态和摄像机姿态共享计时/采样内核，但输出目标分别处理骨骼、morph、材质和命名镜头通道。
-逻辑镜头名与输出 view ID 独立，一个镜头轨道可以绑定多个实际机位。模型重载仅替换输出目标，
-不重置外部共享时钟。分层状态机的层权重与状态转换仍由状态机本身管理。
+模型姿态和摄像机姿态分别由 `ScopedPlayerPosePlayback` 与 `ScopedCameraPosePlayback`
+持有的私有 `ManagedAnimationScope` 驱动，共享的是 Scope、Playback 和结果型 Target 契约。
+两者跟随同一个 `AnimationTimeline` 时，时间线通过 observer 交付快照，不会产生第二个 tick owner。
+输出目标仍分别处理骨骼、morph、材质和 `kasuga:camera_pose` 通道。
 
-控制线程通过不可变快照交付时钟，渲染线程采样。关闭或失败的摄像机不再接受控制，防止旧控制器引用
+动画源只在逻辑提交阶段采样；render sample 只插值已提交结果。跨越循环时，提交会同时包含
+end 与 start 两侧姿态，避免把上一轮终点和下一轮起点混成插值区间。逻辑镜头名与输出 view ID
+独立，一个镜头轨道可以绑定多个实际机位。模型重载仅替换输出目标，不重置外部共享时钟。
+分层状态机的层权重与状态转换仍由状态机本身管理。
+
+控制线程通过不可变的 `AnimationTimeline.Snapshot` 交付时钟，渲染线程读取 Scope 已发布的 batch。
+关闭或失败的摄像机不再接受控制，防止旧控制器引用
 驱动已经释放的资源。窗口机位的输出尺寸仍由 framebuffer/DPI 决定，不被动画轨道冻结。
