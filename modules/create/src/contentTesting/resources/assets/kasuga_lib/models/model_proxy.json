@@ -1,0 +1,5 @@
+{
+  "kasuga_lib": [
+    "models/block/bogey/**/*.obj"
+  ]
+}

@@ -28,9 +28,20 @@ the timeline period, and shorter targets hold their own endpoint within the shar
 
 ## Model and camera channels
 
-Model poses and camera poses share the timing/sampling kernel, but their output targets handle bone, morph, material, and named camera track channels separately.
-The logical camera name is independent of the output view ID, and one camera track can be bound to multiple actual camera views. A model reload only swaps the output target and
-does not reset the external shared clock. The layer weights and state transitions of a layered state machine are still managed by the state machine itself.
+Model poses and camera poses are driven by private `ManagedAnimationScope` instances owned by
+`ScopedPlayerPosePlayback` and `ScopedCameraPosePlayback`. They share Scope, Playback, and
+result-target contracts. When both follow one `AnimationTimeline`, the timeline delivers snapshots
+through observers without creating a second tick owner. Their output targets still handle model
+bone/morph/material channels and the `kasuga:camera_pose` channel separately.
 
-The control thread delivers the clock through an immutable snapshot and the render thread samples it. A closed or failed camera no longer accepts control, which keeps old controller references
+Animation sources are sampled only during logical commits; render sampling interpolates committed
+results. A loop crossing publishes both the end and start poses so an interval cannot blend the
+end of one iteration with the start of the next. The logical camera name is independent of the
+output view ID, and one camera track can be bound to multiple actual camera views. A model reload
+only swaps the output target and does not reset the external shared clock. The layer weights and
+state transitions of a layered state machine are still managed by the state machine itself.
+
+The control thread delivers the clock through an immutable `AnimationTimeline.Snapshot`, and the
+render thread reads a completed Scope batch. A closed or failed camera no longer accepts control,
+which keeps old controller references
 from driving resources that have already been released. The output size of a window camera view is still determined by the framebuffer/DPI and is not frozen by animation tracks.

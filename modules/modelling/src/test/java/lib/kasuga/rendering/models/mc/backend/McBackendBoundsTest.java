@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.mc.backend;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.uml.structure.Model;
 import lib.kasuga.rendering.models.uml.structure.basic.Mesh;
@@ -29,7 +30,7 @@ class McBackendBoundsTest {
     @Test void failedPoseSamplingRestoresTheCallersMatrixStack() throws Exception {
         try (var backend = new MCBackend(); var instance = fixture()) {
             var failure = new IllegalStateException("sample failed");
-            instance.setPoseDriver(new lib.kasuga.rendering.models.uml.dynamic.PoseDriver() {
+            ModelPoseBinding.install(instance, new lib.kasuga.rendering.models.uml.dynamic.PoseDriver() {
                 @Override public void sample(float partialTick) { throw failure; }
             });
             var stack = new com.mojang.blaze3d.vertex.PoseStack(); stack.translate(2, 3, 4);

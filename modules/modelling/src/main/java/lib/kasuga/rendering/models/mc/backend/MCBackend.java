@@ -11,6 +11,9 @@ import lib.kasuga.rendering.models.uml.backend.Backend;
 import lib.kasuga.rendering.models.uml.backend.BackendContext;
 import lib.kasuga.rendering.models.uml.bridge.Bridge;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.FrameInputSnapshot;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.RenderFrameToken;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.RenderSampleContext;
 import lib.kasuga.rendering.models.uml.dynamic.SkeletonInstance;
 import lib.kasuga.rendering.models.uml.framework.schedule.ModelRenderScheduling;
 import lib.kasuga.rendering.models.uml.framework.schedule.RenderScheduler;
@@ -121,7 +124,10 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
             // physics is advanced by MinecraftRagdollRuntime independently of
             // render visibility; tying it to this method froze culled instances.
             if (sampledThisFrame.firstSample(model)) {
-                model.sample(context.getPartialTickFraction(), renderFrameToken);
+                model.sample(new RenderSampleContext(
+                        new RenderFrameToken(renderFrameToken),
+                        context.getPartialTickFraction(),
+                        FrameInputSnapshot.empty()));
             }
 
             LightData lightData;
@@ -347,6 +353,35 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
                 globalBatcher.endFrame();
             }
         }
+    }
+
+    /**
+     * Draws one instance outside the world pass (item display, previews). The caller owns the pose and
+     * the projection: the pose is used as-is (no camera-relative rebase), so the instance should sit at
+     * the origin and carry no world transform.
+     *
+     * <p>Intended for instances in {@link lib.kasuga.rendering.models.mc.backend.schedule.RenderScheduleMode#VANILLA_RENDERER}:
+     * the caller marks the instance for the current frame (or uses an {@code ALWAYS} policy) so the
+     * scheduling gate lets it through. Sampling is released afterwards because this path has no frame
+     * begin/end, so the next draw samples again.
+     *
+     * @return true when an instance with this model was found and submitted
+     */
+    public boolean renderInstance(ModelInstance model, MCBackendContext context) {
+        checkOpen();
+        for (var renderable : new ArrayList<>(getRenderingObjects().values())) {
+            if (renderable.getModelInstance() != model || !renderable.isRender()) continue;
+            sampledThisFrame.forget(model);       // no beginFrame here: sample on every draw
+            render(renderable, context, ModelRenderPass.OPAQUE,
+                    RenderState.getRenderType(ModelRenderPass.OPAQUE), OitRenderer.NORMAL, null);
+            render(renderable, context, ModelRenderPass.MASK,
+                    RenderState.getRenderType(ModelRenderPass.MASK), OitRenderer.NORMAL, null);
+            render(renderable, context, ModelRenderPass.TRANSLUCENT,
+                    RenderState.getRenderType(ModelRenderPass.TRANSLUCENT), OitRenderer.NORMAL, null);
+            sampledThisFrame.forget(model);
+            return true;
+        }
+        return false;
     }
 
     /**

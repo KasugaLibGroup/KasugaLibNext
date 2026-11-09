@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -410,6 +411,41 @@ public final class StateMachine<Owner> {
             version++;
         }
         return applied;
+    }
+
+    /** Captures every mutable runtime field needed to roll back a failed logical step. */
+    public StateMachineCheckpoint checkpoint() {
+        Map<String, StateMachineCheckpoint.LayerRuntimeState> layerStates =
+                new LinkedHashMap<>();
+        for (Layer<Owner> layer : layers) {
+            layerStates.put(layer.id(), layer.checkpoint());
+        }
+        return new StateMachineCheckpoint(
+                version,
+                tickCount,
+                vars.copy(),
+                layerStates,
+                locks,
+                bufferedTriggers);
+    }
+
+    /** Restores the machine without invoking lifecycle callbacks or bumping {@link #version}. */
+    public void restore(StateMachineCheckpoint checkpoint) {
+        Objects.requireNonNull(checkpoint, "checkpoint");
+        version = checkpoint.version();
+        tickCount = checkpoint.tickCount();
+        vars.copyFrom(checkpoint.values());
+        locks.clear();
+        locks.putAll(checkpoint.locks());
+        bufferedTriggers.clear();
+        bufferedTriggers.addAll(checkpoint.bufferedTriggers());
+        for (Map.Entry<String, StateMachineCheckpoint.LayerRuntimeState> entry
+                : checkpoint.layers().entrySet()) {
+            Layer<Owner> layer = layerOrNull(entry.getKey());
+            if (layer != null) {
+                layer.restore(entry.getValue());
+            }
+        }
     }
 
     //endregion

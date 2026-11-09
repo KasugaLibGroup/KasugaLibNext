@@ -110,6 +110,12 @@ public final class MutableStateMap implements StateMap {
         return clone;
     }
 
+    /** Replaces all explicit values with a previously captured checkpoint. */
+    public void copyFrom(MutableStateMap source) {
+        values.clear();
+        values.putAll(source.values);
+    }
+
     private static void checkType(StateVar<?> requested, Entry entry) {
         if (entry.var().type() != requested.type()) {
             throw new IllegalStateException("state var type collision for " + requested.id()

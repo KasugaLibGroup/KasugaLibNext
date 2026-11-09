@@ -84,7 +84,9 @@ boolean switched = handle.switchAssembly(ResourceLocation.parse("example:summer"
 临时逐帧 IK 目标、物理模拟结果、tick-loop 自定义模块与锚点回调不复制；在回调中重新配置。
 手动材质帧如需按组件重映射，也在回调中处理。
 
-公共 `ModelPosing`、`AnimationPlayer`、`FsmPoseDriver` 实现 `RebindablePoseDriver`。
+公共 `ModelPosing`、`AnimationPlayer` 以及兼容路径 `FsmPoseDriver` 实现 `RebindablePoseDriver`。
+新 FSM 宿主使用 `FsmPoseEvaluator + ManagedAnimationScope + ModelPoseTarget`；`FsmPoseDriver`
+仅为依赖渲染线程公式重采样的既有调用方保留。
 命名 ModelPosing 会从新 Model 的片段库刷新数据，并保留原时间轴、播放时间、速度和暂停状态；
 缺失片段恢复空姿态。外部共享时钟不被重启，跟随该播放器自有时钟的其他目标也保留同一时钟。
 普通 AnimationPlayer/FSM 的 rebind 迁移写入目标；需要更新其外部片段数据时由回调接入。
@@ -227,14 +229,14 @@ interface RebindablePoseDriver extends PoseDriver { void rebind(ModelInstance fr
 void ModelPosing.rebind(ModelInstance fresh);
 ModelInstance ModelPosing.model();
 void AnimationPlayer<T>.rebind(ModelInstance fresh, AnimationSampler<T> sampler, T data);
-void AnimationPlayback<T,R>.retarget(AnimationSource<T,R> source, T data);
 void SkeletonInstance.copyPoseInputsTo(SkeletonInstance target);
 void MorphInstance<Id>.copyInputsTo(MorphInstance<Id> target);
 ```
 
 骨骼迁移只复制命名局部变换、IK 开关及持久目标；根变换和浮动原点由宿主另行迁移。
 morph 迁移复制标识对应的激活值/因子，不复制结果缓存或源结构对象。目标不存在的名称忽略。
-`AnimationPlayback.retarget` 保持时钟对象/所有权；自有时钟按新片段时长更新，外部时钟不修改。
+`AnimationPlayer.rebind(fresh, sampler, data)` 在替换片段和目标模型时保留当前 Scope 时钟；
+独立播放与外部共享播放继续遵守各自的时钟所有权。
 这些控制操作须与 tick 串行，render sample 消费既有快照机制。
 
 

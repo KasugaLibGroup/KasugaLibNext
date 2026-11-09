@@ -1,6 +1,6 @@
 {
   "on_register": [
-    "kasuga_lib_content/fan_formula_data_driven.json",
+    "kasuga_lib_content/example_fan_data_driven.json",
     "kasuga_lib_content/fsm_blocks.json"
   ],
   "on_reload": [

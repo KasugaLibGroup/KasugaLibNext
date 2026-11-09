@@ -34,7 +34,7 @@ class ModelInstanceAnimateTest {
     void animateForwardsDtToDriver() {
         ModelInstance instance = ModelInstanceFixture.minimal();
         CountingDriver driver = new CountingDriver();
-        instance.setPoseDriver(driver);
+        ModelPoseBinding.install(instance, driver);
 
         instance.animate(0.05f);
 
@@ -46,7 +46,7 @@ class ModelInstanceAnimateTest {
     void updateDoesNotDriveAnimation() {
         ModelInstance instance = ModelInstanceFixture.minimal();
         CountingDriver driver = new CountingDriver();
-        instance.setPoseDriver(driver);
+        ModelPoseBinding.install(instance, driver);
 
         instance.update(); // the render-thread path — must never advance the driver
 

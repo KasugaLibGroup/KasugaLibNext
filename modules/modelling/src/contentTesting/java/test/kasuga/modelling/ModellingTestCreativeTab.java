@@ -3,9 +3,11 @@ package test.kasuga.modelling;
 import io.micronaut.context.annotation.Context;
 import lib.kasuga.registration.minecraft.creative_tab.CreativeTabReg;
 import lib.kasuga.registration.minecraft.creative_tab.CreativeTabRegModifiers;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 
 @Context
 public class ModellingTestCreativeTab {
@@ -16,13 +18,15 @@ public class ModellingTestCreativeTab {
             .configure(CreativeTabRegModifiers.TabBuilder.of("icon",
                 builder -> builder.icon(() -> new ItemStack(Items.COMMAND_BLOCK))))
             .displayItems((params, output) -> {
-                var block = ModellingContentTest.TEST_FAN_BE_BLOCK.getEntry();
-                if (block != null) {
-                    output.accept(block);
+                // code-registered fan
+                var exampleFan = ModellingContentTest.EXAMPLE_FAN_BLOCK.getEntry();
+                if (exampleFan != null) {
+                    output.accept(exampleFan);
                 }
-                var fanFormulaBlock = ModellingContentTest.TEST_FAN_FORMULA_BLOCK.getEntry();
-                if (fanFormulaBlock != null) {
-                    output.accept(fanFormulaBlock);
+                // data-driven fan: registered from JSON, so look it up by id
+                var dataDrivenFan = BuiltInRegistries.BLOCK.get(FanDataDrivenFactories.BLOCK_ID);
+                if (dataDrivenFan != Blocks.AIR) {
+                    output.accept(dataDrivenFan);
                 }
             })
             .setParent(ModellingTestApplication.registry);

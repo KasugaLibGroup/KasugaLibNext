@@ -281,7 +281,7 @@ The element schema is decided by `AnimationClip.CODEC` (`AnimationClip.java:47-5
 | `bones` | array | No | `[]` | Bone keyframe tracks |
 | `morphs` | array | No | `[]` | morph value tracks |
 | `frames` | array | No | `[]` | Material frame tracks |
-| `functions` | array | No | `[]` | Formula tracks (evaluated every frame) |
+| `functions` | array | No | `[]` | Formula tracks (evaluated once per logical step; render frames interpolate the resulting Poses) |
 
 ### 6.2 `bones[]`
 

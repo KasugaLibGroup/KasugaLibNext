@@ -425,6 +425,33 @@ public final class Layer<Owner> {
         return new PoseTarget.ClipTarget(active.clipSampler(), active.clipData(), active.clipLoop(), clipPrevTime, clipTime);
     }
 
+    StateMachineCheckpoint.LayerRuntimeState checkpoint() {
+        return new StateMachineCheckpoint.LayerRuntimeState(
+                active == null ? null : active.id(),
+                activeTransition == null ? null : activeTransition.id(),
+                transitionElapsed,
+                stateElapsedTicks,
+                pendingGoTo == null ? null : pendingGoTo.id(),
+                activeChanged,
+                clipPrevTime,
+                clipTime);
+    }
+
+    void restore(StateMachineCheckpoint.LayerRuntimeState state) {
+        active = findState(state.activeStateId());
+        activeTransition = null;
+        if (state.transitionId() != null) {
+            conformTransition(state.transitionId(), state.transitionElapsed());
+        } else {
+            transitionElapsed = state.transitionElapsed();
+        }
+        stateElapsedTicks = state.stateElapsedTicks();
+        pendingGoTo = findState(state.pendingStateId());
+        activeChanged = state.activeChanged();
+        clipPrevTime = state.clipPreviousTime();
+        clipTime = state.clipTime();
+    }
+
     /**
      * The pose of {@code state} at clip time {@code clipTime} seconds (monotonic; loop-wrap / end-clamp
      * normalization applied here): static pose merged first, then the clip sample (clip bone entries win

@@ -8,13 +8,23 @@ import lib.kasuga.rendering.models.mc.dynamic.physics.MinecraftRagdollRuntime;
 import lib.kasuga.rendering.models.mc.dynamic.fsm.KasugaModelPipelines;
 import lib.kasuga.rendering.models.mc.registry.PipelineRegistry;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmMachineBuilder;
-import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmPoseDriver;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.ControllerBinding;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.LogicalStepPolicy;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.ManagedAnimationScope;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.ScopeAdvance;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.ScopeAdvanceCause;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.TargetBinding;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.TargetPublicationFactory;
+import lib.kasuga.rendering.models.uml.dynamic.animation.target.ModelPoseTarget;
+import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmPoseEvaluator;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
-import lib.kasuga.rendering.models.uml.dynamic.RebindablePoseDriver;
+import lib.kasuga.rendering.models.uml.dynamic.RebindableRootTransformDriver;
+import lib.kasuga.rendering.models.uml.dynamic.RootTransformDriver;
 import lib.kasuga.rendering.models.uml.dynamic.physics.SkeletonRagdoll;
 import lib.kasuga.rendering.models.uml.dynamic.tick_loop.handler.AnchorModule;
 import lib.kasuga.rendering.models.uml.math.Transform;
@@ -80,6 +90,8 @@ public final class McModelHandle {
     private final Map<String, IdentityHashMap<BiConsumer<String, Transform>, AnchorCallback>> anchorCallbacks = new HashMap<>();
     @Nullable
     private FsmAnimatedModel syncedFsm;
+    @Nullable
+    private LocalFsmBinding localFsm;
 
     private McModelHandle(ResourceLocation modelLoc, @Nullable String modelName,
                           ResourceLocation instanceLoc,
@@ -197,6 +209,11 @@ public final class McModelHandle {
                 || boundPipeline.getInstance(boundKey, instanceLoc) == instance);
     }
 
+    /** Whether this handle has reached its terminal lifecycle state. */
+    public boolean isDestroyed() {
+        return destroyed;
+    }
+
     /** Refresh custom drivers or physics here. Called before the old instance is retired on an explicit switch. */
     public McModelHandle onInstanceChanged(BiConsumer<ModelInstance, ModelInstance> callback) {
         onRebind = callback; return this;
@@ -252,10 +269,34 @@ public final class McModelHandle {
                 state.previous.getSkeletonInstance().copyPoseInputsTo(fresh.getSkeletonInstance());
                 state.previous.getMorph().copyInputsTo(fresh.getMorph());
                 if (onRebind != null) onRebind.accept(state.previous, fresh);
-                if (fresh.getPoseDriver() == null && state.driver instanceof RebindablePoseDriver driver) {
-                    driver.rebind(fresh); fresh.setPoseDriver(driver);
+                rebindPoseDriver(state, fresh);
+                rebindRootDriver(state, fresh);
+                if (localFsm != null) {
+                    localFsm.rebind(fresh);
                 }
             }
+        }
+    }
+
+    private static void rebindPoseDriver(RebindState state, ModelInstance fresh) {
+        ModelPoseBinding binding = state.binding;
+        if (binding != null && !binding.isClosed() && fresh.getPoseDriver() == null) {
+            binding.rebind(fresh);
+        }
+    }
+
+    private static void rebindRootDriver(RebindState state, ModelInstance fresh) {
+        RootTransformDriver driver = state.rootDriver;
+        if (fresh.getRootTransformDriver() != null
+                || !(driver instanceof RebindableRootTransformDriver rebindable)) {
+            return;
+        }
+        rebindable.rebind(fresh);
+        if (fresh.getRootTransformDriver() == null) {
+            fresh.setRootTransformDriver(driver);
+        }
+        if (state.previous.getRootTransformDriver() == driver) {
+            state.previous.setRootTransformDriver(null);
         }
     }
 
@@ -291,11 +332,14 @@ public final class McModelHandle {
     }
 
     private record RebindState(ModelInstance previous, Transform root, Vector3d origin, boolean floating,
-                               PoseDriver driver, RenderScheduleMode mode, boolean visible, float distance) {
+                               @Nullable ModelPoseBinding binding, RootTransformDriver rootDriver,
+                               RenderScheduleMode mode, boolean visible, float distance) {
         static RebindState capture(ModelInstance instance) {
             var skeleton = instance.getSkeletonInstance();
             return new RebindState(instance, skeleton.getTransform().copy(), skeleton.getWorldOrigin(), skeleton.isFloatingOriginEnabled(),
-                    instance.getPoseDriver(), ModelRenderScheduler.mode(instance), ModelRenderScheduler.shouldRender(instance),
+                    instance.getPoseDriver() instanceof ModelPoseBinding binding ? binding : null,
+                    instance.getRootTransformDriver(),
+                    ModelRenderScheduler.mode(instance), ModelRenderScheduler.shouldRender(instance),
                     ModelRenderScheduler.maxRenderDistance(instance));
         }
     }
@@ -333,6 +377,10 @@ public final class McModelHandle {
         if (syncedFsm != null) {
             syncedFsm.model(null, null, null);
             syncedFsm = null;
+        }
+        if (localFsm != null) {
+            localFsm.dispose();
+            localFsm = null;
         }
         if (pipeline != null && key != null) {
             pipeline.removeInstance(key, instanceLoc);
@@ -421,6 +469,24 @@ public final class McModelHandle {
     /** Resets root to identity. */
     public McModelHandle resetPose() {
         ensurePose().setIdentity();
+        flushPose();
+        return this;
+    }
+
+    /**
+     * Replaces the root pose as a whole: position, rotation and scale.
+     *
+     * <p>Before mounting this is the pose handed to the binder; while mounted it is applied to the
+     * skeleton root in the instance's own coordinate system (origin-local when a floating origin is
+     * enabled). Use {@link #setPos(Vec3)} instead when only the world anchor may change and the
+     * skeleton must keep its rotation.
+     *
+     * @param pose the pose to copy; it is not retained
+     * @return this handle
+     */
+    public McModelHandle setPose(Transform pose) {
+        Objects.requireNonNull(pose, "pose");
+        ensurePose().set(pose);
         flushPose();
         return this;
     }
@@ -537,7 +603,7 @@ public final class McModelHandle {
 
     /**
      * 挂载一个<b>本地</b>数据驱动状态机：从共享定义桶按 id 构建，装配
-     * {@link FsmPoseDriver} 到本实例。无服务器同步——纯客户端表现或纯逻辑机用。
+     * {@link FsmPoseEvaluator} 与私有 Scope 到本实例。无服务器同步——纯客户端表现或纯逻辑机用。
      * 定义未就绪时返回 null（下 tick 重试）。
      *
      * <p>逻辑端每 game tick 调用返回绑定的 {@link LocalFsmBinding#tick()}。</p>
@@ -557,9 +623,26 @@ public final class McModelHandle {
     public LocalFsmBinding attachLocalStateMachine(StateMachine<?> machine) {
         requireMounted();
         Objects.requireNonNull(machine, "machine");
-        FsmPoseDriver driver = new FsmPoseDriver(machine, instance);
-        setAnimationDriver(driver);
-        return new LocalFsmBinding(this, machine, driver);
+        if (syncedFsm != null) {
+            throw new IllegalStateException("a synced state machine is already attached to this handle");
+        }
+        if (localFsm != null && !localFsm.isDisposed()) {
+            throw new IllegalStateException("a local state machine is already attached to this handle");
+        }
+        FsmPoseEvaluator evaluator = new FsmPoseEvaluator(machine);
+        ModelPoseTarget target = new ModelPoseTarget(instance);
+        ManagedAnimationScope scope = ManagedAnimationScope.builder(
+                        java.util.UUID.randomUUID(),
+                        LogicalStepPolicy.fixed(1.0 / 20.0, 5))
+                .controller(ControllerBinding.create(evaluator.controller()))
+                .target(new TargetBinding<>(
+                        target,
+                        evaluator.targetEvaluator(),
+                        new TargetPublicationFactory<>()))
+                .build();
+        instance.setAnimationRenderPort(scope.renderPort());
+        localFsm = new LocalFsmBinding(machine, evaluator, scope, target, instance);
+        return localFsm;
     }
 
     /**
@@ -642,12 +725,23 @@ public final class McModelHandle {
 
     /**
      * 逻辑端接入口：为该模型装配动画驱动（典型是状态机派生的
-     * {@code FsmPoseDriver}）。逻辑端由此只面向状态机编程。
+     * {@code FsmPoseEvaluator}）。逻辑端由此只面向状态机编程。
      */
     public McModelHandle setAnimationDriver(@Nullable PoseDriver driver) {
         requireMounted();
-        instance.setPoseDriver(driver);
+        installAnimationDriver(driver);
         return this;
+    }
+
+    @Nullable
+    private ModelPoseBinding installAnimationDriver(@Nullable PoseDriver driver) {
+        if (driver == null) {
+            if (instance.getPoseDriver() instanceof ModelPoseBinding binding) {
+                binding.close();
+            }
+            return null;
+        }
+        return ModelPoseBinding.install(instance, driver);
     }
 
     /** Attaches a display sub-object to a skeleton anchor (e.g. a held item). */
@@ -718,29 +812,62 @@ public final class McModelHandle {
     }
 
     /**
-     * 逻辑端持有的本地状态机绑定：机器 + 已装配的驱动。逻辑端只面向
+     * 逻辑端持有的本地状态机绑定：机器 + 私有 AnimationScope。逻辑端只面向
      * {@link #machine()} 编程（触发变量、查询状态）；每 game tick 调
      * {@link #tick()} 推进并发布姿态目标，渲染线程的插值采样由管线完成。
      */
     public static final class LocalFsmBinding {
-        private final McModelHandle handle;
         private final StateMachine<?> machine;
-        private final FsmPoseDriver driver;
+        private final FsmPoseEvaluator evaluator;
+        private final ManagedAnimationScope scope;
+        private final ModelPoseTarget target;
+        private volatile ModelInstance model;
+        private boolean disposed;
 
-        private LocalFsmBinding(McModelHandle handle,
-                                StateMachine<?> machine,
-                                FsmPoseDriver driver) {
-            this.handle = handle;
+        private LocalFsmBinding(StateMachine<?> machine,
+                                FsmPoseEvaluator evaluator,
+                                ManagedAnimationScope scope,
+                                ModelPoseTarget target,
+                                ModelInstance model) {
             this.machine = machine;
-            this.driver = driver;
+            this.evaluator = evaluator;
+            this.scope = scope;
+            this.target = target;
+            this.model = model;
         }
 
         public StateMachine<?> machine() {
             return machine;
         }
 
-        public FsmPoseDriver driver() {
-            return driver;
+        public FsmPoseEvaluator evaluator() {
+            return evaluator;
+        }
+
+        public ManagedAnimationScope scope() {
+            return scope;
+        }
+
+        public synchronized boolean isDisposed() {
+            return disposed;
+        }
+
+        /** Rebinds the pose sink while preserving the machine, Scope and publication history. */
+        public synchronized void rebind(ModelInstance fresh) {
+            Objects.requireNonNull(fresh, "fresh");
+            if (disposed) {
+                throw new IllegalStateException("local FSM binding is disposed");
+            }
+            ModelInstance previous = model;
+            if (previous == fresh) {
+                return;
+            }
+            if (previous.getAnimationRenderPort() == scope.renderPort()) {
+                previous.setAnimationRenderPort(null);
+            }
+            target.rebind(fresh);
+            fresh.setAnimationRenderPort(scope.renderPort());
+            model = fresh;
         }
 
         /** 逻辑端 game-tick 入口：推进机器 + 发布姿态目标。 */
@@ -749,12 +876,19 @@ public final class McModelHandle {
         }
 
         public void tick(float dtSeconds) {
-            driver.tick(dtSeconds);
+            scope.advance(new ScopeAdvance(dtSeconds, ScopeAdvanceCause.GAME_TICK));
         }
 
         /** 解除绑定：卸下驱动，机器状态保留。 */
-        public void dispose() {
-            handle.setAnimationDriver(null);
+        public synchronized void dispose() {
+            if (disposed) {
+                return;
+            }
+            disposed = true;
+            if (model.getAnimationRenderPort() == scope.renderPort()) {
+                model.setAnimationRenderPort(null);
+            }
+            scope.close();
         }
     }
 }

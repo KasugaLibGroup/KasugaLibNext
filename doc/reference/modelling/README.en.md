@@ -2,6 +2,10 @@
 
 `modules/modelling` provides KasugaLib's client-side model loading, model-instance lifecycle, Minecraft renderer backend, texture atlas integration, and related animation/physics features.
 
+For block entities that drive models through Proxy Sessions, start with
+[Proxy principles](../../explanation/proxy/README.en.md) and the
+[Proxy integration guide](../../guides/proxy-integration.en.md).
+
 This document describes the standard integration path for a mod that ships models with its resource pack, plus the validation and debugging methods to use while developing the module itself. The implementation is client-only: do not access its rendering APIs from a dedicated server.
 
 ## Prerequisites

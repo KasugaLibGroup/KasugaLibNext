@@ -5,6 +5,7 @@ import lib.kasuga.rendering.models.uml.backend.BackendContext;
 import lib.kasuga.rendering.models.uml.bridge.Bridge;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPublicationBatch;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPublicationCoordinator;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
@@ -126,7 +127,7 @@ class BackendContractTest {
         var publication = new ModelPublicationBatch<String>();
         publication.put(pipeline, Map.of("model", instance().getModel()));
         ModelInstance instance = pipeline.createInstance("model", "instance", null, null, null);
-        instance.setPoseDriver(new PoseDriver() {});
+        ModelPoseBinding.install(instance, new PoseDriver() {});
         pipeline.addToRenderer("model", "instance", "bridge", "a");
         adapter.factory = model -> second;
         pipeline.addToRenderer("model", "instance", "bridge", "b");

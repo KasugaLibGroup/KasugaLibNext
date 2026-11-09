@@ -2,7 +2,10 @@ package lib.kasuga.rendering.models.mc.api;
 
 import lib.kasuga.rendering.models.mc.backend.schedule.ModelRenderScheduler;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
+import lib.kasuga.rendering.models.uml.dynamic.RebindablePoseDriver;
+import lib.kasuga.rendering.models.uml.dynamic.RebindableRootTransformDriver;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.uml.structure.Model;
 import lib.kasuga.rendering.models.uml.structure.basic.Mesh;
@@ -115,6 +118,59 @@ class McModelHandleTest {
     }
 
     @Test
+    void remountRebindsRootAndPoseBindingIndependentlyAndClearsOldSlots() {
+        ModelInstance previous = fixture(null);
+        ModelInstance fresh = fixture(null);
+        AtomicInteger binds = new AtomicInteger();
+        McModelHandle handle = McModelHandle.custom(MODEL, null, INSTANCE,
+                pose -> binds.getAndIncrement() == 0 ? previous : fresh, loc -> null);
+        CountingPoseDriver poseDriver = new CountingPoseDriver();
+        CountingRootDriver rootDriver = new CountingRootDriver();
+        ModelPoseBinding poseBinding = ModelPoseBinding.install(previous, poseDriver);
+        assertTrue(handle.mount());
+        previous.setRootTransformDriver(rootDriver);
+
+        assertTrue(handle.unmount());
+        assertTrue(handle.mount());
+
+        assertNull(previous.getPoseDriver(), "the retired instance must not retain the pose owner");
+        assertNull(previous.getRootTransformDriver(), "the retired instance must not retain the root owner");
+        assertSame(poseBinding, fresh.getPoseDriver());
+        assertSame(rootDriver, fresh.getRootTransformDriver());
+        assertEquals(1, poseDriver.rebinds);
+        assertEquals(1, rootDriver.rebinds);
+        assertSame(fresh, poseDriver.destination);
+        assertSame(fresh, rootDriver.destination);
+    }
+
+    @Test
+    void detachedOldInstanceCanStillRestoreBothDriversAfterPipelineClose() {
+        ModelInstance previous = fixture(null);
+        ModelInstance fresh = fixture(null);
+        AtomicInteger binds = new AtomicInteger();
+        McModelHandle handle = McModelHandle.custom(MODEL, null, INSTANCE,
+                pose -> binds.getAndIncrement() == 0 ? previous : fresh, loc -> null);
+        CountingPoseDriver poseSource = new CountingPoseDriver();
+        ModelPoseBinding poseBinding = ModelPoseBinding.install(previous, poseSource);
+        CountingRootDriver rootDriver = new CountingRootDriver();
+        previous.setRootTransformDriver(rootDriver);
+        assertTrue(handle.mount());
+
+        assertTrue(handle.unmount());
+        previous.close();
+        assertNull(previous.getPoseDriver());
+        assertNull(previous.getRootTransformDriver());
+        assertFalse(poseBinding.isClosed(), "pipeline close must not terminal-close the restorable binding");
+
+        assertTrue(handle.mount());
+
+        assertSame(poseBinding, fresh.getPoseDriver());
+        assertSame(rootDriver, fresh.getRootTransformDriver());
+        assertEquals(1, poseSource.rebinds);
+        assertEquals(1, rootDriver.rebinds);
+    }
+
+    @Test
     void ambientLightEnhancementIsBufferedAndCanBeDisabled() {
         ModelInstance instance = fixture(null);
         McModelHandle handle = McModelHandle.custom(MODEL, null, INSTANCE,
@@ -176,7 +232,8 @@ class McModelHandleTest {
         PoseDriver driver = new PoseDriver() {};
         handle.setAnimationDriver(driver);
         assertSame(instance, handle.instance());
-        assertSame(driver, handle.instance().getPoseDriver());
+        assertTrue(instance.getPoseDriver() instanceof ModelPoseBinding);
+        assertSame(driver, ((ModelPoseBinding) instance.getPoseDriver()).source());
         assertTrue(handle.unmount());
         assertNull(handle.instance());
         assertFalse(handle.unmount(), "unmount on an unmounted handle is a no-op");
@@ -196,5 +253,37 @@ class McModelHandleTest {
         ModelInstance instance = new ModelInstance(model, null, null, null, null, null);
         if (rootPose != null) instance.getSkeletonInstance().transformRoot(rootPose.copy());
         return instance;
+    }
+
+    private static final class CountingPoseDriver implements RebindablePoseDriver {
+        private int rebinds;
+        private ModelInstance destination;
+
+        @Override
+        public void rebind(ModelInstance fresh) {
+            rebinds++;
+            destination = fresh;
+        }
+    }
+
+    private static final class CountingRootDriver implements RebindableRootTransformDriver {
+        private int rebinds;
+        private ModelInstance destination;
+
+        @Override
+        public ModelInstance owner() {
+            return destination;
+        }
+
+        @Override
+        public void sampleRoot(float partialTick) {
+        }
+
+        @Override
+        public void rebind(ModelInstance fresh) {
+            rebinds++;
+            destination = fresh;
+            fresh.setRootTransformDriver(this);
+        }
     }
 }

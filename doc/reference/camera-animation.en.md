@@ -75,8 +75,12 @@ Minecraft advances the clock automatically once per game tick (20 Hz), and does 
 
 ## Integration with existing model animation
 
-The model's `AnimationPlayer<T>` and the camera adapter now both use `AnimationPlayback<T, R>`.
-The existing `AnimationSampler<T>` is an `AnimationSource<T, Pose>` that outputs the model `Pose`; the camera's `CameraClipSampler` outputs a `CameraPose` that has not been applied to the world, and the shared kernel handles timing and sampling.
+`AnimationPlayer<T>` and the camera adapter use `ScopedPlayerPosePlayback` and
+`ScopedCameraPosePlayback` respectively; each owns a private `ManagedAnimationScope`. They share
+the Scope, Playback and result-target contracts rather than a public compatibility class.
+`AnimationSampler<T>` outputs the model `Pose`, while `CameraClipSampler` outputs a `CameraPose`
+that has not been applied to the world. Animation sources are sampled only during logical
+publication; render sampling interpolates the committed generation.
 The original model `play(sampler, data, loop)` and JSON are kept. Named clips and static poses now all use
 [ModelPosing](model-posing.md); the glTF-specific driver has been migrated to that public entry point.
 
@@ -107,7 +111,7 @@ After reading it as `scene` through `AnimationClip.CODEC`, bind the targets to t
 ```java
 var timeline = new AnimationTimeline();
 var modelPlayer = new AnimationPlayer<AnimationClip>(modelInstance);
-modelInstance.setPoseDriver(modelPlayer);
+ModelPoseBinding.install(modelInstance, modelPlayer);
 modelPlayer.follow(ClipSampler.INSTANCE, scene, timeline);
 camera.animation().follow(scene, "main_shot", timeline);
 timeline.play(scene.durationSeconds(), true);

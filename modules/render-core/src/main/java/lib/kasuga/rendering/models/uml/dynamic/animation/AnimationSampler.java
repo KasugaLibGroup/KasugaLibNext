@@ -12,10 +12,10 @@ import org.jetbrains.annotations.Nullable;
  *   <li><b>{@link AnimationSampler} — interpolation only.</b> Stateless (repeated calls with equal
  *       arguments return equivalent results), no clock, no skeleton writes, no {@code ModelInstance}
  *       dependency — name resolution (if any) is held as an immutable map captured at construction.</li>
- *   <li><b>{@link AnimationPlayer} — clock + write end.</b> Owns playback state (loop / speed /
- *       seconds) and flushes the sampled pose through a {@code PoseSink}. The player normalizes
- *       {@code time} (loop → {@code time % duration}; non-loop → {@code min(time, duration)}), so a
- *       sampler never implements loop semantics itself.</li>
+ *   <li><b>{@link AnimationPlayer} — playback + write end.</b> Standalone playback uses a private
+ *       Scope to sample this source at fixed logical substeps; render sampling only resolves the
+ *       committed poses. Loop and endpoint normalization still happen before this sampler is called,
+ *       so a sampler never implements clock or loop semantics itself.</li>
  * </ul>
  *
  * <p>Common data uses {@link ClipSampler} / {@link AnimationClip}; format readers can supply their own
@@ -46,13 +46,13 @@ public interface AnimationSampler<T> extends AnimationSource<T, Pose> {
 
     /**
      * Evaluate the animation at {@code time} seconds with a formula {@link Namespace} available to formula
-     * tracks (the parameter-store render projection — {@code query.*} variables injected per entity).
+     * tracks ({@code query.*} variables injected from the frozen logical-step snapshot).
      * The default forwards to {@link #sample(Object, float)}, so formula-agnostic samplers (glTF, VMD, …)
      * keep their existing two-arg behavior with zero changes.
      *
      * @param data      the animation data
      * @param time      normalized seconds within {@code [0, duration]}
-     * @param namespace formula namespace carrying the injected {@code query.*} variables, or {@code null}
+     * @param namespace formula namespace carrying the step's {@code query.*} values, or {@code null}
      *                  to skip formula-track evaluation entirely
      * @return the interpolated pose
      */

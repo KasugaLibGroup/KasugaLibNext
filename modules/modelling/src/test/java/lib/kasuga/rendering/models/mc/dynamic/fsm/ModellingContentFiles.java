@@ -27,7 +27,7 @@ final class ModellingContentFiles {
     static final String INDEX = RESOURCES + "/kasuga_lib/data_driven/modelling.json";
 
     /** The block content file listed under {@code on_register}. */
-    static final String BLOCK_CONTENT = RESOURCES + "/kasuga_lib_content/fan_formula_data_driven.json";
+    static final String BLOCK_CONTENT = RESOURCES + "/kasuga_lib_content/example_fan_data_driven.json";
 
     /** The state machine file found by the {@code state_machines/} directory glob. */
     static final String MACHINE = RESOURCES + "/state_machines/fan_machine_data_driven.json";

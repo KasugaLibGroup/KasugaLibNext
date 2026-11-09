@@ -2,6 +2,8 @@ package lib.kasuga.rendering.output.camera;
 
 import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
+import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationSource;
+import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationTimeline;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.math.Easing;
 import lib.kasuga.rendering.output.WorldCameraView;
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static lib.kasuga.rendering.output.camera.CameraAnimationClip.Channel.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -115,6 +118,13 @@ class CameraAnimationTest {
         assertEquals(player.sample(.9f), player.sample(.9f));
     }
 
+    @Test void loopingPlaybackScalesLogicalTimeBySpeed() {
+        var player = player(true);
+        player.setSpeed(2);
+        player.tick(.25f);
+        assertEquals(BASE.x() + 5, player.sample(1).x(), 1e-5);
+    }
+
     @Test void completedClipSettlesToTheLastFrameAtEveryPartialTick() {
         var player = player(false);
         player.tick(.5f); player.tick(.6f);
@@ -156,5 +166,98 @@ class CameraAnimationTest {
         source[0] = BASE.moveBy(3, 2, 1);
         assertEquals(source[0].zoom(2), player.sample(1));
         assertEquals(player.sample(1), player.sample(1));
+    }
+
+    @Test void renderSamplingDoesNotResampleCameraSource() {
+        AtomicInteger samples = new AtomicInteger();
+        AnimationSource<CameraAnimationClip, CameraPose> source = new AnimationSource<>() {
+            @Override
+            public float duration(CameraAnimationClip data) {
+                return data.durationSeconds();
+            }
+
+            @Override
+            public CameraPose sample(CameraAnimationClip data, float time) {
+                samples.incrementAndGet();
+                return CameraClipSampler.INSTANCE.sample(data, time);
+            }
+        };
+        var player = new CameraAnimationPlayer(() -> BASE, () -> {}, source);
+        player.play(clip(), true);
+        player.tick(.25f);
+        int samplesAfterTick = samples.get();
+
+        player.sample(0);
+        player.sample(.5f);
+        player.sample(1);
+
+        assertEquals(samplesAfterTick, samples.get());
+        assertEquals(BASE.x() + 2.5, player.sample(1).x(), 1e-5);
+    }
+
+    @Test void sharedTimelineAlsoPublishesBeforeRenderSampling() {
+        AtomicInteger samples = new AtomicInteger();
+        AnimationSource<CameraAnimationClip, CameraPose> source = new AnimationSource<>() {
+            @Override
+            public float duration(CameraAnimationClip data) {
+                return data.durationSeconds();
+            }
+
+            @Override
+            public CameraPose sample(CameraAnimationClip data, float time) {
+                samples.incrementAndGet();
+                return CameraClipSampler.INSTANCE.sample(data, time);
+            }
+        };
+        AnimationTimeline timeline = new AnimationTimeline();
+        var player = new CameraAnimationPlayer(() -> BASE, () -> {}, source);
+        player.follow(clip(), timeline);
+        timeline.play(1, true);
+        timeline.tick(.25f);
+        int samplesAfterTick = samples.get();
+
+        assertEquals(BASE.x() + 2.5, player.sample(1).x(), 1e-5);
+        player.sample(.5f);
+        player.sample(1);
+        assertEquals(samplesAfterTick, samples.get());
+    }
+
+    @Test void cameraRejectsFollowingItsOwnMirrorButAllowsTheSameExternalTimeline() {
+        AnimationTimeline shared = new AnimationTimeline();
+        shared.play(1, true);
+        var player = new CameraAnimationPlayer(() -> BASE);
+
+        player.play(clip(), true);
+        assertThrows(IllegalArgumentException.class,
+                () -> player.follow(clip(), player.timeline()));
+
+        player.follow(clip(), shared);
+        player.follow(clip(), shared);
+
+        shared.seek(0.25f);
+        assertEquals(BASE.x() + 2.5, player.sample(1).x(), 1e-5);
+    }
+
+    @Test void failedStandalonePlayKeepsAnExistingExternalFollow() {
+        AnimationSource<CameraAnimationClip, CameraPose> invalid = new AnimationSource<>() {
+            @Override
+            public float duration(CameraAnimationClip data) {
+                return Float.NaN;
+            }
+
+            @Override
+            public CameraPose sample(CameraAnimationClip data, float time) {
+                return CameraClipSampler.INSTANCE.sample(data, time);
+            }
+        };
+        AnimationTimeline shared = new AnimationTimeline();
+        shared.play(1, true);
+        var player = new CameraAnimationPlayer(() -> BASE, () -> {}, invalid);
+        player.follow(clip(), shared);
+
+        assertThrows(IllegalArgumentException.class, () -> player.play(clip(), true));
+        shared.seek(0.25f);
+
+        assertEquals(BASE.x() + 2.5, player.sample(1).x(), 1e-5);
     }
 }

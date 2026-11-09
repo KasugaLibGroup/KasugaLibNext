@@ -1,8 +1,17 @@
 package lib.kasuga.rendering.models.mc.dynamic.fsm;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.ControllerBinding;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.LogicalStepPolicy;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.ManagedAnimationScope;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.ScopeAdvance;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.ScopeAdvanceCause;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.ScopeAdvanceResult;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.TargetBinding;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.TargetPublicationFactory;
+import lib.kasuga.rendering.models.uml.dynamic.animation.target.ModelPoseTarget;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmMachineBuilder;
-import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmPoseDriver;
+import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmPoseEvaluator;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.VarProvider;
@@ -22,18 +31,19 @@ import org.slf4j.Logger;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
  * Host-side coupling of a data-driven {@link StateMachine} with a rendered {@link ModelInstance}. Owns the
  * whole per-host animation lifecycle that {@code AnimationBlockEntity} used to wire by hand: lazy machine build,
- * client model bind / self-heal, {@link FsmPoseDriver} attachment (the FSM-as-pose-driver plugged into the
+ * client model bind / self-heal, {@link FsmPoseEvaluator} attachment (the FSM-as-pose-driver plugged into the
  * instance), per-tick drive + GPU flush, and server→client sync (push on the server, bind/apply on the client).
  *
  * <p>Server side: holds a logic-only machine (no model, no driver) and pushes authoritative state. Client side:
  * binds a {@link ModelInstance} via {@link KasugaModelPipelines}, builds a puppet machine (logic disabled), plugs
- * an {@link FsmPoseDriver} into the instance, and drives the pose every tick; {@code FsmSyncClient} conforms the
+ * an {@link FsmPoseEvaluator} into a private animation scope, and drives the pose every tick; {@code FsmSyncClient} conforms the
  * puppet to server snapshots on the main thread between ticks.
  *
  * <p>Host-agnostic: the host (a block entity today; entities/scripts later) supplies its identity
@@ -46,6 +56,8 @@ public final class FsmAnimatedModel {
 
     private final Object owner;
     private final long ownerDiscriminator;
+    @Nullable
+    private final ResourceLocation explicitInstanceLoc;
     private final Supplier<Transform> rootTransform;
     private final Consumer<StateMachine<?>> onMachineBuilt;
     private final Consumer<ModelInstance> onClientModelBound;
@@ -63,7 +75,11 @@ public final class FsmAnimatedModel {
     @Nullable
     private ModelInstance modelInstance;
     @Nullable
-    private FsmPoseDriver driver;
+    private ManagedAnimationScope animationScope;
+    @Nullable
+    private FsmPoseEvaluator poseEvaluator;
+    @Nullable
+    private ModelPoseTarget poseTarget;
     @Nullable
     private VarProvider varProvider;
     private boolean modelBound;
@@ -73,8 +89,27 @@ public final class FsmAnimatedModel {
                             @Nullable Id stateMachineId, @Nullable ResourceLocation modelLoc, @Nullable String modelName,
                             @Nullable Consumer<StateMachine<?>> onMachineBuilt,
                             @Nullable Consumer<ModelInstance> onClientModelBound) {
+        this(owner, ownerDiscriminator, null, rootTransform, stateMachineId, modelLoc, modelName,
+                onMachineBuilt, onClientModelBound);
+    }
+
+    /**
+     * Full form with an explicit pipeline instance key.
+     *
+     * <p>When {@code instanceLoc} is non-null it is used verbatim as the {@link ModelInstance} key
+     * instead of the legacy {@code <model namespace>:fsm_<discriminator>} derivation. Callers that
+     * own a stable identity (see {@code ProxyIdentity}) should pass it: the legacy derivation
+     * ignores the dimension, so two hosts at the same coordinate in different dimensions share one
+     * instance, and it changes when the model changes.
+     */
+    public FsmAnimatedModel(Object owner, long ownerDiscriminator, @Nullable ResourceLocation instanceLoc,
+                            Supplier<Transform> rootTransform,
+                            @Nullable Id stateMachineId, @Nullable ResourceLocation modelLoc, @Nullable String modelName,
+                            @Nullable Consumer<StateMachine<?>> onMachineBuilt,
+                            @Nullable Consumer<ModelInstance> onClientModelBound) {
         this.owner = owner;
         this.ownerDiscriminator = ownerDiscriminator;
+        this.explicitInstanceLoc = instanceLoc;
         this.rootTransform = rootTransform;
         this.stateMachineId = stateMachineId;
         this.modelLoc = modelLoc;
@@ -98,7 +133,7 @@ public final class FsmAnimatedModel {
     }
 
     public boolean isModelBound() {
-        return modelBound;
+        return modelBound && modelInstance != null;
     }
 
     /** {@code -1} until the machine is built (definitions not ready / model not bound yet). */
@@ -140,7 +175,7 @@ public final class FsmAnimatedModel {
 
     /**
      * Attach (or swap) the per-entity rendering variable provider. The provider is driven on the main
-     * thread each tick by the {@link FsmPoseDriver} and derives the render projection for formula tracks;
+     * thread each tick by the {@link FsmPoseEvaluator} and derives the render projection for formula tracks;
      * see {@link VarProvider}. Takes effect on the next driver (re)attachment — typically the next tick.
      */
     public void setVarProvider(@Nullable VarProvider provider) {
@@ -170,10 +205,7 @@ public final class FsmAnimatedModel {
         stateMachineId = id;
         machine = null;
         // discard the driver bound to the old machine; a fresh one attaches when the new machine builds
-        if (driver != null && modelInstance != null) {
-            modelInstance.setPoseDriver(null);
-        }
-        driver = null;
+        detachPoseBinding();
         definitionWarned = false;
     }
 
@@ -186,7 +218,6 @@ public final class FsmAnimatedModel {
         modelLoc = loc;
         modelName = name;
         modelInstance = null;
-        driver = null; // old driver pointed at the old instance; reattaches when the new instance binds
     }
 
     //endregion
@@ -214,9 +245,8 @@ public final class FsmAnimatedModel {
             return null;
         }
         boolean client = isClientSide(level);
-        // Built logic-only (sink=null). On the client the FsmPoseDriver owns the sink and flushes on the
-        // render thread; this thread never flushes. setLogicEnabled(false) makes a client machine a puppet
-        // (advancePuppet only) — driven via the driver's tick.
+        // Built logic-only (sink=null). On the client the ModelPoseTarget owns the sink and flushes
+        // on the render thread. setLogicEnabled(false) makes a client machine a puppet.
         StateMachine<Object> built = FsmMachineBuilder.build(owner, definition, null);
         if (built == null) {
             return null;
@@ -279,9 +309,15 @@ public final class FsmAnimatedModel {
             return;
         }
         attachDriverIfReady();
-        if (driver != null) {
-            // Main-thread advance: tick the machine (puppet, sink=null → no flush) + publish PoseTarget.
-            driver.tick(1f / 20f);
+        if (animationScope != null) {
+            ScopeAdvanceResult result = animationScope.advance(new ScopeAdvance(
+                    1.0 / 20.0, ScopeAdvanceCause.GAME_TICK));
+            if (result.aborted()) {
+                LOGGER.warn(
+                        "[FsmAnimatedModel] animation step aborted for {}",
+                        owner,
+                        result.failure());
+            }
         } else {
             // Model not bound yet — keep the puppet ticking so timers are ready when it binds.
             m.tick();
@@ -290,24 +326,45 @@ public final class FsmAnimatedModel {
     }
 
     /**
-     * Link the {@link FsmPoseDriver} to the current (machine, instance) pair. Creates the driver once per
-     * machine build; rebinds (swaps the sink target only, machine preserved) when the model instance changed
-     * (resource-reload self-heal); idempotent otherwise. Cheap ref-equality checks — safe to call every tick.
+     * Links the FSM evaluator and pose target to the current machine/model pair. The target rebind
+     * preserves the machine and its in-flight pose state.
      */
     private void attachDriverIfReady() {
         StateMachine<?> m = machine;
         if (m == null || modelInstance == null) {
             return;
         }
-        if (driver == null || driver.machine() != m) {
-            driver = new FsmPoseDriver(m, modelInstance, varProvider);
-            modelInstance.setPoseDriver(driver);
+        if (poseEvaluator == null || poseEvaluator.machine() != m) {
+            detachPoseBinding();
+            createAnimationScope(m, modelInstance);
             LOGGER.debug("[FsmAnimatedModel] driver attached for {} (version {})", owner, m.version());
-        } else if (driver.model() != modelInstance) {
-            // Self-heal rebind: machine state preserved, only the pose destination changes.
-            driver.rebind(modelInstance);
+        } else if (poseTarget.model() != modelInstance) {
+            ModelInstance previous = poseTarget.model();
+            if (previous != null && animationScope != null
+                    && previous.getAnimationRenderPort() == animationScope.renderPort()) {
+                previous.setAnimationRenderPort(null);
+            }
+            poseTarget.rebind(modelInstance);
+            modelInstance.setAnimationRenderPort(animationScope.renderPort());
             LOGGER.debug("[FsmAnimatedModel] driver rebound for {} (self-heal)", owner);
         }
+    }
+
+    private void createAnimationScope(StateMachine<?> machine, ModelInstance model) {
+        FsmPoseEvaluator evaluator = new FsmPoseEvaluator(machine, varProvider);
+        ModelPoseTarget target = new ModelPoseTarget(model);
+        ManagedAnimationScope scope = ManagedAnimationScope.builder(
+                        UUID.randomUUID(), LogicalStepPolicy.fixed(1.0 / 20.0, 5))
+                .controller(ControllerBinding.create(evaluator.controller()))
+                .target(new TargetBinding<>(
+                        target,
+                        evaluator.targetEvaluator(),
+                        new TargetPublicationFactory<>()))
+                .build();
+        poseEvaluator = evaluator;
+        poseTarget = target;
+        animationScope = scope;
+        model.setAnimationRenderPort(scope.renderPort());
     }
 
     private void logVersionChange(StateMachine<?> m) {
@@ -379,7 +436,7 @@ public final class FsmAnimatedModel {
     /**
      * Lazily binds (or self-heals) the client model. Silent when the model is not published yet — the next tick
      * retries. On a rebind (resource reload dropped the renderer entry) the machine keeps its state; the
-     * {@link FsmPoseDriver} is rebound to the fresh instance on the next {@link #attachDriverIfReady()}.
+     * {@link ModelPoseTarget} is rebound to the fresh instance on the next {@link #attachDriverIfReady()}.
      */
     private void ensureClientModel(Level level) {
         if (modelLoc == null) {
@@ -407,6 +464,9 @@ public final class FsmAnimatedModel {
 
     /** Per-host unique instance identifier, so two hosts never share one {@link ModelInstance}. */
     private ResourceLocation instanceLoc() {
+        if (explicitInstanceLoc != null) {
+            return explicitInstanceLoc;
+        }
         ResourceLocation base = modelLoc != null
                 ? modelLoc
                 : ResourceLocation.fromNamespaceAndPath("kasuga_lib", "unknown");
@@ -419,12 +479,26 @@ public final class FsmAnimatedModel {
         }
         if (modelLoc != null && (modelBound || modelInstance != null)) {
             // modelName may be null for non-MMD models — KasugaModelPipelines.unbind is null-safe.
-            KasugaModelPipelines.unbind(modelLoc, modelName, instanceLoc());
-            LOGGER.debug("[FsmAnimatedModel] model unbound for {}", owner);
+            KasugaModelPipelines.remove(modelLoc, modelName, instanceLoc());
+            LOGGER.debug("[FsmAnimatedModel] model removed for {}", owner);
         }
+        detachPoseBinding();
         modelInstance = null;
         modelBound = false;
-        driver = null; // instance gone
+    }
+
+    private void detachPoseBinding() {
+        ModelInstance current = poseTarget != null ? poseTarget.model() : null;
+        if (current != null && animationScope != null
+                && current.getAnimationRenderPort() == animationScope.renderPort()) {
+            current.setAnimationRenderPort(null);
+        }
+        if (animationScope != null) {
+            animationScope.close();
+        }
+        animationScope = null;
+        poseEvaluator = null;
+        poseTarget = null;
     }
 
     //endregion

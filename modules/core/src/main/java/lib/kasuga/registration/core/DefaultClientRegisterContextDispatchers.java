@@ -22,7 +22,7 @@ public class DefaultClientRegisterContextDispatchers {
     public void init() {
         contextRegistry.register(RegisterContextRegistry.Side.CLIENT, (registry, modEventBus)->{
             modEventBus.addListener(RegisterMenuScreensEvent.class, (event)->{
-                registry.dispatchRegister(new RegisterContext<>(
+                contextRegistry.dispatch(RegisterContextRegistry.Side.CLIENT, registry, new RegisterContext<>(
                         RegistrationStage.MENU_SCREEN_BINDING,
                         new MenuScreenBindingStage.Instance(event)
                 ));
@@ -36,7 +36,7 @@ public class DefaultClientRegisterContextDispatchers {
             });
 
             modEventBus.addListener(ModelEvent.BakingCompleted.class, (event)->{
-                registry.dispatchRegister(new RegisterContext<>(
+                contextRegistry.dispatch(RegisterContextRegistry.Side.CLIENT, registry, new RegisterContext<>(
                         RegistrationStage.BAKING_COMPLETE,
                         new BakingCompleteStage()
                 ));

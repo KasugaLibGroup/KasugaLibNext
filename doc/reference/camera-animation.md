@@ -74,9 +74,11 @@ Minecraft 自动每游戏 tick 推进一次时钟（20 Hz），世界暂停时�
 
 ## 与现有模型动画集成
 
-模型的 `AnimationPlayer<T>` 和摄像机适配器现在都使用 `AnimationPlayback<T, R>`。
-现有 `AnimationSampler<T>` 是输出模型 `Pose` 的 `AnimationSource<T, Pose>`，
-摄像机的 `CameraClipSampler` 输出未应用到世界的 `CameraPose`，统一内核负责计时和采样。
+模型的 `AnimationPlayer<T>` 和摄像机适配器分别由 `ScopedPlayerPosePlayback` 与
+`ScopedCameraPosePlayback` 持有私有 `ManagedAnimationScope`。两者共享的是 Scope、Playback
+与结果型 Target 契约，而不是一个公共兼容类。
+现有 `AnimationSampler<T>` 输出模型 `Pose`，`CameraClipSampler` 输出未应用到世界的 `CameraPose`；
+动画源只在逻辑发布阶段采样，render sample 只插值已提交的代次。
 原模型 `play(sampler, data, loop)` 和 JSON 保留。命名片段与静态姿态统一使用
 [ModelPosing](model-posing.md)，glTF 专用驱动已迁移到该公共入口。
 
@@ -107,7 +109,7 @@ Minecraft 自动每游戏 tick 推进一次时钟（20 Hz），世界暂停时�
 ```java
 var timeline = new AnimationTimeline();
 var modelPlayer = new AnimationPlayer<AnimationClip>(modelInstance);
-modelInstance.setPoseDriver(modelPlayer);
+ModelPoseBinding.install(modelInstance, modelPlayer);
 modelPlayer.follow(ClipSampler.INSTANCE, scene, timeline);
 camera.animation().follow(scene, "main_shot", timeline);
 timeline.play(scene.durationSeconds(), true);

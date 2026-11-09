@@ -6,6 +6,8 @@
 | --- | --- |
 | [构建与验证入口](verification.md) | Gradle 任务、独立 GL、客户端验收与证据边界 |
 | [真实素材换装与 MC 装备示例](wardrobe-example.md) | RibbonDress 换纹理/换模型、MC 手持物品、客户端截图和性能对照 |
+| [内容接入：方块与物品的模型资源](model-content.md) | blockstate 变体规则、占位模型的作用、item model 两种写法、BEWLR 三步接入与显示变换表 |
+| [把内容接入 Proxy Kernel](proxy-integration.md) | 定义 Port、组装 Composition、注册 Session、自动挂载、生命周期和故障排查 |
 | [离屏输出与多机位渲染](offline-rendering.md) | 接口、启动与操作参考，独立窗口与 FBO 消费 |
 | [Nebula 曲速飞行 demo](nebula-demo.md) | 受管 MRT、OBJ/PBR、体积烟尘、共享镜头时钟与 4K60 录制 |
 | [数据驱动上手](data-driven/intro.md) | 从空目录到方块动起来：两个时机、最小路径与常见错误 |

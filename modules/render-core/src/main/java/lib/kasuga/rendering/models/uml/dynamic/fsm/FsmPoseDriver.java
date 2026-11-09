@@ -27,11 +27,13 @@ import java.util.Map;
  *
  * <p>The driver owns the {@link ModelInstancePoseSink} (the machine's sink stays {@code null}); on resource-reload
  * rebind, {@link #rebind(ModelInstance)} swaps only the sink target — the machine and in-flight state survive.
+ *
+ * @deprecated New hosts use {@link FsmPoseEvaluator} with a private animation Scope. This class
+ * remains as the compatibility path for callers that explicitly rely on its render-thread formula
+ * interpolation.
  */
+@Deprecated
 public final class FsmPoseDriver implements lib.kasuga.rendering.models.uml.dynamic.RebindablePoseDriver {
-
-    /** One game tick in seconds; the partialTick fraction multiplies this to interpolate between ticks. */
-    private static final float TICK_SECONDS = 1f / 20f;
 
     private final StateMachine<?> machine;
     private ModelInstance model;
@@ -70,13 +72,7 @@ public final class FsmPoseDriver implements lib.kasuga.rendering.models.uml.dyna
      * no variables are produced anyway.
      */
     private void warmUpNamespace() {
-        for (Layer<?> layer : machine.layers()) {
-            for (State<?> state : layer.states) {
-                if (state.hasClip()) {
-                    PoseTarget.ClipTarget.sample(state.clipSampler(), state.clipData(), 0f, ns);
-                }
-            }
-        }
+        FsmPoseComposer.warmUp(machine, ns);
     }
 
     private static final class NoopVarProvider implements VarProvider {
@@ -118,19 +114,7 @@ public final class FsmPoseDriver implements lib.kasuga.rendering.models.uml.dyna
     }
 
     private void publishTarget() {
-        List<? extends Layer<?>> layers = machine.layers();
-        List<PoseTarget.LayerTarget> layerTargets = new ArrayList<>(layers.size());
-        List<BlendMode> modes = new ArrayList<>(layers.size());
-        List<Float> weights = new ArrayList<>(layers.size());
-        List<BoneMask> masks = new ArrayList<>(layers.size());
-        for (Layer<?> layer : layers) {
-            layerTargets.add(new PoseTarget.LayerTarget(
-                    layer.active(), layer.activeTransition(), layer.transitionElapsed(), layer.clipTarget()));
-            modes.add(layer.mode());
-            weights.add(layer.weight());
-            masks.add(layer.boneMask());
-        }
-        target = new PoseTarget(layerTargets, modes, weights, masks);
+        target = FsmPoseComposer.snapshot(machine);
     }
 
     /**
@@ -178,61 +162,7 @@ public final class FsmPoseDriver implements lib.kasuga.rendering.models.uml.dyna
      * accumulators). Resets the blender first.
      */
     void compose(Blender blender, PoseTarget snapshot, float partialTick, @Nullable Namespace ns) {
-        blender.reset();
-        List<PoseTarget.LayerTarget> layerTargets = snapshot.layers();
-        for (int i = 0; i < layerTargets.size(); i++) {
-            PoseTarget.LayerTarget layerTarget = layerTargets.get(i);
-            State<?> active = layerTarget.activeState();
-            Transition<?> transition = layerTarget.activeTransition();
-            PoseTarget.ClipTarget clip = layerTarget.clip();
-            Pose pose;
-            if (active == null) {
-                pose = Pose.empty();
-            } else if (transition != null) {
-                float crossFade = transition.crossFadeSeconds();
-                float alpha = crossFade <= 0f
-                        ? 1f
-                        : Math.min(1f, (layerTarget.transitionElapsed() + partialTick * TICK_SECONDS) / crossFade);
-                Pose fromPose = clip != null ? poseOf(active, clipTimeAt(clip, partialTick), ns) : active.buildPose();
-                Pose toPose = poseOf(transition.to(), 0f, ns);
-                pose = PoseBlend.blend(fromPose, toPose, alpha);
-            } else {
-                pose = clip != null ? poseOf(active, clipTimeAt(clip, partialTick), ns) : active.buildPose();
-            }
-            blender.applyLayer(snapshot.modes().get(i), pose, snapshot.weights().get(i), snapshot.masks().get(i));
-        }
-    }
-
-    /**
-     * The pose of {@code state} at clip time {@code time} seconds — static pose merged first, then the clip
-     * sample (clip bone entries win for same-named bones). States without a clip resolve to their static
-     * pose only; a null state yields an empty pose. Mirrors {@link Layer#poseForState} for the render thread.
-     * When {@code ns} is non-null it is forwarded to the sampler so clip formula tracks evaluate their
-     * {@code query.*} variables.
-     */
-    private static Pose poseOf(State<?> state, float time, @Nullable Namespace ns) {
-        if (state == null) {
-            return Pose.empty();
-        }
-        if (state.hasClip()) {
-            return new Pose.Builder()
-                    .merge(state.buildPose())
-                    .merge(PoseTarget.ClipTarget.sample(state.clipSampler(), state.clipData(), time, ns))
-                    .build();
-        }
-        return state.buildPose();
-    }
-
-    /**
-     * Interpolate the layer's clip clock by {@code partialTick} ({@code lerp(prevTime, time, partialTick)}),
-     * then normalize — loop clips wrap via modulo, non-loop clips clamp at their duration — so the sampler
-     * always receives a time within {@code [0, duration]}.
-     */
-    private static float clipTimeAt(PoseTarget.ClipTarget clip, float partialTick) {
-        float fraction = Math.clamp(partialTick, 0f, 1f);
-        float t = Math.fma(clip.time() - clip.prevTime(), fraction, clip.prevTime());
-        float duration = clip.duration();
-        return duration > 0f && clip.loop() ? t % duration : Math.min(t, duration);
+        FsmPoseComposer.compose(blender, snapshot, partialTick, ns);
     }
 
     /**

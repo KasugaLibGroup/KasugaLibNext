@@ -17,5 +17,6 @@
     "requireAnnotations": true
   },
   "client": [
+    "client.BezierConnectionMixin"
   ]
 }
