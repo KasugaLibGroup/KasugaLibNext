@@ -84,7 +84,7 @@ public class FanDataDrivenFactories {
                 r -> (pos, state) -> new FanBlockEntity(r.getEntry(), pos, state, machineId, model));
         reg.withProperty(Collection.class,
                 col -> { col.addAll(Arrays.asList(validBlocks.get())); return col; });
-        return reg;
+        return FanProxyDefinitions.registerWhenReady(reg);
     }
 
     // The two readers below mirror FsmBlockEntityFactories.readId/readResourceLocation. The originals are

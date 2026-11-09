@@ -2,26 +2,26 @@ package test.kasuga.create.bogey;
 
 import com.simibubi.create.content.trains.bogey.AbstractBogeyBlockEntity;
 import com.simibubi.create.content.trains.bogey.BogeyStyle;
-import lib.kasuga.rendering.models.mc.proxies.Proxies;
-import lib.kasuga.rendering.models.mc.proxies.ProxyHost;
-import lib.kasuga.rendering.models.mc.proxies.ProxyInstance;
-import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
+import lib.kasuga.rendering.models.mc.proxies.ProxySessionHost;
+import lib.kasuga.rendering.models.uml.dynamic.proxy.ProxyAttachToken;
+import lib.kasuga.rendering.models.uml.dynamic.proxy.ProxySession;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.function.Supplier;
 
-public final class ExampleBogeyBlockEntity extends AbstractBogeyBlockEntity implements ProxyHost {
-
-    public static final Id MACHINE = Id.fromNamespaceAndPath("kasuga_lib", "bogey_machine");
+public final class ExampleBogeyBlockEntity extends AbstractBogeyBlockEntity
+        implements ProxySessionHost {
 
     /** Degrees per tick the demo spin advances while the block is powered ({@code 6} ≈ 120°/s). */
     private static final float DEMO_SPIN_PER_TICK = 6f;
 
     private final Supplier<BogeyStyle> defaultStyle;
-    private final ProxyInstance<ExampleBogeyBlockEntity> proxy;
+    private final ProxyAttachToken attachToken = ProxyAttachToken.random();
+    @Nullable private ProxySession<?, ?, ?, ?, ?> proxySession;
 
     public ExampleBogeyBlockEntity(
             BlockEntityType<?> type,
@@ -31,7 +31,6 @@ public final class ExampleBogeyBlockEntity extends AbstractBogeyBlockEntity impl
     ) {
         super(type, pos, state);
         this.defaultStyle = defaultStyle;
-        this.proxy = Proxies.install(this, AllExampleBogey.bogeyProxy());
     }
 
     /** Client-only demo angle in degrees; real trains leave this at 0 and drive {@code getVirtualAngle}. */
@@ -65,19 +64,36 @@ public final class ExampleBogeyBlockEntity extends AbstractBogeyBlockEntity impl
     }
 
     @Override
-    public ProxyInstance<?> proxy() {
-        return this.proxy;
+    public ProxyAttachToken proxyAttachToken() {
+        return attachToken;
     }
 
     @Override
+    public @Nullable ProxySession<?, ?, ?, ?, ?> proxySession() {
+        return proxySession;
+    }
+
+    @Override
+    public void proxySession(@Nullable ProxySession<?, ?, ?, ?, ?> session) {
+        if (session != null && proxySession != null && proxySession != session) {
+            throw new IllegalStateException("bogey already has a proxy session");
+        }
+        proxySession = session;
+    }
+
+    //region lifecycle
+
+    @Override
     public void setRemoved() {
-        this.proxy.release(level);
+        closeProxySession();
         super.setRemoved();
     }
 
     @Override
     public void onChunkUnloaded() {
-        this.proxy.release(level);
+        closeProxySession();
         super.onChunkUnloaded();
     }
+
+    //endregion
 }

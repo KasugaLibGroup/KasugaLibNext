@@ -15,7 +15,6 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -42,26 +41,13 @@ public class ProxyInstance<T> implements AutoCloseable{
     @Nullable private FsmAnimatedModel fsm;
     @Nullable private McModelHandle handle;
     @Nullable private ModelGroupScope modelGroupScope;
+    @Nullable private RigidPartVisualStage partStage;
     @Nullable private Level lastLevel;
     @Nullable private Boolean clientSide;
     @Nullable private Supplier<Transform> rootSupplier;
     private boolean detached;
 
-    /** Rigid root owners in content order; empty unless the config used {@link ProxyConfig#parts()}. */
-    private final List<RigidPartBinding> parts = new ArrayList<>();
-    /** Pipeline handles paired with {@link #parts} by index. */
-    private final List<PartHandleBinding> partHandles = new ArrayList<>();
-
     private long lastTickGameTime = Long.MIN_VALUE;
-
-    /** One pipeline handle and the content description used to acquire it. */
-    private record PartHandleBinding(ModelPart spec, McModelHandle handle) {
-    }
-
-    @FunctionalInterface
-    interface PartHandleFactory {
-        McModelHandle create(ModelPart spec, ResourceLocation instanceLoc);
-    }
 
     public ProxyInstance(Object owner, T element, ElementProxy<T> template, @Nullable ProxyIdentity fixedIdentity, @Nullable Supplier<Transform> fixedRoot) {
         this.owner = owner;
@@ -98,7 +84,7 @@ public class ProxyInstance<T> implements AutoCloseable{
         }
         if (stage != Stage.LIVE) return;
 
-        if (fsm != null && parts.isEmpty()) {
+        if (fsm != null && partStage == null) {
             StateMachine<?> m = fsm.machine(level);
             if (m != null) {
                 template.pull(element, m);
@@ -115,7 +101,7 @@ public class ProxyInstance<T> implements AutoCloseable{
             }
         }
 
-        if (!parts.isEmpty()) {
+        if (partStage != null) {
             tickParts(level, now);
         }
 
@@ -191,7 +177,10 @@ public class ProxyInstance<T> implements AutoCloseable{
                 (spec, instanceLoc) -> McModelHandle.of(spec.model(), spec.modelName(), instanceLoc, null));
     }
 
-    void materializePartsForTest(List<ModelPart> specs, PartHandleFactory factory) {
+    void materializePartsForTest(
+            List<ModelPart> specs,
+            RigidPartVisualStage.PartHandleFactory factory
+    ) {
         boolean success = false;
         try {
             materializeParts(specs, factory);
@@ -203,78 +192,25 @@ public class ProxyInstance<T> implements AutoCloseable{
         }
     }
 
-    private void materializeParts(List<ModelPart> specs, PartHandleFactory factory) {
-        List<RigidPartBinding> targets = new ArrayList<>(specs.size());
-        Transform root = rootTransform();
-        RootSnapshot initialRoot = new RootSnapshot(root, root);
-        ModelGroupFrameState frameState = new ModelGroupFrameState();
-        try {
-            for (int i = 0; i < specs.size(); i++) {
-                ModelPart spec = specs.get(i);
-                ResourceLocation instanceLoc = partInstanceKey(identity == null ? null : identity.key(), i);
-                PartMotionSampler sampler = new PartMotionSampler(spec.motion());
-                McModelHandle partHandle = factory.create(spec, instanceLoc);
-                try {
-                    PartMotionSnapshot initialMotion = sampler.initialSnapshot(machine());
-                    partHandle.setPose(initialPartPose(root, spec, initialMotion));
-                    boolean mounted = partHandle.mount();
-                    // Every part gets a driver, spinning or not: a static part still has to follow a host
-                    // that moves (a bogey on a train), and the tick path cannot do that at frame rate.
-                    RigidPartBinding target = new RigidPartBinding(
-                            i, sampler, this::machine, frameState, spec.local());
-                    PartHandleBinding binding = new PartHandleBinding(spec, partHandle);
-                    parts.add(target);
-                    partHandles.add(binding);
-                    targets.add(target);
-                    if (mounted) {
-                        attachPartDriver(binding, target);
-                    }
-                    ProxyDebug.log("part bind: index={} model={} instance={} mounted={} motion={}",
-                            i, spec.model(), instanceLoc, mounted, spec.motion() != null);
-                } catch (Throwable failure) {
-                    try {
-                        partHandle.destroy();
-                    } catch (Throwable cleanupFailure) {
-                        failure.addSuppressed(cleanupFailure);
-                    }
-                    throw failure;
-                }
-            }
-            if (!targets.isEmpty()) {
-                RuntimeController<Void> controller = fsm == null ? null
-                        : new ProxyMachineController(
-                                () -> fsm.machine(lastLevel),
-                                machine -> template.pull(element, machine),
-                                machine -> template.push(element, machine),
-                                template.varProvider(element));
-                this.modelGroupScope = new ModelGroupScope(
-                        frameState, initialRoot.current(), targets,
-                        controller);
-            }
-        } catch (Throwable failure) {
-            for (RigidPartBinding target : targets) {
-                try {
-                    target.close();
-                } catch (Throwable cleanupFailure) {
-                    failure.addSuppressed(cleanupFailure);
-                }
-            }
-            throw failure;
-        }
-    }
-
-    /** Installs the part's root owner on the currently mounted instance; safe to retry. */
-    private void attachPartDriver(PartHandleBinding binding, RigidPartBinding target) {
-        if (!binding.handle().isMounted()) {
-            return;
-        }
-        ModelInstance instance = binding.handle().instance();
-        if (instance == null || instance.getRootTransformDriver() == target) {
-            return;
-        }
-        target.attachTo(instance);
-        ProxyDebug.log("part root driver attached: model={} motion={}",
-                binding.spec().model(), binding.spec().motion() != null);
+    private void materializeParts(
+            List<ModelPart> specs,
+            RigidPartVisualStage.PartHandleFactory factory
+    ) {
+        ResourceLocation base = identity == null ? null : identity.key();
+        ResourceLocation instanceBase = base != null
+                ? base
+                : ResourceLocation.fromNamespaceAndPath("kasuga_lib", "proxy/unresolved");
+        RigidPartVisualStage stage = new RigidPartVisualStage(
+                instanceBase, specs, this::machine, rootTransform(), factory);
+        this.partStage = stage;
+        RuntimeController<Void> controller = fsm == null ? null
+                : new ProxyMachineController(
+                        () -> fsm.machine(lastLevel),
+                        machine -> template.pull(element, machine),
+                        machine -> template.push(element, machine),
+                        template.varProvider(element));
+        this.modelGroupScope = new ModelGroupScope(stage, controller);
+        stage.maintainVisuals();
     }
 
     /**
@@ -300,42 +236,15 @@ public class ProxyInstance<T> implements AutoCloseable{
         tickClientParts(now);
     }
 
-    private void tickClientParts(long now) {
-        boolean logRetry = now % 100 == 0;
-        for (int i = 0; i < partHandles.size(); i++) {
-            PartHandleBinding binding = partHandles.get(i);
-            if (!binding.handle().isMounted()) {
-                boolean mounted = binding.handle().mount();
-                if (mounted) {
-                    attachPartDriver(binding, parts.get(i));
-                } else if (logRetry) {
-                    ProxyDebug.log("part still unmounted: index={} model={} instance={}",
-                            i, binding.spec().model(), partInstanceKey(identity == null ? null : identity.key(), i));
-                }
-            }
+    private void tickClientParts(long ignoredNow) {
+        RigidPartVisualStage stage = partStage;
+        if (stage == null) {
+            return;
         }
         if (modelGroupScope != null) {
             modelGroupScope.tick(1f / 20f, rootTransform());
         }
-    }
-
-    /**
-     * Composes the world-space pose of one part at materialization: {@code root × local}, then
-     * this frame's motion if one is available. The driver takes over after mount.
-     *
-     * @param spec the part being initially bound
-     */
-    private Transform initialPartPose(
-            Transform root,
-            ModelPart spec,
-            PartMotionSnapshot initialMotion
-    ) {
-        Transform pose = root.copy().mul(spec.local());
-        Transform localMotion = initialMotion.sample(1f);
-        if (localMotion != null) {
-            pose.mul(localMotion);
-        }
-        return pose;
+        stage.maintainVisuals();
     }
 
     private Transform rootTransform() {
@@ -350,9 +259,25 @@ public class ProxyInstance<T> implements AutoCloseable{
 
     /** Publishes a host-native root frame to the existing model group; never reads the root supplier. */
     public void publishVisualFrame(Transform root) {
+        RigidPartVisualStage stage = partStage;
+        if (stage != null) {
+            stage.publishFrame(root);
+        }
+    }
+
+    /** Pauses the visual subtree without advancing or rebuilding its logical owner. */
+    public void suspendVisuals() {
         ModelGroupScope scope = modelGroupScope;
         if (scope != null) {
-            scope.publishFrame(root);
+            scope.pause();
+        }
+    }
+
+    /** Resumes the existing visual subtree; repeated calls are idempotent. */
+    public void resumeVisuals() {
+        ModelGroupScope scope = modelGroupScope;
+        if (scope != null) {
+            scope.resume();
         }
     }
 
@@ -361,7 +286,7 @@ public class ProxyInstance<T> implements AutoCloseable{
         ResourceLocation base = proxyKey != null
                 ? proxyKey
                 : ResourceLocation.fromNamespaceAndPath("kasuga_lib", "proxy/unresolved");
-        return ResourceLocation.fromNamespaceAndPath(base.getNamespace(), base.getPath() + "/part/" + index);
+        return RigidPartVisualStage.partInstanceKey(base, index);
     }
 
     private ProxyIdentity resolveIdentity(Level level, BlockPos pos) {
@@ -373,7 +298,7 @@ public class ProxyInstance<T> implements AutoCloseable{
 
     public void release(@Nullable Level level) {
         if (stage == Stage.RELEASED) return;
-        ProxyDebug.log("release: identity={} stage={} parts={}", identity, stage, parts.size());
+        ProxyDebug.log("release: identity={} stage={} parts={}", identity, stage, partCount());
         this.stage = Stage.RELEASED;
         cleanupResources(level);
     }
@@ -384,15 +309,23 @@ public class ProxyInstance<T> implements AutoCloseable{
             try {
                 modelGroupScope.close();
             } catch (Throwable cleanupFailure) {
-                failure = accumulate(failure, cleanupFailure);
+                failure = CleanupFailures.accumulate(failure, cleanupFailure);
             }
             modelGroupScope = null;
+        }
+        if (partStage != null) {
+            try {
+                partStage.close();
+            } catch (Throwable cleanupFailure) {
+                failure = CleanupFailures.accumulate(failure, cleanupFailure);
+            }
+            partStage = null;
         }
         if (fsm != null) {
             try {
                 fsm.onRemoved(level);
             } catch (Throwable cleanupFailure) {
-                failure = accumulate(failure, cleanupFailure);
+                failure = CleanupFailures.accumulate(failure, cleanupFailure);
             }
             fsm = null;
         }
@@ -400,23 +333,14 @@ public class ProxyInstance<T> implements AutoCloseable{
             try {
                 handle.destroy();
             } catch (Throwable cleanupFailure) {
-                failure = accumulate(failure, cleanupFailure);
+                failure = CleanupFailures.accumulate(failure, cleanupFailure);
             }
             handle = null;
         }
-        for (PartHandleBinding binding : partHandles) {
-            try {
-                binding.handle().destroy();
-            } catch (Throwable cleanupFailure) {
-                failure = accumulate(failure, cleanupFailure);
-            }
-        }
-        parts.clear();
-        partHandles.clear();
         try {
             detachTemplateOnce();
         } catch (Throwable cleanupFailure) {
-            failure = accumulate(failure, cleanupFailure);
+            failure = CleanupFailures.accumulate(failure, cleanupFailure);
         }
         Proxies.forget(this);
         rootSupplier = null;
@@ -431,14 +355,6 @@ public class ProxyInstance<T> implements AutoCloseable{
         }
         detached = true;
         template.onDetach(element);
-    }
-
-    private static Throwable accumulate(@Nullable Throwable current, Throwable next) {
-        if (current == null) {
-            return next;
-        }
-        current.addSuppressed(next);
-        return current;
     }
 
     @Override
@@ -470,8 +386,8 @@ public class ProxyInstance<T> implements AutoCloseable{
         if (handle != null) {
             return handle.isMounted();
         }
-        if (!partHandles.isEmpty()) {
-            return mountedPartCount() == partHandles.size();
+        if (partStage != null) {
+            return mountedPartCount() == partStage.partCount();
         }
         if (fsm != null) {
             return fsm.isModelBound();
@@ -486,13 +402,8 @@ public class ProxyInstance<T> implements AutoCloseable{
 
     /** Number of parts whose model is currently bound; 0 for the single-model shape. */
     public int mountedPartCount() {
-        int mounted = 0;
-        for (PartHandleBinding binding : partHandles) {
-            if (binding.handle().isMounted()) {
-                mounted++;
-            }
-        }
-        return mounted;
+        RigidPartVisualStage stage = partStage;
+        return stage == null ? 0 : stage.mountedPartCount();
     }
 
     /** One-line description used by {@code /kasuga_proxy list}. */

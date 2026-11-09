@@ -51,6 +51,10 @@ public final class TargetRegistry implements AnimationRenderPort, AutoCloseable 
                             entry.getKey(),
                             context.revision(),
                             failure);
+                    RenderEntry<?> previous = previousEntry(entry.getKey());
+                    if (previous != null) {
+                        rendered.add(previous);
+                    }
                 }
             }
             latestBatch = new RenderBatch(context.revision(), List.copyOf(rendered));
@@ -146,6 +150,15 @@ public final class TargetRegistry implements AnimationRenderPort, AutoCloseable 
 
     private static <O> void sampleEntry(RenderEntry<O> entry, RenderSampleContext context) {
         entry.target().sample(entry.publication(), context);
+    }
+
+    private RenderEntry<?> previousEntry(AnimationTargetRef ref) {
+        for (RenderEntry<?> entry : latestBatch.entries()) {
+            if (entry.publication().ref().equals(ref)) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     private void requireOpen() {

@@ -1,9 +1,7 @@
 package lib.kasuga.create.client.rendering;
 
 import com.mojang.logging.LogUtils;
-import lib.kasuga.rendering.models.mc.proxies.ProxyInstance;
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -59,16 +57,14 @@ public final class ContraptionBogeyTickers {
             return;
         }
         for (ProxyBogeyVisual visual : List.copyOf(LIVE)) {
-            ProxyInstance<?> proxy = visual.proxy();
-            BlockPos pos = visual.worldPos();
-            if (proxy == null || pos == null) {
+            if (visual.session() == null) {
                 continue;
             }
             try {
-                proxy.tick(level, pos);
+                visual.tickProxy(level);
             } catch (RuntimeException failure) {
                 // One broken bogey must not take the whole client tick down with it.
-                LOGGER.error("[proxy] contraption bogey tick failed at {}", pos, failure);
+                LOGGER.error("[proxy] contraption bogey tick failed", failure);
             }
         }
     }

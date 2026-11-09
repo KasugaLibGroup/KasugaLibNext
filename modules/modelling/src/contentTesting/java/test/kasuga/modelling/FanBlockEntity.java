@@ -1,14 +1,9 @@
 package test.kasuga.modelling;
 
-import lib.kasuga.rendering.models.mc.proxies.ElementProxy;
-import lib.kasuga.rendering.models.mc.proxies.Proxies;
-import lib.kasuga.rendering.models.mc.proxies.ProxyConfig;
-import lib.kasuga.rendering.models.mc.proxies.ProxyHost;
-import lib.kasuga.rendering.models.mc.proxies.ProxyInstance;
+import lib.kasuga.rendering.models.mc.proxies.ProxySessionHost;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
-import lib.kasuga.rendering.models.uml.dynamic.fsm.Layer;
-import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
-import lib.kasuga.rendering.models.uml.dynamic.fsm.VarProvider;
+import lib.kasuga.rendering.models.uml.dynamic.proxy.ProxyAttachToken;
+import lib.kasuga.rendering.models.uml.dynamic.proxy.ProxySession;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -20,12 +15,11 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * The fan example block entity: a {@link ProxyHost} with no animation code of its own.
+ * The fan example block entity: a {@link ProxySessionHost} with no animation code of its own.
  *
- * <p>Everything the model system needs is declared by {@link Template}: the machine, the model and the
- * render projection are handed to the proxy layer, which owns the per-host lifecycle (lazy build, client
- * model binding, tick, sync, release). The block entity keeps only what is genuinely block-entity work —
- * persistence and the two state-transfer directions.
+ * <p>{@link FanProxyComposition} is registered against the block-entity type and supplies the
+ * machine, model, controller and visual ports. The constructor only keeps block-entity state; the
+ * first ticker call creates the kernel session from that explicit registration.
  *
  * <p>Two construction paths share this class:
  * <ul>
@@ -36,13 +30,14 @@ import org.jetbrains.annotations.Nullable;
  * </ul>
  *
  * <p>Persistence: only the gear index (byte 0..3) is stored. Runtime state is not serialized; on load the
- * machine rebuilds lazily and the first {@code pull} restores the layer. Note that a chunk can be saved
+ * machine rebuilds lazily and the first prepared input restores the layer. Note that a chunk can be saved
  * before this entity's first tick, so {@link #saveAdditional} falls back to the loaded/pending value
  * instead of assuming a live machine.
  */
-public class FanBlockEntity extends BlockEntity implements ProxyHost {
+public class FanBlockEntity extends BlockEntity implements ProxySessionHost {
 
-    private final ProxyInstance<FanBlockEntity> proxy = Proxies.install(this, new Template());
+    private final ProxyAttachToken attachToken = ProxyAttachToken.random();
+    @Nullable private ProxySession<?, ?, ?, ?, ?> proxySession;
 
     @Nullable
     private final Id machineId;
@@ -76,43 +71,42 @@ public class FanBlockEntity extends BlockEntity implements ProxyHost {
     }
 
     @Override
-    public ProxyInstance<?> proxy() {
-        return proxy;
+    public ProxyAttachToken proxyAttachToken() {
+        return attachToken;
     }
 
-    /** Forwarded by the block's ticker; a no-op before the first tick. */
-    public void tickProxy(Level level, BlockPos pos) {
-        proxy.tick(level, pos);
+    @Override
+    public @Nullable ProxySession<?, ?, ?, ?, ?> proxySession() {
+        return proxySession;
+    }
+
+    @Override
+    public void proxySession(@Nullable ProxySession<?, ?, ?, ?, ?> session) {
+        if (session != null && proxySession != null && proxySession != session) {
+            throw new IllegalStateException("fan already has a proxy session");
+        }
+        proxySession = session;
+    }
+
+    /** Queues the server-side cycle command; the next kernel step applies it. */
+    @SuppressWarnings("unchecked")
+    public void requestCycle() {
+        ProxySession<?, ?, ?, ?, ?> session = proxySession;
+        if (session != null) {
+            ((ProxySession<FanBlockEntity, FanProxyComposition.FanInput,
+                    FanProxyComposition.FanOutput, FanProxyComposition.FanCommand,
+                    FanProxyComposition.FanFrame>) session)
+                    .submitCommand(FanProxyComposition.FanCommand.CYCLE);
+        }
     }
 
     //region state transfer (called by the proxy template)
 
-    /**
-     * Restores the persisted gear once the machine exists. Runs on the server only — the client is a
-     * puppet and gets its state from the sync snapshot. Kept pending until the machine actually reports
-     * the target, so a {@code goTo} swallowed by a rebuild is retried on the next tick.
-     */
-    void applyPendingGear(StateMachine<?> machine) {
-        if (pendingGear < 0) return;
-        Level level = getLevel();
-        if (level != null && level.isClientSide()) return;
-        int target = Math.min(pendingGear, FanFixtures.GEAR_STATE_IDS.length - 1);
-        if (gearIndex(machine) == target) {
-            pendingGear = -1;
-            return;
-        }
-        machine.goTo("gear", FanFixtures.GEAR_STATE_IDS[target]);
-        lastKnownGear = target;
-    }
-
-    /**
-     * Mirrors "is the fan spinning" into the block state so the world can observe the machine → world
-     * direction (redstone/comparator). Server only.
-     */
-    void publishRunning(StateMachine<?> machine) {
+    /** Mirrors the committed gear into the block state. Server only. */
+    void applyProxyWriteback(int gear) {
         Level level = getLevel();
         if (level == null || level.isClientSide()) return;
-        lastKnownGear = gearIndex(machine);
+        lastKnownGear = Math.max(gear, 0);
         boolean running = lastKnownGear > 0;
         BlockState state = getBlockState();
         if (state.getValue(FanBlock.RUNNING) != running) {
@@ -137,16 +131,8 @@ public class FanBlockEntity extends BlockEntity implements ProxyHost {
     }
 
     private int gearIndex() {
-        StateMachine<?> machine = proxy.machine();
-        if (machine != null) return gearIndex(machine);
         if (lastKnownGear >= 0) return lastKnownGear;
         return Math.max(pendingGear, 0);
-    }
-
-    private static int gearIndex(StateMachine<?> machine) {
-        Layer<?> gear = machine.layerOrNull("gear");
-        int index = gear == null ? -1 : gear.activeStateIndex();
-        return Math.max(index, 0);
     }
 
     //endregion
@@ -155,43 +141,27 @@ public class FanBlockEntity extends BlockEntity implements ProxyHost {
 
     @Override
     public void setRemoved() {
-        proxy.release(level);
+        closeProxySession();
         super.setRemoved();
     }
 
     @Override
     public void onChunkUnloaded() {      // chunk unload does not go through setRemoved
-        proxy.release(level);
+        closeProxySession();
         super.onChunkUnloaded();
     }
 
     //endregion
 
-    /**
-     * The content-side description of the fan: what to attach and how to exchange data with the machine.
-     * It is an implementation detail of this block entity, not a separate content class — attaching a
-     * proxy is the default way to bring content into the model system.
-     */
-    private static final class Template implements ElementProxy<FanBlockEntity> {
+    int pendingGear() {
+        return pendingGear;
+    }
 
-        @Override
-        public @Nullable ProxyConfig configure(FanBlockEntity element) {
-            return new ProxyConfig(element.machineId(), element.fanModel(), null, null);
-        }
+    void clearPendingGear() {
+        pendingGear = -1;
+    }
 
-        @Override
-        public @Nullable VarProvider varProvider(FanBlockEntity element) {
-            return new FanVarProvider();       // per instance: keeps currentSpeed / angle across ticks
-        }
-
-        @Override
-        public void pull(FanBlockEntity element, StateMachine<?> machine) {
-            element.applyPendingGear(machine);
-        }
-
-        @Override
-        public void push(FanBlockEntity element, StateMachine<?> machine) {
-            element.publishRunning(machine);
-        }
+    int nextGearIndex() {
+        return (Math.max(lastKnownGear, 0) + 1) % FanFixtures.GEAR_STATE_IDS.length;
     }
 }

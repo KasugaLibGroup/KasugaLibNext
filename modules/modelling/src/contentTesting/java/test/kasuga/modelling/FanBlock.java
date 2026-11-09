@@ -1,8 +1,6 @@
 package test.kasuga.modelling;
 
-import lib.kasuga.rendering.models.mc.dynamic.fsm.AnimationHost;
 import lib.kasuga.rendering.models.mc.proxies.ProxyTickers;
-import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -84,18 +82,15 @@ public class FanBlock extends Block implements EntityBlock {
         return cycle(level, pos, player);
     }
 
-    /** Cycles the gear. Host-agnostic: works for any {@link AnimationHost}, proxy-based or not. */
+    /** Cycles the gear through the element-facing session command, never through StateMachine. */
     static InteractionResult cycle(Level level, BlockPos pos, Player player) {
-        if (!level.isClientSide() && level.getBlockEntity(pos) instanceof AnimationHost host) {
-            StateMachine<?> machine = host.machine();
-            if (machine != null) {
-                machine.trigger(FanFixtures.CYCLE);
-                int next = (machine.layer("gear").activeStateIndex() + 1) % FanFixtures.GEAR_STATE_IDS.length;
-                player.displayClientMessage(
-                        Component.translatable("msg.kasuga_lib.fan_gear_" + next).withStyle(ChatFormatting.GREEN),
-                        true);
-                level.playSound(null, pos, SoundEvents.UI_BUTTON_CLICK.value(), SoundSource.BLOCKS, 1.0f, 1.0f);
-            }
+        if (!level.isClientSide() && level.getBlockEntity(pos) instanceof FanBlockEntity fan) {
+            fan.requestCycle();
+            int next = fan.nextGearIndex();
+            player.displayClientMessage(
+                    Component.translatable("msg.kasuga_lib.fan_gear_" + next).withStyle(ChatFormatting.GREEN),
+                    true);
+            level.playSound(null, pos, SoundEvents.UI_BUTTON_CLICK.value(), SoundSource.BLOCKS, 1.0f, 1.0f);
         }
         return InteractionResult.SUCCESS;
     }

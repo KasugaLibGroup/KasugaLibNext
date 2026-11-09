@@ -9,6 +9,11 @@ public interface RuntimeController<S> {
 
     ControlFrame<S> evaluate(ControlEvaluationRequest<S> request);
 
+    /** A controller that emits the canonical empty committed frame. */
+    static RuntimeController<Void> none() {
+        return request -> new ControlFrame<>(null, java.util.List.of(), java.util.List.of());
+    }
+
     default S initialState() {
         return null;
     }

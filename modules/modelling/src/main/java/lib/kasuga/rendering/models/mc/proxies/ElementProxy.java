@@ -30,6 +30,12 @@ import org.jetbrains.annotations.Nullable;
  * @param <T> the element type this proxy configures — the block entity, entity, item stack or
  *            external handle that implements {@link ProxyHost}, not the block/item itself
  */
+/**
+ * @deprecated compatibility description for the legacy {@link ProxyInstance} path. New content
+ * declares a {@link lib.kasuga.rendering.models.uml.dynamic.proxy.ProxyDefinition} and a typed
+ * composition instead of exposing {@link StateMachine} to the element-facing API.
+ */
+@Deprecated(forRemoval = false)
 public interface ElementProxy<T> {
 
     /**

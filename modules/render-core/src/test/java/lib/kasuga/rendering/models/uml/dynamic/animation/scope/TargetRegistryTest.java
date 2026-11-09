@@ -230,6 +230,49 @@ class TargetRegistryTest {
     }
 
     @Test
+    void aFailedPublicationKeepsTheLastAcceptedPublicationVisible() {
+        List<TargetPublication<Double>> accepted = new ArrayList<>();
+        List<Long> sampledRevisions = new ArrayList<>();
+        int[] attempts = {0};
+        AnimationTarget<Double> flaky = new AnimationTarget<>() {
+            private final AnimationTargetRef ref = AnimationTargetRef.property("flaky");
+
+            @Override
+            public AnimationTargetRef ref() {
+                return ref;
+            }
+
+            @Override
+            public void publish(TargetPublication<Double> publication) {
+                if (attempts[0]++ == 1) {
+                    throw new IllegalStateException("reload publication failed");
+                }
+                accepted.add(publication);
+            }
+
+            @Override
+            public void sample(TargetPublication<Double> publication,
+                               RenderSampleContext context) {
+                sampledRevisions.add(publication.revision());
+            }
+        };
+        TargetRegistry registry = new TargetRegistry();
+        registry.register(new TargetBinding<>(
+                flaky,
+                context -> (double) context.revision(),
+                new TargetPublicationFactory<>()));
+
+        registry.publish(context(1, 0.0, 0.05, TemporalDiscontinuity.NONE));
+        registry.sample(renderContext("before-failure"));
+        registry.publish(context(2, 0.05, 0.10, TemporalDiscontinuity.NONE));
+        registry.sample(renderContext("after-failure"));
+
+        assertEquals(2, attempts[0]);
+        assertEquals(1, accepted.size());
+        assertEquals(List.of(1L, 1L), sampledRevisions);
+    }
+
+    @Test
     void closeAggregatesFailuresAndIsIdempotent() {
         RecordingTarget<Double> first =
                 new RecordingTarget<>(AnimationTargetRef.property("first"), false, true);

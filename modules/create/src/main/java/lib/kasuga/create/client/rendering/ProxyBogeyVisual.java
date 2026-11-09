@@ -11,11 +11,11 @@ import lib.kasuga.create.proxy.ContraptionBogey;
 import lib.kasuga.create.proxy.ContraptionBogeyProxy;
 import lib.kasuga.rendering.models.mc.proxies.ElementProxy;
 import lib.kasuga.rendering.models.mc.proxies.ProxyIdentity;
-import lib.kasuga.rendering.models.mc.proxies.ProxyInstance;
-import lib.kasuga.rendering.models.mc.proxies.Proxies;
 import lib.kasuga.rendering.models.uml.math.Transform;
+import lib.kasuga.rendering.models.uml.dynamic.proxy.ProxyAttachToken;
+import lib.kasuga.rendering.models.uml.dynamic.proxy.ProxyLifecycleState;
+import lib.kasuga.rendering.models.uml.dynamic.proxy.ProxySession;
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
@@ -34,8 +34,8 @@ import java.util.function.Consumer;
  * <p>Create gives a bogey visual exactly three things per frame: the style (inside {@code
  * bogeyData}), the interpolated wheel angle, and a pose stack positioned at its own model origin.
  * Those are the only client-side facts a {@code CarriageBogey} offers, and they are enough: this
- * class republishes them into a {@link ContraptionBogey} and lets an ordinary
- * {@link ProxyInstance} bind, pose and release the models. Nothing here draws.
+ * class republishes them into a {@link ContraptionBogey}; the proxy session binds, poses and
+ * releases the models. Nothing here draws.
  *
  * <h2>Why the proxy is created lazily</h2>
  * <p>The style id lives in {@code bogeyData}, which is only available in {@link #update}. The first
@@ -64,9 +64,11 @@ public final class ProxyBogeyVisual implements BogeyVisual {
     private final BogeySizes.BogeySize size;
     private final ElementProxy<ContraptionBogey> template;
     private final ProxyIdentity identity;
+    private final ProxyAttachToken attachToken = ProxyAttachToken.random();
 
     @Nullable private ContraptionBogey element;
-    @Nullable private ProxyInstance<ContraptionBogey> proxy;
+    @Nullable private ProxySession<ContraptionBogey, ContraptionBogey.HostFrame, Void, Void,
+            ContraptionBogey.HostFrame> session;
     private int light;
 
     /**
@@ -90,11 +92,18 @@ public final class ProxyBogeyVisual implements BogeyVisual {
             createElement(bogeyData, wheelAngle, poseStack);
             return;
         }
+        ProxySession<ContraptionBogey, ContraptionBogey.HostFrame, Void, Void,
+                ContraptionBogey.HostFrame> currentSession = session;
+        if (currentSession != null && currentSession.state()
+                == ProxyLifecycleState.SUSPENDED) {
+            currentSession.resume();
+        }
         Transform root = rootOf(poseStack);
         bogey.publishFrame(wheelAngle, root, frame -> {
-            ProxyInstance<ContraptionBogey> instance = proxy;
-            if (instance != null) {
-                instance.publishVisualFrame(bogey.normalizedRoot(frame));
+            ProxySession<ContraptionBogey, ContraptionBogey.HostFrame, Void, Void,
+                    ContraptionBogey.HostFrame> active = session;
+            if (active != null) {
+                active.publishFrame(frame);
             }
         });
     }
@@ -107,28 +116,37 @@ public final class ProxyBogeyVisual implements BogeyVisual {
         }
         ContraptionBogey created = new ContraptionBogey(styleId, size.id(), wheelAngle, rootOf(poseStack));
         this.element = created;
-        this.proxy = Proxies.installExternal(this, created, template, identity, created::normalizedRoot);
-        ContraptionBogey.HostFrame frame = created.hostFrame();
-        this.proxy.publishVisualFrame(created.normalizedRoot(frame));
+        Level level = Minecraft.getInstance().level;
+        if (level == null) {
+            releaseInstance();
+            return null;
+        }
+        try {
+            this.session = CreateBogeyProxyAdapter.attach(
+                    created, template, identity, attachToken, level);
+            ContraptionBogey.HostFrame frame = created.hostFrame();
+            this.session.publishFrame(frame);
+        } catch (RuntimeException | Error failure) {
+            releaseInstance();
+            throw failure;
+        }
         ContraptionBogeyTickers.register(this);
         return created;
     }
 
-    /** The proxy drawing this bogey, or {@code null} before the first update. */
     @Nullable
-    ProxyInstance<ContraptionBogey> proxy() {
-        return proxy;
+    ProxySession<ContraptionBogey, ContraptionBogey.HostFrame, Void, Void,
+            ContraptionBogey.HostFrame> session() {
+        return session;
     }
 
-    /** Current world position of the bogey, for the tick entry; {@code null} before the first update. */
-    @Nullable
-    BlockPos worldPos() {
-        ContraptionBogey bogey = element;
-        if (bogey == null) {
-            return null;
+    /** Advances the kernel session and its visual subtree exactly once for this game tick. */
+    void tickProxy(Level level) {
+        ProxySession<ContraptionBogey, ContraptionBogey.HostFrame, Void, Void,
+                ContraptionBogey.HostFrame> current = session;
+        if (current != null) {
+            current.tick(level.getGameTime(), 1.0 / 20.0);
         }
-        org.joml.Vector3f position = bogey.root().getPosition();
-        return BlockPos.containing(position.x, position.y, position.z);
     }
 
     private Transform rootOf(PoseStack poseStack) {
@@ -137,13 +155,18 @@ public final class ProxyBogeyVisual implements BogeyVisual {
     }
 
     /**
-     * Create hides a bogey while its carriage is inside a portal. Releasing is the honest answer:
-     * the models would otherwise keep drawing through the portal cut-out, and the next
-     * {@link #update} rebuilds everything from the same registered model group.
+     * Create hides a bogey while its carriage is inside a portal. Suspending stops both frame
+     * publication and logical advancement; a later update resumes the existing session.
      */
     @Override
     public void hide() {
-        releaseInstance();
+        ProxySession<ContraptionBogey, ContraptionBogey.HostFrame, Void, Void,
+                ContraptionBogey.HostFrame> current = session;
+        if (current != null) {
+            current.suspend();
+        } else {
+            releaseInstance();
+        }
     }
 
     @Override
@@ -164,11 +187,12 @@ public final class ProxyBogeyVisual implements BogeyVisual {
 
     private void releaseInstance() {
         ContraptionBogeyTickers.unregister(this);
-        ProxyInstance<ContraptionBogey> instance = proxy;
-        this.proxy = null;
+        ProxySession<ContraptionBogey, ContraptionBogey.HostFrame, Void, Void,
+                ContraptionBogey.HostFrame> activeSession = session;
+        this.session = null;
         this.element = null;
-        if (instance != null) {
-            instance.release(Minecraft.getInstance().level);
+        if (activeSession != null) {
+            activeSession.close();
         }
     }
 

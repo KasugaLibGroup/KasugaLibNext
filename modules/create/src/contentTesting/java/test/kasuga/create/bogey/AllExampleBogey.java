@@ -2,7 +2,6 @@ package test.kasuga.create.bogey;
 
 import lib.kasuga.create.proxy.BogeyModels;
 import lib.kasuga.create.proxy.BogeyRoots;
-import lib.kasuga.create.proxy.BogeyProxy;
 import lib.kasuga.create.proxy.ContraptionBogey;
 import lib.kasuga.create.proxy.ContraptionBogeyProxy;
 import lib.kasuga.create.registration.bogey.BogeyBlockReg;
@@ -11,6 +10,7 @@ import lib.kasuga.create.registration.bogey.BogeyRendererHandle;
 import lib.kasuga.create.registration.bogey.BogeySizeReg;
 import lib.kasuga.registration.Registry;
 import lib.kasuga.registration.minecraft.block_entity.BlockEntityReg;
+import lib.kasuga.rendering.models.mc.proxies.BlockEntityProxyDefinitions;
 import lib.kasuga.rendering.models.mc.proxies.ElementProxy;
 import lib.kasuga.rendering.models.mc.proxies.ModelPart;
 import lib.kasuga.rendering.models.uml.math.Transform;
@@ -40,8 +40,8 @@ public final class AllExampleBogey {
      * ({@code PK209PVisual}: frame 0.91, wheels 0.8 at z ±1.2, motor wheel at (1.117, 0.82, 2.165))
      * rebased on the frame, whose offset the root already carries.
      *
-     * <p>Spins are attached per element in {@link #bogeyProxy()}, not here: the angle lives on the
-     * block entity, and this registry entry is shared by every placed bogey.
+     * <p>Spins are attached per element by the kernel composition, not here: the angle lives on
+     * the block entity, and this registry entry is shared by every placed bogey.
      */
     /**
      * Vertical offset of the model group relative to the block centre, derived from the reference
@@ -77,22 +77,6 @@ public final class AllExampleBogey {
             PK209P_WHEEL2, 1f,
             PK209P_MOTOR_WHEEL, 3.256f
     );
-
-    /**
-     * Proxy shared by both example bogeys: the registered model group plus, for every part whose model
-     * is a wheel, a {@link ModelPart.Spin} fed by the block entity's own virtual angle.
-     *
-     * <p>The block entity exposes one angle per game tick, so placed bogeys use tick-domain motion.
-     * A style whose parts are not in {@link #SPIN_SCALE} (cw2's frame) simply never gets a spin.
-     */
-    public static ElementProxy<ExampleBogeyBlockEntity> bogeyProxy() {
-        return new BogeyProxy<>(null, null) {
-            @Override
-            protected List<ModelPart> partsFor(ExampleBogeyBlockEntity element, BogeyModels.Placement placement) {
-                return spinningWheelsForTick(super.partsFor(element, placement), element::wheelAngle);
-            }
-        };
-    }
 
     /**
      * The same proxy for a bogey mounted on a train: identical model group and spin policy, with the
@@ -180,14 +164,16 @@ public final class AllExampleBogey {
             ));
 
     public static final BlockEntityReg<ExampleBogeyBlockEntity> STANDARD_BOGEY_ENTITY =
-            new BlockEntityReg<ExampleBogeyBlockEntity>("standard_bogey_entity", reg -> (pos, state) ->
+            registerPlacedProxy(new BlockEntityReg<ExampleBogeyBlockEntity>(
+                    "standard_bogey_entity", reg -> (pos, state) ->
                     new ExampleBogeyBlockEntity(reg.getEntry(), pos, state, STANDARD_GROUP::getEntry))
-                    .validBlocks(STANDARD_BOGEY::getEntry);
+                    .validBlocks(STANDARD_BOGEY::getEntry));
 
     public static final BlockEntityReg<ExampleBogeyBlockEntity> CW2_BOGEY_ENTITY =
-            new BlockEntityReg<ExampleBogeyBlockEntity>("test_bogey_entity", reg -> (pos, state) ->
+            registerPlacedProxy(new BlockEntityReg<ExampleBogeyBlockEntity>(
+                    "test_bogey_entity", reg -> (pos, state) ->
                     new ExampleBogeyBlockEntity(reg.getEntry(), pos, state, CW2_GROUP::getEntry))
-                    .validBlocks(CW2_BOGEY::getEntry);
+                    .validBlocks(CW2_BOGEY::getEntry));
 
     private static boolean registered;
 
@@ -227,6 +213,13 @@ public final class AllExampleBogey {
 
     private static BogeyRendererHandle renderer(String name) {
         return BogeyRendererHandle.of(ResourceLocation.fromNamespaceAndPath("kasuga_lib", name + "_renderer"));
+    }
+
+    private static BlockEntityReg<ExampleBogeyBlockEntity> registerPlacedProxy(
+            BlockEntityReg<ExampleBogeyBlockEntity> registration
+    ) {
+        return registration.onRegistered(type -> BlockEntityProxyDefinitions.register(
+                type, registration.getResourceLocation(), ExampleBogeyProxyComposition::create));
     }
 
     private static ResourceLocation obj(String path) {

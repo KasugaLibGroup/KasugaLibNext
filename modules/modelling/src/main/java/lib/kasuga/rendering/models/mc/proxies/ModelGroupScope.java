@@ -33,6 +33,7 @@ public final class ModelGroupScope implements AutoCloseable {
     private final ManagedAnimationScope logicalScope;
     private final ModelGroupFrameState frameState;
     private final List<RigidPartBinding> rigidTargets;
+    private final @org.jetbrains.annotations.Nullable RigidPartVisualStage visualStage;
     private final Object publicationLock = new Object();
     private final ModelGroupRenderPort renderPort;
     private volatile RootSnapshot pendingRoot;
@@ -40,14 +41,37 @@ public final class ModelGroupScope implements AutoCloseable {
 
     ModelGroupScope(ModelGroupFrameState frameState, Transform initialRoot,
                   Collection<RigidPartBinding> targets) {
-        this(frameState, initialRoot, targets, null);
+        this(frameState, initialRoot, targets, null, null);
     }
 
     ModelGroupScope(ModelGroupFrameState frameState, Transform initialRoot,
                     Collection<RigidPartBinding> targets,
                     @org.jetbrains.annotations.Nullable RuntimeController<Void> controller) {
+        this(frameState, initialRoot, targets, controller, null);
+    }
+
+    ModelGroupScope(
+            RigidPartVisualStage visualStage,
+            @org.jetbrains.annotations.Nullable RuntimeController<Void> controller
+    ) {
+        this(
+                visualStage.frameState(),
+                visualStage.initialRoot(),
+                visualStage.rigidTargets(),
+                controller,
+                visualStage);
+    }
+
+    private ModelGroupScope(
+            ModelGroupFrameState frameState,
+            Transform initialRoot,
+            Collection<RigidPartBinding> targets,
+            @org.jetbrains.annotations.Nullable RuntimeController<Void> controller,
+            @org.jetbrains.annotations.Nullable RigidPartVisualStage visualStage
+    ) {
         this.frameState = Objects.requireNonNull(frameState, "frameState");
         this.rigidTargets = List.copyOf(requireIndexedTargets(targets));
+        this.visualStage = visualStage;
         RootSnapshot root = new RootSnapshot(initialRoot, initialRoot);
         this.pendingRoot = root;
         ManagedAnimationScope.Builder builder = ManagedAnimationScope.builder(
@@ -64,8 +88,12 @@ public final class ModelGroupScope implements AutoCloseable {
         this.logicalScope = builder.build();
         this.renderPort = new ModelGroupRenderPort(
                 logicalScope.renderPort(), frameState, publicationLock);
-        for (RigidPartBinding target : rigidTargets) {
-            target.attachRenderPort(renderPort);
+        if (visualStage != null) {
+            visualStage.bind(renderPort);
+        } else {
+            for (RigidPartBinding target : rigidTargets) {
+                target.attachRenderPort(renderPort);
+            }
         }
         frameState.publishLogical(snapshotFrame(root));
     }
@@ -81,6 +109,9 @@ public final class ModelGroupScope implements AutoCloseable {
                     ? new RootSnapshot(currentFrame().root().current(), currentRoot)
                     : new RootSnapshot(currentRoot, currentRoot);
             pendingRoot = next;
+            if (visualStage != null) {
+                visualStage.prepareLogicalStep(next.current());
+            }
             ScopeAdvanceResult result = logicalScope.advance(new ScopeAdvance(
                     deltaSeconds, ScopeAdvanceCause.GAME_TICK));
             if (result.aborted()) {
@@ -91,7 +122,11 @@ public final class ModelGroupScope implements AutoCloseable {
             if (result.steps().isEmpty()) {
                 return;
             }
-            frameState.publishLogical(snapshotFrame(next));
+            if (visualStage != null) {
+                visualStage.publishLogicalFrame();
+            } else {
+                frameState.publishLogical(snapshotFrame(next));
+            }
             rootAdvanced = true;
         }
     }
@@ -101,6 +136,11 @@ public final class ModelGroupScope implements AutoCloseable {
         Objects.requireNonNull(currentRoot, "currentRoot");
         synchronized (publicationLock) {
             if (isClosed()) {
+                return;
+            }
+            if (visualStage != null) {
+                visualStage.publishFrame(currentRoot);
+                rootAdvanced = true;
                 return;
             }
             RootSnapshot next = new RootSnapshot(currentRoot, currentRoot);

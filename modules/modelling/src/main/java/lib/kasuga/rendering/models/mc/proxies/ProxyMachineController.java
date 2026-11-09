@@ -20,14 +20,14 @@ import java.util.function.Supplier;
 /**
  * Runs the element/machine bridge once per logical Scope step for a multi-part proxy.
  */
-final class ProxyMachineController implements RuntimeController<Void> {
+public final class ProxyMachineController implements RuntimeController<Void> {
 
     private final Supplier<@Nullable StateMachine<?>> machine;
     private final Consumer<StateMachine<?>> beforeTick;
     private final Consumer<StateMachine<?>> afterTick;
     private final VarProvider varProvider;
 
-    ProxyMachineController(
+    public ProxyMachineController(
             Supplier<@Nullable StateMachine<?>> machine,
             Consumer<StateMachine<?>> beforeTick,
             Consumer<StateMachine<?>> afterTick,

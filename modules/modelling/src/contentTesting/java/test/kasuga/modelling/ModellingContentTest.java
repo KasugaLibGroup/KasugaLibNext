@@ -66,11 +66,11 @@ public class ModellingContentTest {
         // 注册本身由 REGISTRY 在 KasugaLibStartupEvent 时统一派发。
         // The data-driven sibling (kasuga_lib:example_fan_data_driven) is registered by
         // FanDataDrivenFactories from the content file — same classes, params-selected machine/model.
-        EXAMPLE_FAN_BE = BlockEntityReg.of(
+        EXAMPLE_FAN_BE = FanProxyDefinitions.registerWhenReady(BlockEntityReg.of(
                 "example_fan",
                 (pos, state) -> new FanBlockEntity(EXAMPLE_FAN_BE.getEntry(), pos, state)
         ).validBlocks(Collections.singletonList((Supplier<Block>) () -> EXAMPLE_FAN_BLOCK.getEntry()))
-                .setParent(ModellingTestApplication.registry);
+                .setParent(ModellingTestApplication.registry));
 
         EXAMPLE_FAN_BLOCK = BlockReg.of(
                 "example_fan",
