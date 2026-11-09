@@ -84,6 +84,23 @@ class ModelInstanceRootTransformTest {
     }
 
     @Test
+    void consecutiveEvaluateFramesStartNewSamplingWindows() {
+        ModelInstance instance = ModelInstanceFixture.minimal();
+        List<String> order = new ArrayList<>();
+        CountingRoot root = new CountingRoot(order, instance);
+        CountingPose pose = new CountingPose(order);
+        instance.setRootTransformDriver(root);
+        ModelPoseBinding.install(instance, pose);
+
+        instance.evaluateFrame(0.25f, 0.05f);
+        instance.evaluateFrame(0.75f, 0.05f);
+
+        assertEquals(List.of("root", "pose", "root", "pose"), order);
+        assertEquals(2, root.samples);
+        assertEquals(2, pose.samples);
+    }
+
+    @Test
     void closingTheInstanceDetachesButDoesNotTerminallyCloseDrivers() {
         ModelInstance instance = ModelInstanceFixture.minimal();
         CountingRoot root = new CountingRoot(new ArrayList<>(), instance);

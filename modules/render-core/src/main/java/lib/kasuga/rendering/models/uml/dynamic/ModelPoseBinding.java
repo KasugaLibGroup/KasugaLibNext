@@ -7,7 +7,7 @@ import java.util.Objects;
 /**
  * Owns the single internal pose driver installed on a {@link ModelInstance}.
  *
- * <p>The binding is the value stored in {@link ModelInstance#getPoseDriver()}. It forwards each
+ * <p>The binding is the pose owner stored on a {@link ModelInstance}. It forwards each
  * tick and render sample once to one source, and keeps resource-reload rebinding in one place:
  * the source is moved first; only a successful move detaches the old instance and installs the
  * fresh one.

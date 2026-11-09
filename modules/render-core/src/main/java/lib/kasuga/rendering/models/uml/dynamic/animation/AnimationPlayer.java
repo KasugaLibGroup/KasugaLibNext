@@ -120,7 +120,8 @@ public final class AnimationPlayer<T> implements RebindablePoseDriver {
 
     /**
      * Re-target a fresh {@link ModelInstance} (resource reload / model rebind): install a new
-     * {@link ModelInstancePoseSink} for {@code fresh}. Playback progress is unchanged.
+     * {@link lib.kasuga.rendering.models.uml.dynamic.fsm.ModelInstancePoseSink} for {@code fresh}.
+     * Playback progress is unchanged.
      */
     public void rebind(ModelInstance fresh) {
         scopedPlayback.rebind(fresh);

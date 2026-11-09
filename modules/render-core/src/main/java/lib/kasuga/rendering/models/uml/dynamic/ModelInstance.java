@@ -290,7 +290,7 @@ public class ModelInstance implements AutoCloseable {
     public void evaluateFrame(float partialTick, float deltaSeconds) {
         requireOpen();
         if (!(deltaSeconds > 0f) || !Float.isFinite(deltaSeconds)) return;
-        prepareFrameSample(partialTick);
+        beginFrameSample(partialTick);
         tickLoop.tick(deltaSeconds);
         markFrameEvaluated();
     }
@@ -302,6 +302,20 @@ public class ModelInstance implements AutoCloseable {
 
     /** Compatibility entry for sampling a member before a standard shared-world batch. */
     public void prepareSharedPhysicsFrame(float partialTick) { prepareFrameSample(partialTick); }
+
+    /**
+     * Starts a new render-frame sampling window and samples both write domains once.
+     *
+     * <p>Unlike {@link #prepareFrameSample(float)}, this method invalidates the previous frame's
+     * prepared marker. Repeated preparation remains idempotent until the backend consumes the
+     * sample with {@link #sample(float)} or {@link #sample(RenderSampleContext)}.
+     */
+    public void beginFrameSample(float partialTick) {
+        requireOpen();
+        if (!Float.isFinite(partialTick)) throw new IllegalArgumentException("partialTick must be finite");
+        frameSamplePrepared = false;
+        prepareFrameSample(partialTick);
+    }
 
     public void prepareFrameSample(float partialTick) {
         requireOpen();
