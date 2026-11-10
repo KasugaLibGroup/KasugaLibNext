@@ -623,14 +623,14 @@ class ProxyKernelTest {
             assertTrue(input.entered.await(2, TimeUnit.SECONDS));
             suspendThread.start();
             assertTrue(suspendStarted.await(2, TimeUnit.SECONDS));
-            awaitCondition(() -> suspendThread.getState() == Thread.State.BLOCKED
-                    || session.state() == ProxyLifecycleState.SUSPENDED);
-
+            // The tick deliberately owns the session monitor until we release
+            // its input. Calling session.state() here would acquire that same
+            // monitor and prevent this thread from ever releasing the latch.
+            awaitCondition(() -> suspendThread.getState() == Thread.State.BLOCKED);
+        } finally {
             input.release.countDown();
             tickThread.join(10_000L);
             suspendThread.join(10_000L);
-        } finally {
-            input.release.countDown();
         }
 
         assertFalse(tickThread.isAlive());
@@ -919,7 +919,9 @@ class ProxyKernelTest {
         public String observe(String element) {
             entered.countDown();
             try {
-                release.await();
+                if (!release.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("timed out waiting to release input");
+                }
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("input observation interrupted", interrupted);

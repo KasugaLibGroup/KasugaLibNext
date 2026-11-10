@@ -42,6 +42,9 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // Show the actual running test when parallel builds finish other projects.
+    testLogging.events 'started', 'failed', 'skipped'
+    timeout = java.time.Duration.ofMinutes(5)
 }
 
 tasks.withType(JavaCompile).configureEach {
