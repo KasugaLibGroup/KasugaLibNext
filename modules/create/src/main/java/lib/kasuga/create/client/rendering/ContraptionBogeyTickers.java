@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * Advances the proxies hosted by {@link ProxyBogeyVisual} on the game tick, not inside Flywheel's
@@ -30,6 +31,7 @@ public final class ContraptionBogeyTickers {
 
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Set<ProxyBogeyVisual> LIVE = ConcurrentHashMap.newKeySet();
+    private static final ConcurrentLinkedQueue<Runnable> CLEANUPS = new ConcurrentLinkedQueue<>();
 
     private ContraptionBogeyTickers() {
     }
@@ -42,6 +44,10 @@ public final class ContraptionBogeyTickers {
         LIVE.remove(visual);
     }
 
+    static void enqueueCleanup(Runnable cleanup) {
+        CLEANUPS.add(cleanup);
+    }
+
     /** Number of visuals currently ticking; diagnostics. */
     public static int liveVisuals() {
         return LIVE.size();
@@ -49,6 +55,7 @@ public final class ContraptionBogeyTickers {
 
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
+        drainCleanups();
         if (LIVE.isEmpty()) {
             return;
         }
@@ -65,6 +72,17 @@ public final class ContraptionBogeyTickers {
             } catch (RuntimeException failure) {
                 // One broken bogey must not take the whole client tick down with it.
                 LOGGER.error("[proxy] contraption bogey tick failed", failure);
+            }
+        }
+    }
+
+    private static void drainCleanups() {
+        Runnable cleanup;
+        while ((cleanup = CLEANUPS.poll()) != null) {
+            try {
+                cleanup.run();
+            } catch (RuntimeException failure) {
+                LOGGER.error("[proxy] deferred contraption bogey cleanup failed", failure);
             }
         }
     }
