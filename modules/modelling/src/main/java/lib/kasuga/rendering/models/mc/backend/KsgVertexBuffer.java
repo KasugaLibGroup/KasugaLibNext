@@ -727,7 +727,7 @@ public class KsgVertexBuffer implements AutoCloseable, VersionedBackendRenderabl
         long drawStart = ModelProfiler.start();
         shader.setCurrentPose(pose);
         shader.setEmissiveStrength(emissiveStrength);
-        shader.setLightData(brightness, packedLight, packedOverlay);
+        shader.setLightData(packedLight, packedOverlay);
         shader.setGpuSkinningState(gpuSkinningDataReady && isGpuSkinningEnabled(), gpuBoneTransformTextureId);
         renderType.setupRenderState();
 

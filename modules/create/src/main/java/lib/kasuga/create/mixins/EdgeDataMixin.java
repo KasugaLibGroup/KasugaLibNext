@@ -4,7 +4,6 @@ import com.simibubi.create.content.trains.graph.EdgeData;
 import com.simibubi.create.content.trains.graph.TrackEdge;
 import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.signal.TrackEdgePoint;
-import cpw.mods.util.Lazy;
 import lib.kasuga.KasugaLib;
 import lib.kasuga.content.graph.GraphManager;
 import lib.kasuga.create.content.train.graph.EdgeExtraData;
@@ -12,9 +11,10 @@ import lib.kasuga.create.content.train.graph.RailwayManager;
 import lib.kasuga.create.content.train.signal.BoundarySegmentRegistry;
 import lib.kasuga.create.content.train.signal.CustomBoundary;
 import net.minecraft.resources.ResourceLocation;
-import org.checkerframework.common.aliasing.qual.Unique;
+import net.neoforged.neoforge.common.util.Lazy;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -25,7 +25,8 @@ import java.util.UUID;
 public class EdgeDataMixin {
 
     @Unique
-    protected static Lazy<RailwayManager> railwayManager = Lazy.of(()->KasugaLib.getBean(RailwayManager.class));
+    private static Lazy<RailwayManager> railwayManager =
+            Lazy.of(() -> KasugaLib.getBean(RailwayManager.class));
 
     @Shadow private TrackEdge edge;
 

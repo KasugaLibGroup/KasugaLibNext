@@ -28,7 +28,6 @@ uniform sampler2D Sampler2;
 uniform samplerBuffer ksg_BoneTransforms;
 uniform mat4 ksg_ModelPoseMat;
 uniform mat3 ksg_ModelNormalMat;
-uniform float ksg_BrightnessScale;
 uniform ivec2 ksg_PackedLight;
 uniform ivec2 ksg_PackedOverlay;
 uniform int ksg_GpuSkinningEnabled;
@@ -66,6 +65,8 @@ void main() {
     // fragment shader; multiplying it into vertexColor zeroes the directional light too, so models in
     // dark spots render pure black instead of dark-but-visible.
     vertexColor = vec4(Color.rgb, Color.a);
+    // LightTexture.pack stores 0..15 block/sky levels as packed 16-bit
+    // components (0, 16, ... 240), while the light texture is 16x16.
     lightMapColor = texelFetch(Sampler2, ksg_PackedLight / 16, 0);
     overlayColor = texelFetch(Sampler1, ksg_PackedOverlay, 0);
 

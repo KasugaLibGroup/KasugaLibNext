@@ -24,6 +24,7 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
@@ -48,6 +49,10 @@ import java.util.function.Consumer;
  * {@link ContraptionBogeyTickers}, exactly like the block-entity host — binding models mid-frame
  * would create pipeline instances during the render phase.
  *
+ * <p>Create can hand a different style in later updates and may delete a visual from a Flywheel
+ * worker thread. Style changes therefore replace the element, while deletion is queued back to the
+ * client tick so model-pipeline resources are released on the thread that owns them.
+ *
  * <h2>Coexistence</h2>
  * <p>Register this together with {@link NoopRenderer}: the vanilla renderer path
  * ({@code !VisualizationManager.supportsVisualization}) would otherwise draw Create's own model on
@@ -65,6 +70,7 @@ public final class ProxyBogeyVisual implements BogeyVisual {
     private final ElementProxy<ContraptionBogey> template;
     private final ProxyIdentity identity;
     private final ProxyAttachToken attachToken = ProxyAttachToken.random();
+    private final DeferredGameThreadTask deferredClose;
 
     @Nullable private ContraptionBogey element;
     @Nullable private ProxySession<ContraptionBogey, ContraptionBogey.HostFrame, Void, Void,
@@ -79,17 +85,31 @@ public final class ProxyBogeyVisual implements BogeyVisual {
      */
     public ProxyBogeyVisual(VisualizationContext context, BogeySizes.BogeySize size,
                             ElementProxy<ContraptionBogey> template) {
+        this(context, size, template, ContraptionBogeyTickers::enqueueCleanup);
+    }
+
+    ProxyBogeyVisual(VisualizationContext context, BogeySizes.BogeySize size,
+                     ElementProxy<ContraptionBogey> template, Executor gameThread) {
         this.context = context;
         this.size = size;
         this.template = template;
         this.identity = ProxyIdentity.ofExternal("kasuga_lib", "contraption_bogey", IDS.incrementAndGet());
+        this.deferredClose = new DeferredGameThreadTask(gameThread);
     }
 
     @Override
     public void update(CompoundTag bogeyData, float wheelAngle, PoseStack poseStack) {
+        if (deferredClose.isPending()) {
+            return;
+        }
         ContraptionBogey bogey = element;
         if (bogey == null) {
             createElement(bogeyData, wheelAngle, poseStack);
+            return;
+        }
+        ResourceLocation styleId = BogeyModels.styleIdOf(bogeyData);
+        if (styleId != null && !styleId.equals(bogey.styleId())) {
+            releaseInstance();
             return;
         }
         ProxySession<ContraptionBogey, ContraptionBogey.HostFrame, Void, Void,
@@ -192,7 +212,15 @@ public final class ProxyBogeyVisual implements BogeyVisual {
         this.session = null;
         this.element = null;
         if (activeSession != null) {
+            deferredClose.schedule(() -> closeSession(activeSession));
+        }
+    }
+
+    private void closeSession(ProxySession<?, ?, ?, ?, ?> activeSession) {
+        try {
             activeSession.close();
+        } catch (RuntimeException failure) {
+            LOGGER.error("[proxy] contraption bogey cleanup failed", failure);
         }
     }
 

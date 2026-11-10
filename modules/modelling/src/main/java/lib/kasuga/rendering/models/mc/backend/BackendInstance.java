@@ -260,7 +260,7 @@ public class BackendInstance implements AutoCloseable {
         kasugaShader.setCurrentPose(pose);
         kasugaShader.setEmissiveStrength(emissiveStrength);
         kasugaShader.setAmbientLightEnhancement(ambientLightEnhancement);
-        kasugaShader.setLightData(data.getBrightness(), data.getLightmap(), data.getOverlay());
+        kasugaShader.setLightData(data.getLightmap(), data.getOverlay());
         kasugaShader.setAlphaMode(pass.shaderAlphaMode());
         kasugaShader.setOitMode(oitMode);
         kasugaShader.setGpuSkinningState(!cpuSkinning, tbo != null ? tbo.getTextureId() : 0);

@@ -98,7 +98,8 @@ public class ObjContextData implements ContextData<ObjContextData> {
                 continue;
             }
             String materialName = bindingMaterials.get(i);
-            meshes[i] = new Mesh(new Vertex[faces.size()], new Vector3f(), new Transform(),
+            Vector3f faceNormal = calculateFaceNormal(faces, loader.getObjVertexPositions());
+            meshes[i] = new Mesh(new Vertex[faces.size()], faceNormal, new Transform(),
                     new Material[]{loader.getMaterial(this, loader, materialName)},
                     loader.getMeshData(this, loader));
             int j = 0;
@@ -130,11 +131,15 @@ public class ObjContextData implements ContextData<ObjContextData> {
                     );
                 }
                 mesh.getVertices()[p.getSecond()] = vertex;
+                vertex.getNormals().put(mesh, mesh.getNormal());
                 if (binding.textureIndex() >= 0 && binding.textureIndex() < loader.getObjVertexUvs().size()) {
                     vertex.addUV(mesh, mesh.getMaterials()[0], loader.getObjVertexUvs().get(binding.textureIndex()));
                 }
                 if (binding.normalIndex() >= 0 && binding.normalIndex() < loader.getObjVertexNormals().size()) {
-                    vertex.getNormals().put(mesh, loader.getObjVertexNormals().get(binding.normalIndex()));
+                    Vector3f normal = loader.getObjVertexNormals().get(binding.normalIndex());
+                    if (isUsableNormal(normal)) {
+                        vertex.getNormals().put(mesh, new Vector3f(normal).normalize());
+                    }
                 }
             }
             vertex.setBinding(new BoneBinding(new Pair[]{Pair.of(bone, 1.0f)}, BoneBindingFunc.BDEF, null));
@@ -152,5 +157,30 @@ public class ObjContextData implements ContextData<ObjContextData> {
             }
         }
         return true;
+    }
+
+    private static Vector3f calculateFaceNormal(
+            List<ObjVertexBinding> face,
+            List<Vector3f> positions
+    ) {
+        Vector3f origin = positions.get(face.getFirst().vertexIndex());
+        Vector3f normal = new Vector3f();
+        for (int i = 1; i + 1 < face.size(); i++) {
+            Vector3f a = positions.get(face.get(i).vertexIndex());
+            Vector3f b = positions.get(face.get(i + 1).vertexIndex());
+            normal.add(new Vector3f(a).sub(origin).cross(new Vector3f(b).sub(origin)));
+        }
+        if (isUsableNormal(normal)) {
+            return normal.normalize();
+        }
+        return new Vector3f(0f, 1f, 0f);
+    }
+
+    private static boolean isUsableNormal(Vector3f normal) {
+        return normal != null
+                && Float.isFinite(normal.x())
+                && Float.isFinite(normal.y())
+                && Float.isFinite(normal.z())
+                && normal.lengthSquared() > 1e-12f;
     }
 }
