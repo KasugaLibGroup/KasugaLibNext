@@ -42,7 +42,6 @@ public class KasugaShaderInstance extends ShaderInstance {
     @Getter
     private float stylizedShadingStrength = 0.65f;
 
-    private float brightness = 1.0f;
     private int packedLight = 0;
     private int packedOverlay = 0;
     private boolean gpuSkinningEnabled = false;
@@ -120,8 +119,7 @@ public class KasugaShaderInstance extends ShaderInstance {
         setStylizedShadingStrength(0f);
     }
 
-    public void setLightData(float brightness, int packedLight, int packedOverlay) {
-        this.brightness = brightness;
+    public void setLightData(int packedLight, int packedOverlay) {
         this.packedLight = packedLight;
         this.packedOverlay = packedOverlay;
     }
@@ -157,7 +155,6 @@ public class KasugaShaderInstance extends ShaderInstance {
         this.safeGetUniform("ksg_ParallaxSamples").set(this.parallaxSamplerTimes);
         this.safeGetUniform("ksg_AmbientLightEnhancement").set(this.ambientLightEnhancement);
         this.safeGetUniform("ksg_StylizedShadingStrength").set(this.stylizedShadingStrength);
-        this.safeGetUniform("ksg_BrightnessScale").set(this.brightness);
         this.safeGetUniform("ksg_PackedLight").set(this.packedLight & 0xffff, (this.packedLight >>> 16) & 0xffff);
         this.safeGetUniform("ksg_PackedOverlay").set(this.packedOverlay & 0xffff, (this.packedOverlay >>> 16) & 0xffff);
         this.safeGetUniform("ksg_GpuSkinningEnabled").set(this.gpuSkinningEnabled ? 1 : 0);

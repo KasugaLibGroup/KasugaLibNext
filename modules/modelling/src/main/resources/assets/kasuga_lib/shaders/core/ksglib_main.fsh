@@ -327,6 +327,14 @@ void main() {
     color = mix(overlayColor.rgb, color, overlayColor.a);
     color *= ColorModulator.rgb;
 
+    // Dark authored textures must not disappear when PBR normal/AO and
+    // directional terms all collapse toward zero. Keep a light-dependent
+    // fraction of the material albedo visible; highlights can still exceed it.
+    float albedoVisibilityFloor = 0.18 + 0.42 * lightLevel;
+    vec3 materialAlbedo = albedo.rgb * vertexColor.rgb * ColorModulator.rgb;
+    if (overlayColor.a < 0.999) {
+        color = max(color, materialAlbedo * albedoVisibilityFloor);
+    }
     color += albedo.rgb * emission;
     float alpha = effectiveAlpha;
     vec4 finalColor = vec4(color, alpha);

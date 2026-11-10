@@ -37,7 +37,7 @@ class FlatModelUpdateTest {
         }
     }
 
-    @Test void materialMorphWritesColorInEveryConsumerAndBrightnessPreservesCoverage() throws Exception {
+    @Test void materialMorphWritesColorInEveryConsumerAndBrightnessDoesNotBakeIntoVertexColor() throws Exception {
         Fixture f = fixture();
         try (var first = data(f.model, false); var second = data(f.model, false)) {
             first.getDirtyVertices().clear(); second.getDirtyVertices().clear();
@@ -48,9 +48,22 @@ class FlatModelUpdateTest {
             assertEquals(128, Byte.toUnsignedInt(second.getBuffer().get(second.getColorOffset() + 3)));
             second.getDirtyVertices().clear(); second.setBrightness(.25f); second.updateModel();
             assertEquals(128, Byte.toUnsignedInt(second.getBuffer().get(second.getColorOffset() + 3)));
-            assertEquals(64, Byte.toUnsignedInt(second.getBuffer().get(second.getColorOffset())));
-            assertFalse(second.getDirtyVertices().isEmpty());
+            assertEquals(255, Byte.toUnsignedInt(second.getBuffer().get(second.getColorOffset())));
+            assertTrue(second.getDirtyVertices().isEmpty());
             assertEquals(skinningVersion, second.getSkinningSourceVersion());
+        }
+    }
+
+    @Test void zeroBrightnessLeavesAuthoredVertexColorIntact() throws Exception {
+        Fixture f = fixture();
+        try (var data = data(f.model, false)) {
+            data.getDirtyVertices().clear();
+            data.setBrightness(0f);
+            data.updateModel();
+            assertEquals(255, Byte.toUnsignedInt(data.getBuffer().get(data.getColorOffset())));
+            assertEquals(255, Byte.toUnsignedInt(data.getBuffer().get(data.getColorOffset() + 1)));
+            assertEquals(255, Byte.toUnsignedInt(data.getBuffer().get(data.getColorOffset() + 2)));
+            assertEquals(255, Byte.toUnsignedInt(data.getBuffer().get(data.getColorOffset() + 3)));
         }
     }
 
