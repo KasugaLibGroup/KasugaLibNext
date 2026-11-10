@@ -33,7 +33,7 @@
 
 // Snapshot image magic 'BNS3' and version
 #define B3_SNAP_MAGIC 0x33534E42u
-#define B3_SNAP_VERSION 2u
+#define B3_SNAP_VERSION 11u // isotropic inertia tolerance
 
 #define B3_SNAP_FLAG_VALIDATION 0x1u
 #define B3_SNAP_FLAG_DOUBLE_PRECISION 0x2u
@@ -64,6 +64,27 @@ static uint32_t b3ComputeLayoutHash( void )
 	MIX( sizeof( b3GraphColor ) )
 	MIX( sizeof( b3DynamicTree ) )
 	MIX( sizeof( b3TreeNode ) )
+	MIX( sizeof( b3TreeProxy ) )
+	MIX( sizeof( b3HullData ) )
+	MIX( sizeof( b3HullVertex ) )
+	MIX( sizeof( b3HullHalfEdge ) )
+	MIX( sizeof( b3HullFace ) )
+	MIX( sizeof( b3Plane ) )
+	MIX( sizeof( b3MeshData ) )
+	MIX( sizeof( b3MeshNode ) )
+	MIX( sizeof( b3MeshTriangle ) )
+	MIX( sizeof( b3HeightFieldData ) )
+	MIX( sizeof( b3CompoundData ) )
+	MIX( sizeof( b3CompoundCapsule ) )
+	MIX( sizeof( b3CompoundSphere ) )
+	MIX( B3_HULL_VERSION & 0xFFFFFFFFu )
+	MIX( B3_HULL_VERSION >> 32 )
+	MIX( B3_MESH_VERSION & 0xFFFFFFFFu )
+	MIX( B3_MESH_VERSION >> 32 )
+	MIX( B3_HEIGHT_FIELD_VERSION & 0xFFFFFFFFu )
+	MIX( B3_HEIGHT_FIELD_VERSION >> 32 )
+	MIX( B3_COMPOUND_VERSION & 0xFFFFFFFFu )
+	MIX( B3_COMPOUND_VERSION >> 32 )
 	MIX( sizeof( b3SetItem ) )
 	MIX( sizeof( b3IdPool ) )
 	MIX( sizeof( b3SurfaceMaterial ) )
@@ -277,48 +298,77 @@ static void b3DesHashSet( b3SnapReader* r, b3HashSet* hs )
 	}
 }
 
-// DynamicTree: version, scalars, full nodeCapacity nodes (rebuild scratch excluded)
+// DynamicTree: version, scalars, then nodes and parents to nodeEnd and proxies at capacity.
+// The empty node and the free pairs are sentinels below the end and travel as they are. Only the
+// stale tail above the end, the spare array and the rebuild scratch are skipped.
 static void b3SerTree( b3RecBuffer* buf, const b3DynamicTree* tree )
 {
 	b3SnapW_Bytes( buf, &tree->version, sizeof( uint64_t ) );
-	b3SnapW_I32( buf, tree->root );
-	b3SnapW_I32( buf, tree->nodeCount );
-	b3SnapW_I32( buf, tree->nodeCapacity );
-	b3SnapW_I32( buf, tree->freeList );
+	b3SnapW_I32( buf, tree->nodeEnd );
+	b3SnapW_I32( buf, tree->pairFreeList );
 	b3SnapW_I32( buf, tree->proxyCount );
-	if ( tree->nodeCapacity > 0 )
+	b3SnapW_I32( buf, tree->proxyCapacity );
+	b3SnapW_I32( buf, tree->proxyFreeList );
+	b3SnapW_I32( buf, tree->dfsOrdered ? 1 : 0 );
+	if ( tree->nodeEnd > 0 )
 	{
-		b3SnapW_Bytes( buf, tree->nodes, tree->nodeCapacity * (int)sizeof( b3TreeNode ) );
+		b3SnapW_Bytes( buf, tree->nodes, tree->nodeEnd * (int)sizeof( b3TreeNode ) );
+		b3SnapW_Bytes( buf, tree->parents, tree->nodeEnd * (int)sizeof( int32_t ) );
+	}
+	if ( tree->proxyCapacity > 0 )
+	{
+		b3SnapW_Bytes( buf, tree->proxies, tree->proxyCapacity * (int)sizeof( b3TreeProxy ) );
 	}
 }
 
 static void b3DesTree( b3SnapReader* r, b3DynamicTree* tree )
 {
-	uint64_t version;
+	uint64_t version = 0;
 	b3SnapR_Bytes( r, &version, sizeof( uint64_t ) );
-	int root = b3SnapR_I32( r );
-	int nodeCount = b3SnapR_I32( r );
-	int nodeCapacity = b3SnapR_I32( r );
-	int freeList = b3SnapR_I32( r );
+	int nodeEnd = b3SnapR_I32( r );
+	int pairFreeList = b3SnapR_I32( r );
 	int proxyCount = b3SnapR_I32( r );
+	int proxyCapacity = b3SnapR_I32( r );
+	int proxyFreeList = b3SnapR_I32( r );
+	bool dfsOrdered = b3SnapR_I32( r ) != 0;
 
-	if ( r->ok && b3SnapCheckCount( r, nodeCapacity, (int)sizeof( b3TreeNode ), (int)sizeof( b3TreeNode ) ) == false )
+	if ( r->ok && b3SnapCheckCount( r, nodeEnd, (int)sizeof( b3TreeNode ), (int)sizeof( b3TreeNode ) ) == false )
 	{
 		r->ok = false;
 	}
 
-	// Free existing allocation including any rebuild scratch
+	if ( r->ok && b3SnapCheckCount( r, proxyCapacity, (int)sizeof( b3TreeProxy ), (int)sizeof( b3TreeProxy ) ) == false )
+	{
+		r->ok = false;
+	}
+
+	if ( r->ok && ( nodeEnd < 2 || ( nodeEnd & 1 ) != 0 || proxyCapacity < 1 ) )
+	{
+		r->ok = false;
+	}
+
+	// Free existing allocation including the spare array and any rebuild scratch
 	b3Free( tree->nodes, tree->nodeCapacity * (int)sizeof( b3TreeNode ) );
+	b3Free( tree->parents, tree->nodeCapacity * (int)sizeof( int32_t ) );
+	b3Free( tree->proxies, tree->proxyCapacity * (int)sizeof( b3TreeProxy ) );
+	b3Free( tree->swapNodes, tree->nodeCapacity * (int)sizeof( b3TreeNode ) );
 	b3Free( tree->leafIndices, tree->rebuildCapacity * (int)sizeof( int ) );
+	b3Free( tree->leafNodes, tree->rebuildCapacity * (int)sizeof( b3TreeNode ) );
 	b3Free( tree->leafBoxes, tree->rebuildCapacity * (int)sizeof( b3AABB ) );
 	b3Free( tree->leafCenters, tree->rebuildCapacity * (int)sizeof( b3Vec3 ) );
 	b3Free( tree->binIndices, tree->rebuildCapacity * (int)sizeof( int ) );
 	tree->nodes = NULL;
+	tree->parents = NULL;
+	tree->proxies = NULL;
+	tree->swapNodes = NULL;
 	tree->leafIndices = NULL;
+	tree->leafNodes = NULL;
 	tree->leafBoxes = NULL;
 	tree->leafCenters = NULL;
 	tree->binIndices = NULL;
+	tree->nodeEnd = 0;
 	tree->nodeCapacity = 0;
+	tree->proxyCapacity = 0;
 	tree->rebuildCapacity = 0;
 
 	if ( !r->ok )
@@ -327,17 +377,21 @@ static void b3DesTree( b3SnapReader* r, b3DynamicTree* tree )
 	}
 
 	tree->version = version;
-	tree->root = root;
-	tree->nodeCount = nodeCount;
-	tree->nodeCapacity = nodeCapacity;
-	tree->freeList = freeList;
+	tree->nodeEnd = nodeEnd;
+	tree->nodeCapacity = nodeEnd;
+	tree->pairFreeList = pairFreeList;
 	tree->proxyCount = proxyCount;
+	tree->proxyCapacity = proxyCapacity;
+	tree->proxyFreeList = proxyFreeList;
+	tree->dfsOrdered = dfsOrdered;
 
-	if ( nodeCapacity > 0 )
-	{
-		tree->nodes = (b3TreeNode*)b3Alloc( nodeCapacity * (int)sizeof( b3TreeNode ) );
-		b3SnapR_Bytes( r, tree->nodes, nodeCapacity * (int)sizeof( b3TreeNode ) );
-	}
+	tree->nodes = (b3TreeNode*)b3Alloc( nodeEnd * (int)sizeof( b3TreeNode ) );
+	tree->parents = (int32_t*)b3Alloc( nodeEnd * (int)sizeof( int32_t ) );
+	b3SnapR_Bytes( r, tree->nodes, nodeEnd * (int)sizeof( b3TreeNode ) );
+	b3SnapR_Bytes( r, tree->parents, nodeEnd * (int)sizeof( int32_t ) );
+
+	tree->proxies = (b3TreeProxy*)b3Alloc( proxyCapacity * (int)sizeof( b3TreeProxy ) );
+	b3SnapR_Bytes( r, tree->proxies, proxyCapacity * (int)sizeof( b3TreeProxy ) );
 }
 
 // Solver set: setIndex + 4 arrays (note: contactIndices is int array, not contactSims)
@@ -436,7 +490,9 @@ static void b3SerWorldConfig( b3RecBuffer* buf, const b3World* world )
 	b3SnapW_Bytes( buf, &world->gravity, sizeof( b3Vec3 ) );
 	b3SnapW_Bytes( buf, &world->hitEventThreshold, sizeof( float ) );
 	b3SnapW_Bytes( buf, &world->restitutionThreshold, sizeof( float ) );
+	b3SnapW_I32( buf, world->restitutionIterations );
 	b3SnapW_Bytes( buf, &world->maxLinearSpeed, sizeof( float ) );
+	b3SnapW_Bytes( buf, &world->isotropicInertiaTolerance, sizeof( float ) );
 	b3SnapW_Bytes( buf, &world->contactSpeed, sizeof( float ) );
 	b3SnapW_Bytes( buf, &world->contactHertz, sizeof( float ) );
 	b3SnapW_Bytes( buf, &world->contactDampingRatio, sizeof( float ) );
@@ -446,12 +502,14 @@ static void b3SerWorldConfig( b3RecBuffer* buf, const b3World* world )
 	b3SnapW_Bytes( buf, &world->inv_h, sizeof( float ) );
 	b3SnapW_Bytes( buf, &world->inv_dt, sizeof( float ) );
 	b3SnapW_I32( buf, world->endEventArrayIndex );
+	b3SnapW_I32( buf, world->compoundShapeCount );
 	b3SnapW_Bytes( buf, &world->maxCapacity, sizeof( b3Capacity ) );
 	uint8_t flags = 0;
 	flags |= world->enableSleep ? 0x01u : 0u;
 	flags |= world->enableWarmStarting ? 0x02u : 0u;
 	flags |= world->enableContinuous ? 0x04u : 0u;
 	flags |= world->enableSpeculative ? 0x08u : 0u;
+	flags |= world->enableRestitutionPropagation ? 0x10u : 0u;
 	b3RecBufAppend( buf, &flags, 1 );
 }
 
@@ -460,7 +518,9 @@ static void b3DesWorldConfig( b3SnapReader* r, b3World* world )
 	b3SnapR_Bytes( r, &world->gravity, sizeof( b3Vec3 ) );
 	b3SnapR_Bytes( r, &world->hitEventThreshold, sizeof( float ) );
 	b3SnapR_Bytes( r, &world->restitutionThreshold, sizeof( float ) );
+	world->restitutionIterations = b3SnapR_I32( r );
 	b3SnapR_Bytes( r, &world->maxLinearSpeed, sizeof( float ) );
+	b3SnapR_Bytes( r, &world->isotropicInertiaTolerance, sizeof( float ) );
 	b3SnapR_Bytes( r, &world->contactSpeed, sizeof( float ) );
 	b3SnapR_Bytes( r, &world->contactHertz, sizeof( float ) );
 	b3SnapR_Bytes( r, &world->contactDampingRatio, sizeof( float ) );
@@ -470,6 +530,7 @@ static void b3DesWorldConfig( b3SnapReader* r, b3World* world )
 	b3SnapR_Bytes( r, &world->inv_h, sizeof( float ) );
 	b3SnapR_Bytes( r, &world->inv_dt, sizeof( float ) );
 	world->endEventArrayIndex = b3SnapR_I32( r );
+	world->compoundShapeCount = b3SnapR_I32( r );
 	b3SnapR_Bytes( r, &world->maxCapacity, sizeof( b3Capacity ) );
 	uint8_t flags = 0;
 	b3SnapR_Bytes( r, &flags, 1 );
@@ -477,6 +538,7 @@ static void b3DesWorldConfig( b3SnapReader* r, b3World* world )
 	world->enableWarmStarting = ( flags & 0x02u ) != 0;
 	world->enableContinuous = ( flags & 0x04u ) != 0;
 	world->enableSpeculative = ( flags & 0x08u ) != 0;
+	world->enableRestitutionPropagation = ( flags & 0x10u ) != 0;
 }
 
 // Shapes carry pointer fields: materials, userData, userShape, and the geometry union.
@@ -592,7 +654,7 @@ static void b3DesShapes( b3SnapReader* r, b3World* world, b3RecReader* rdr )
 	// shape with the same geometry. Carrying its handle over avoids tearing down and rebuilding every
 	// GPU mesh on each seek, which the host (a 3D renderer) would otherwise pay for. Handles that are
 	// not reclaimed below belong to shapes that are gone or were replaced, and get released so the host
-	// pool does not leak across seeks. Box2D has no such handles, so its restore skips all of this.
+	// pool does not leak across seeks.
 	int oldShapeCount = world->shapes.count;
 	void** savedUserShape = NULL;
 	uint16_t* savedGeneration = NULL;
@@ -685,13 +747,13 @@ static void b3DesShapes( b3SnapReader* r, b3World* world, b3RecReader* rdr )
 				{
 					break;
 				}
-				if ( rdr == NULL || gid >= (uint32_t)rdr->slotCount )
+				b3RegistrySlot* slot = b3RecGetSlot( rdr, gid, b3_geometryHull );
+				if ( slot == NULL )
 				{
 					r->ok = false;
 					break;
 				}
 				// Hull is cloned into the world DB; pass raw bytes directly
-				b3RegistrySlot* slot = rdr->slots + gid;
 				dst->hull = b3AddHullToDatabase( world, (const b3HullData*)slot->bytes );
 				break;
 			}
@@ -704,12 +766,12 @@ static void b3DesShapes( b3SnapReader* r, b3World* world, b3RecReader* rdr )
 				{
 					break;
 				}
-				if ( rdr == NULL || gid >= (uint32_t)rdr->slotCount )
+				b3RegistrySlot* slot = b3RecGetSlot( rdr, gid, b3_geometryMesh );
+				if ( slot == NULL )
 				{
 					r->ok = false;
 					break;
 				}
-				b3RegistrySlot* slot = rdr->slots + gid;
 				// Mesh is a self-contained blob used by reference; point straight at the pristine bytes.
 				dst->mesh.data = (const b3MeshData*)slot->bytes;
 				dst->mesh.scale = scale;
@@ -722,12 +784,12 @@ static void b3DesShapes( b3SnapReader* r, b3World* world, b3RecReader* rdr )
 				{
 					break;
 				}
-				if ( rdr == NULL || gid >= (uint32_t)rdr->slotCount )
+				b3RegistrySlot* slot = b3RecGetSlot( rdr, gid, b3_geometryHeightField );
+				if ( slot == NULL )
 				{
 					r->ok = false;
 					break;
 				}
-				b3RegistrySlot* slot = rdr->slots + gid;
 				// Self-contained blob used by reference; point straight at the pristine bytes.
 				dst->heightField = (const b3HeightFieldData*)slot->bytes;
 				break;
@@ -739,19 +801,13 @@ static void b3DesShapes( b3SnapReader* r, b3World* world, b3RecReader* rdr )
 				{
 					break;
 				}
-				if ( rdr == NULL || gid >= (uint32_t)rdr->slotCount )
+				b3RegistrySlot* slot = b3RecGetSlot( rdr, gid, b3_geometryCompound );
+				if ( slot == NULL )
 				{
 					r->ok = false;
 					break;
 				}
-				b3RegistrySlot* slot = rdr->slots + gid;
-				if ( slot->live == NULL )
-				{
-					slot->live = b3Alloc( (size_t)slot->byteCount );
-					memcpy( slot->live, slot->bytes, (size_t)slot->byteCount );
-					b3ConvertBytesToCompound( (uint8_t*)slot->live, slot->byteCount );
-				}
-				dst->compound = (const b3CompoundData*)slot->live;
+				dst->compound = (const b3CompoundData*)slot->bytes;
 				break;
 			}
 			default:
@@ -795,8 +851,6 @@ static void b3SerContacts( b3RecBuffer* buf, b3World* world )
 		// Write raw struct with pointer fields zeroed
 		b3Contact copy = *c;
 		copy.manifolds = NULL;
-		copy.bodySimIndexA = B3_NULL_INDEX;
-		copy.bodySimIndexB = B3_NULL_INDEX;
 		if ( copy.flags & b3_simMeshContact )
 		{
 			copy.meshContact.triangleCache.data = NULL;
@@ -853,8 +907,6 @@ static void b3DesContacts( b3SnapReader* r, b3World* world )
 		b3Contact* dst = world->contacts.data + i;
 		b3SnapR_Bytes( r, dst, sizeof( b3Contact ) );
 		dst->manifolds = NULL;
-		dst->bodySimIndexA = B3_NULL_INDEX;
-		dst->bodySimIndexB = B3_NULL_INDEX;
 		if ( dst->flags & b3_simMeshContact )
 		{
 			dst->meshContact.triangleCache.data = NULL;
@@ -1026,6 +1078,8 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
 	// Shape sparse array with geometry interning
 	b3SerShapes( buf, world, rec );
 
+	b3SerPodArray( buf, world->fatAABBs );
+
 	// Contact sparse array with manifold and mesh triangleCache
 	b3SerContacts( buf, world );
 
@@ -1078,11 +1132,6 @@ int b3SerializeWorld( b3World* world, b3RecBuffer* buf, b3Recording* rec )
 	{
 		b3SerTree( buf, &bp->trees[t] );
 	}
-	for ( int t = 0; t < b3_bodyTypeCount; ++t )
-	{
-		b3SerBitSet( buf, &bp->movedProxies[t] );
-	}
-	b3SerPodArray( buf, bp->moveArray );
 	b3SerHashSet( buf, &bp->pairSet );
 
 	// Constraint graph
@@ -1212,6 +1261,13 @@ bool b3DeserializeIntoShell( const uint8_t* data, int size, b3World* world, b3Re
 		return false;
 	}
 
+	b3DesPodArray( r, world->fatAABBs );
+
+	if ( !r->ok )
+	{
+		return false;
+	}
+
 	// 6. Contact sparse array
 	b3DesContacts( r, world );
 
@@ -1307,17 +1363,8 @@ bool b3DeserializeIntoShell( const uint8_t* data, int size, b3World* world, b3Re
 		{
 			b3DesTree( r, &bp->trees[t] );
 		}
-		for ( int t = 0; t < b3_bodyTypeCount; ++t )
-		{
-			b3DesBitSet( r, &bp->movedProxies[t] );
-		}
-
-		b3Array_Destroy( bp->moveArray );
-		b3Array_Create( bp->moveArray );
-		b3DesPodArray( r, bp->moveArray );
-
 		b3DesHashSet( r, &bp->pairSet );
-		// Transient moveResults/movePairs stay at shell's NULL/0
+		// The gathered moved siblings are per step scratch and stay at the shell's NULL
 	}
 
 	// 11. Constraint graph

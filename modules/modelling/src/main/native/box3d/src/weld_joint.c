@@ -91,7 +91,7 @@ void b3PrepareWeldJoint( b3JointSim* base, b3StepContext* context )
 	b3Body* bodyA = b3Array_Get( world->bodies, base->bodyIdA  );
 	b3Body* bodyB = b3Array_Get( world->bodies, base->bodyIdB  );
 
-	B3_ASSERT( bodyB->setIndex == b3_awakeSet );
+	B3_ASSERT( bodyA->setIndex == b3_awakeSet || bodyB->setIndex == b3_awakeSet );
 	b3SolverSet* setA = b3Array_Get( world->solverSets, bodyA->setIndex  );
 	b3SolverSet* setB = b3Array_Get( world->solverSets, bodyB->setIndex  );
 
@@ -269,17 +269,7 @@ void b3SolveWeldJoint( b3JointSim* base, b3StepContext* context, bool useBias )
 			impulseScale = joint->linearSpring.impulseScale;
 		}
 
-		//// K = [(1/m1 + 1/m2) * eye(2) - skew(r1) * invI1 * skew(r1) - skew(r2) * invI2 * skew(r2)]
-		b3Matrix3 sA = b3Skew( rA );
-		b3Matrix3 sB = b3Skew( rB );
-		b3Matrix3 kA = b3MulMM( sA, b3MulMM( base->invIA, sA ) );
-		b3Matrix3 kB = b3MulMM( sB, b3MulMM( base->invIB, sB ) );
-		b3Matrix3 k = b3NegateMat3( b3AddMM( kA, kB ) );
-		k.cx.x += mA + mB;
-		k.cy.y += mA + mB;
-		k.cz.z += mA + mB;
-
-		b3Vec3 b = b3Solve3( k, b3Add( cdot, bias ) );
+		b3Vec3 b = b3SolvePointConstraint( mA, mB, base->invIA, base->invIB, rA, rB, b3Add( cdot, bias ) );
 
 		b3Vec3 impulse = b3MulSub( b3MulSV( -massScale, b ), impulseScale, joint->linearImpulse );
 		joint->linearImpulse = b3Add( joint->linearImpulse, impulse );

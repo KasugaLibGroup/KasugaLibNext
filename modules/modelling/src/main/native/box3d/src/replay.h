@@ -63,13 +63,12 @@ typedef struct b3RecDrawQuery
 } b3RecDrawQuery;
 
 // One slot in the preloaded geometry registry. Loaded from the trailing block before any
-// ops run; live pointer built lazily on first shape create that references the id.
+// ops run.
 typedef struct b3RegistrySlot
 {
 	b3GeometryKind kind;
 	int byteCount;
 	uint8_t* bytes; // raw bytes from the file (always freed at teardown)
-	void* live;		// reconstructed live object, freed after b3DestroyWorld
 } b3RegistrySlot;
 
 // This is used to simplify the scratch buffer lifetime. Names longer than this probably
@@ -247,6 +246,8 @@ b3RevoluteJointDef b3RecR_REVOLUTEJOINTDEF( b3RecReader* rdr );
 b3SphericalJointDef b3RecR_SPHERICALJOINTDEF( b3RecReader* rdr );
 b3WeldJointDef b3RecR_WELDJOINTDEF( b3RecReader* rdr );
 b3WheelJointDef b3RecR_WHEELJOINTDEF( b3RecReader* rdr );
+b3MoverJointDef b3RecR_MOVERJOINTDEF( b3RecReader* rdr );
+b3PogoJointDef b3RecR_POGOJOINTDEF( b3RecReader* rdr );
 b3QueryFilter b3RecR_QUERYFILTER( b3RecReader* rdr );
 b3ShapeProxy b3RecR_SHAPEPROXY( b3RecReader* rdr );
 b3TreeStats b3RecR_TREESTATS( b3RecReader* rdr );
@@ -256,3 +257,6 @@ b3PlaneResult b3RecR_PLANERESULT( b3RecReader* rdr );
 // Grow the reader's hit scratch to at least n entries, preserving contents. n is bounded by the
 // file size since every recorded hit consumes at least one byte.
 void b3RecEnsureHits( b3RecReader* rdr, int n );
+
+// Get a geometry slot with kind validation.
+b3RegistrySlot* b3RecGetSlot( b3RecReader* rdr, uint32_t id, b3GeometryKind kind );

@@ -33,6 +33,7 @@ b3DeclareArray( b3SolverSet );
 b3DeclareArray( b3Joint );
 b3DeclareArray( b3Contact );
 b3DeclareArray( b3Island );
+b3DeclareArray( b3AABB );
 b3DeclareArray( b3Shape );
 b3DeclareArray( b3Sensor );
 b3DeclareArray( b3SensorTaskContext );
@@ -76,6 +77,9 @@ typedef struct b3TaskContext
 	// Collect per thread sensor continuous hit events.
 	b3Array( b3SensorHit ) sensorHits;
 
+	// Broad-phase pairs.
+	b3Array( uint64_t ) pairKeys;
+
 	// These bits align with the b3ConstraintGraph::contactBlocks and signal a change in contact status
 	b3BitSet contactStateBitSet;
 
@@ -87,10 +91,6 @@ typedef struct b3TaskContext
 
 	// Fast-path flag: true when this worker set at least one bit in hitEventBitSet this step.
 	bool hasHitEvents;
-
-	// Used to track bodies with shapes that have enlarged AABBs. This avoids having a bit array
-	// that is very large when there are many static shapes.
-	b3BitSet enlargedSimBitSet;
 
 	// Used to put islands to sleep
 	b3BitSet awakeIslandBitSet;
@@ -177,6 +177,13 @@ typedef struct b3World
 	// These are sparse arrays that point into the pools above
 	b3Array( b3Shape ) shapes;
 
+	// This follows the shape array and is split out for the hot path in the narrow phase.
+	b3Array( b3AABB ) fatAABBs;
+
+	// Compound shapes are static only, so only the broad-phase static pass can meet one. This
+	// lets a world without compounds skip the shape type read in the pair batch.
+	int compoundShapeCount;
+
 	// Reference counted store of shared hull data keyed by content. Shapes hold a
 	// pointer to the hull stored in the db. Type erased to avoid leaking the verstable map
 	// type into this header.
@@ -228,7 +235,10 @@ typedef struct b3World
 	b3Vec3 gravity;
 	float hitEventThreshold;
 	float restitutionThreshold;
+	int restitutionIterations;
+	bool enableRestitutionPropagation;
 	float maxLinearSpeed;
+	float isotropicInertiaTolerance;
 	float contactSpeed;
 	float contactHertz;
 	float contactDampingRatio;
@@ -253,6 +263,7 @@ typedef struct b3World
 	void* customFilterContext;
 
 	int workerCount;
+	int simdWidth;
 	b3EnqueueTaskCallback* enqueueTaskFcn;
 	b3FinishTaskCallback* finishTaskFcn;
 	void* userTaskContext;
@@ -293,6 +304,8 @@ b3World* b3GetWorldFromId( b3WorldId id );
 
 b3World* b3GetUnlockedWorld( int index );
 b3World* b3GetWorld( int index );
+
+void b3World_RebuildStaticTree( b3WorldId worldId );
 
 void b3ValidateConnectivity( b3World* world );
 void b3ValidateSolverSets( b3World* world );

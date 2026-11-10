@@ -2,17 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 #include "contact.h"
+#include "ctz.h"
 #include "manifold.h"
 #include "physics_world.h"
 #include "qsort.h"
 #include "shape.h"
+#include "simd.h"
 
 #include "box3d/types.h"
 
 #include <stdio.h>
 
-// This guards against excessive memory usage and complex collision
-#define B3_MAX_MESH_CONTACT_TRIANGLES 256
 #define B3_MAX_POINTS_PER_TRIANGLE 32
 
 #if B3_ENABLE_VALIDATION
@@ -74,7 +74,7 @@ static int b3QueryHeightFieldTriangles( int* indices, int capacity, const b3Heig
 	return context.count;
 }
 
-static void b3RefreshCache( b3Contact* contact, const b3Shape* shapeA, b3WorldTransform xfA, const b3AABB* bounds )
+static void b3RefreshCache( b3Contact* contact, const b3Shape* shapeA, b3WorldTransform xfA, const b3AABB* bounds, b3Arena arena )
 {
 	B3_ASSERT( shapeA->type == b3_meshShape || shapeA->type == b3_heightShape );
 
@@ -103,8 +103,7 @@ static void b3RefreshCache( b3Contact* contact, const b3Shape* shapeA, b3WorldTr
 
 	// Query triangles
 	int triangleCapacity = B3_MAX_MESH_CONTACT_TRIANGLES;
-
-	int triangleIndices[B3_MAX_MESH_CONTACT_TRIANGLES];
+	int* triangleIndices = b3Bump( &arena, B3_MAX_MESH_CONTACT_TRIANGLES * sizeof( int ) );
 
 	// Bounds are in world space. Convert to the local mesh frame. The broadphase bounds are float,
 	// so the demoted mesh transform is the matching float world frame (exact in float mode).
@@ -135,7 +134,7 @@ static void b3RefreshCache( b3Contact* contact, const b3Shape* shapeA, b3WorldTr
 	B3_VALIDATE( b3IsSorted( triangleIndices, triangleCount ) );
 
 	// Create new contact cache and match with old one
-	b3ContactCache contactCache[B3_MAX_MESH_CONTACT_TRIANGLES];
+	b3ContactCache* contactCache = b3Bump( &arena, triangleCount * sizeof( b3ContactCache ) );
 
 	int index2 = 0;
 	for ( int index1 = 0; index1 < triangleCount; ++index1 )
@@ -273,6 +272,8 @@ static inline bool b3AddVertex( b3FoundVertices* vertices, int vertex )
 	return true;
 }
 
+#if B3_MAX_MANIFOLD_POINTS == 4
+
 // Returns true if (score, separation) should replace (bestScore, bestSeparation).
 static inline bool b3IsBetterCullCandidate( float score, float separation, float bestScore, float bestSeparation, float scoreTol,
 											float separationTol )
@@ -289,13 +290,6 @@ static inline bool b3IsBetterCullCandidate( float score, float separation, float
 	// Break the tie using separation
 	return separation < bestSeparation - separationTol;
 }
-
-typedef struct b3Point2D
-{
-	b3Vec2 p;
-	float separation;
-	int originalIndex;
-} b3Point2D;
 
 static int b3CullPoints( b3Point2D* points, int count )
 {
@@ -477,6 +471,8 @@ static int b3CullPoints( b3Point2D* points, int count )
 	return 4;
 }
 
+#endif
+
 static int b3ReduceCluster( b3LocalManifoldPoint* points, int count1, b3Vec3 normal, b3Arena arena )
 {
 	int targetCount = 1;
@@ -498,13 +494,20 @@ static int b3ReduceCluster( b3LocalManifoldPoint* points, int count1, b3Vec3 nor
 		pts[i].originalIndex = i;
 	}
 
+#if B3_MAX_MANIFOLD_POINTS == 4
+	b3Point2D* hull = pts;
 	int count2 = b3CullPoints( pts, count1 );
+#else
+	b3Point2D* hull = b3Bump( &arena, 2 * count1 * sizeof( b3Point2D ) );
+	int hullCount = b3Hull2D( pts, count1, hull );
+	int count2 = b3SimplifyHull2D( hull, hullCount, B3_MAX_MANIFOLD_POINTS );
+#endif
 	B3_ASSERT( count2 <= B3_MAX_MANIFOLD_POINTS );
 
 	b3LocalManifoldPoint finalPoints[B3_MAX_MANIFOLD_POINTS];
 	for ( int i = 0; i < count2; ++i )
 	{
-		int index = pts[i].originalIndex;
+		int index = hull[i].originalIndex;
 		B3_ASSERT( 0 <= index && index < count1 );
 		finalPoints[i] = points[index];
 	}
@@ -522,8 +525,9 @@ typedef struct b3Cluster
 	int pointCount;
 } b3Cluster;
 
-bool b3ComputeMeshManifolds( b3World* world, int workerIndex, b3Contact* contact, const b3Shape* shapeA, const int* materialMap,
-							 b3WorldTransform xfA, const b3Shape* shapeB, b3WorldTransform xfB, bool isFast, b3Arena arena )
+bool b3ComputeMeshManifolds( b3World* world, int workerIndex, b3Contact* contact, const b3Shape* shapeA,
+							 const uint16_t* materialMap, b3WorldTransform xfA, const b3Shape* shapeB, b3WorldTransform xfB,
+							 bool isFast, b3Arena arena )
 {
 	B3_ASSERT( shapeA->type == b3_meshShape || shapeA->type == b3_heightShape );
 	B3_UNUSED( workerIndex );
@@ -532,7 +536,7 @@ bool b3ComputeMeshManifolds( b3World* world, int workerIndex, b3Contact* contact
 
 	b3TaskContext* context = b3Array_Get( world->taskContexts, workerIndex );
 
-	b3RefreshCache( contact, shapeA, xfA, &shapeB->aabb );
+	b3RefreshCache( contact, shapeA, xfA, &shapeB->aabb, arena );
 
 	// Collide with triangles and build manifolds
 	b3MeshContact* meshContact = &contact->meshContact;
@@ -575,10 +579,144 @@ bool b3ComputeMeshManifolds( b3World* world, int workerIndex, b3Contact* contact
 	b3TriangleCache* triangleCaches = meshContact->triangleCache.data;
 
 	const b3HullData* hullB = shapeB->type == b3_hullShape ? shapeB->hull : NULL;
+	float hullSpeculativeDistance = enableSpeculative ? B3_SPECULATIVE_DISTANCE : 0.0f;
+	b3Vec3 hullMargin = { hullSpeculativeDistance, hullSpeculativeDistance, hullSpeculativeDistance };
 
-	for ( int index = 0; index < triangleCount && totalPointCount + 3 < pointBufferCapacity; ++index )
+	int* survivorIndices = b3Bump( &arena, triangleCount * sizeof( int ) );
+	b3Vec3* survivorVertices = b3Bump( &arena, 3 * triangleCount * sizeof( b3Vec3 ) );
+	int survivorCount = 0;
+
+	const b3MeshTriangle* meshTriangles = NULL;
+	const b3Vec3* meshVertices = NULL;
+	b3Vec3 meshScale = b3Vec3_one;
+	bool meshFlipped = false;
+	if ( shapeA->type == b3_meshShape )
 	{
+		meshTriangles = b3GetMeshTriangles( shapeA->mesh.data );
+		meshVertices = b3GetMeshVertices( shapeA->mesh.data );
+		meshScale = shapeA->mesh.scale;
+		meshFlipped = meshScale.x * meshScale.y * meshScale.z < 0.0f;
+	}
+
+	b3FloatW4 cxx = b3SplatW4( relativeMatrix.cx.x );
+	b3FloatW4 cxy = b3SplatW4( relativeMatrix.cx.y );
+	b3FloatW4 cxz = b3SplatW4( relativeMatrix.cx.z );
+	b3FloatW4 cyx = b3SplatW4( relativeMatrix.cy.x );
+	b3FloatW4 cyy = b3SplatW4( relativeMatrix.cy.y );
+	b3FloatW4 cyz = b3SplatW4( relativeMatrix.cy.z );
+	b3FloatW4 czx = b3SplatW4( relativeMatrix.cz.x );
+	b3FloatW4 czy = b3SplatW4( relativeMatrix.cz.y );
+	b3FloatW4 czz = b3SplatW4( relativeMatrix.cz.z );
+	b3FloatW4 px = b3SplatW4( transformAtoB.p.x );
+	b3FloatW4 py = b3SplatW4( transformAtoB.p.y );
+	b3FloatW4 pz = b3SplatW4( transformAtoB.p.z );
+
+	b3FloatW4 marginW = b3SplatW4( hullMargin.x );
+	b3AABB hullBounds = hullB != NULL ? hullB->aabb : (b3AABB){ 0 };
+	b3FloatW4 hullLowerX = b3SplatW4( hullBounds.lowerBound.x );
+	b3FloatW4 hullLowerY = b3SplatW4( hullBounds.lowerBound.y );
+	b3FloatW4 hullLowerZ = b3SplatW4( hullBounds.lowerBound.z );
+	b3FloatW4 hullUpperX = b3SplatW4( hullBounds.upperBound.x );
+	b3FloatW4 hullUpperY = b3SplatW4( hullBounds.upperBound.y );
+	b3FloatW4 hullUpperZ = b3SplatW4( hullBounds.upperBound.z );
+
+	for ( int baseIndex = 0; baseIndex < triangleCount; baseIndex += 4 )
+	{
+		int laneCount = b3MinInt( 4, triangleCount - baseIndex );
+
+		b3Vec3 lanes[3][4];
+		for ( int lane = 0; lane < 4; ++lane )
+		{
+			int index = baseIndex + b3MinInt( lane, laneCount - 1 );
+			int triangleIndex = triangleCaches[index].triangleIndex;
+
+			if ( meshVertices != NULL )
+			{
+				b3MeshTriangle meshTriangle = meshTriangles[triangleIndex];
+				lanes[0][lane] = b3Mul( meshScale, meshVertices[meshTriangle.index1] );
+				lanes[1][lane] = b3Mul( meshScale, meshVertices[meshFlipped ? meshTriangle.index3 : meshTriangle.index2] );
+				lanes[2][lane] = b3Mul( meshScale, meshVertices[meshFlipped ? meshTriangle.index2 : meshTriangle.index3] );
+			}
+			else
+			{
+				B3_ASSERT( shapeA->type == b3_heightShape );
+				b3Triangle triangle = b3GetHeightFieldTriangle( shapeA->heightField, triangleIndex );
+				lanes[0][lane] = triangle.vertices[0];
+				lanes[1][lane] = triangle.vertices[1];
+				lanes[2][lane] = triangle.vertices[2];
+			}
+		}
+
+		// Transform triangle into the shape frame
+		b3FloatW4 vx[3], vy[3], vz[3];
+		for ( int k = 0; k < 3; ++k )
+		{
+			b3FloatW4 ax = b3SetW4( lanes[k][0].x, lanes[k][1].x, lanes[k][2].x, lanes[k][3].x );
+			b3FloatW4 ay = b3SetW4( lanes[k][0].y, lanes[k][1].y, lanes[k][2].y, lanes[k][3].y );
+			b3FloatW4 az = b3SetW4( lanes[k][0].z, lanes[k][1].z, lanes[k][2].z, lanes[k][3].z );
+
+			vx[k] = b3AddW4( b3AddW4( b3AddW4( b3MulW4( cxx, ax ), b3MulW4( cyx, ay ) ), b3MulW4( czx, az ) ), px );
+			vy[k] = b3AddW4( b3AddW4( b3AddW4( b3MulW4( cxy, ax ), b3MulW4( cyy, ay ) ), b3MulW4( czy, az ) ), py );
+			vz[k] = b3AddW4( b3AddW4( b3AddW4( b3MulW4( cxz, ax ), b3MulW4( cyz, ay ) ), b3MulW4( czz, az ) ), pz );
+		}
+
+		uint32_t keepMask = ( 1u << laneCount ) - 1u;
+		if ( hullB != NULL )
+		{
+			b3FloatW4 lowerX = b3SubW4( b3MinW4( vx[0], b3MinW4( vx[1], vx[2] ) ), marginW );
+			b3FloatW4 lowerY = b3SubW4( b3MinW4( vy[0], b3MinW4( vy[1], vy[2] ) ), marginW );
+			b3FloatW4 lowerZ = b3SubW4( b3MinW4( vz[0], b3MinW4( vz[1], vz[2] ) ), marginW );
+			b3FloatW4 upperX = b3AddW4( b3MaxW4( vx[0], b3MaxW4( vx[1], vx[2] ) ), marginW );
+			b3FloatW4 upperY = b3AddW4( b3MaxW4( vy[0], b3MaxW4( vy[1], vy[2] ) ), marginW );
+			b3FloatW4 upperZ = b3AddW4( b3MaxW4( vz[0], b3MaxW4( vz[1], vz[2] ) ), marginW );
+
+			b3FloatW4 separated = b3OrW4( b3LessThanW4( upperX, hullLowerX ), b3GreaterThanW4( lowerX, hullUpperX ) );
+			separated = b3OrW4( separated, b3OrW4( b3LessThanW4( upperY, hullLowerY ), b3GreaterThanW4( lowerY, hullUpperY ) ) );
+			separated = b3OrW4( separated, b3OrW4( b3LessThanW4( upperZ, hullLowerZ ), b3GreaterThanW4( lowerZ, hullUpperZ ) ) );
+
+			uint32_t cullMask = keepMask & (uint32_t)b3MoveMaskW4( separated );
+			keepMask &= ~cullMask;
+
+			while ( cullMask != 0 )
+			{
+				uint32_t lane = b3CTZ32( cullMask );
+				cullMask &= cullMask - 1u;
+				triangleCaches[baseIndex + (int)lane].cache.satCache = (b3SATCache){ 0 };
+			}
+		}
+
+		if ( keepMask == 0 )
+		{
+			continue;
+		}
+
+		float x[3][4], y[3][4], z[3][4];
+		for ( int k = 0; k < 3; ++k )
+		{
+			b3StoreW4( x[k], vx[k] );
+			b3StoreW4( y[k], vy[k] );
+			b3StoreW4( z[k], vz[k] );
+		}
+
+		while ( keepMask != 0 )
+		{
+			uint32_t lane = b3CTZ32( keepMask );
+			keepMask &= keepMask - 1u;
+
+			b3Vec3* survivor = survivorVertices + 3 * survivorCount;
+			survivor[0] = (b3Vec3){ x[0][lane], y[0][lane], z[0][lane] };
+			survivor[1] = (b3Vec3){ x[1][lane], y[1][lane], z[1][lane] };
+			survivor[2] = (b3Vec3){ x[2][lane], y[2][lane], z[2][lane] };
+			survivorIndices[survivorCount] = baseIndex + (int)lane;
+			survivorCount += 1;
+		}
+	}
+
+	for ( int survivorIndex = 0; survivorIndex < survivorCount && totalPointCount + 3 < pointBufferCapacity; ++survivorIndex )
+	{
+		int index = survivorIndices[survivorIndex];
 		int triangleIndex = triangleCaches[index].triangleIndex;
+		const b3Vec3* vertices = survivorVertices + 3 * survivorIndex;
 
 		b3Triangle triangle;
 		if ( shapeA->type == b3_meshShape )
@@ -590,12 +728,6 @@ bool b3ComputeMeshManifolds( b3World* world, int workerIndex, b3Contact* contact
 			B3_ASSERT( shapeA->type == b3_heightShape );
 			triangle = b3GetHeightFieldTriangle( shapeA->heightField, triangleIndex );
 		}
-
-		// Transform triangle into the shape frame
-		b3Vec3 vertices[3];
-		vertices[0] = b3Add( b3MulMV( relativeMatrix, triangle.vertices[0] ), transformAtoB.p );
-		vertices[1] = b3Add( b3MulMV( relativeMatrix, triangle.vertices[1] ), transformAtoB.p );
-		vertices[2] = b3Add( b3MulMV( relativeMatrix, triangle.vertices[2] ), transformAtoB.p );
 
 		b3ContactCache* cache = &triangleCaches[index].cache;
 		int pointCapacity = pointBufferCapacity - totalPointCount;

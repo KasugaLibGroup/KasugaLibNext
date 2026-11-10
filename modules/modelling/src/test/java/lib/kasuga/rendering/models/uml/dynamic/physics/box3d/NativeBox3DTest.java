@@ -52,6 +52,61 @@ class NativeBox3DTest {
         }
     }
 
+    @Test
+    void smallFastCapsuleReusesValidConvexGroundContacts() {
+        assertTrue(slideSmallCapsule(false) > 0,
+                "fast classification alone must not discard a convex manifold within its motion tolerance");
+    }
+
+    @Test
+    void smallFastCapsuleRefreshesMeshGroundContacts() {
+        assertEquals(0, slideSmallCapsule(true),
+                "fast mesh contacts must still be refreshed for continuous collision detection");
+    }
+
+    private static int slideSmallCapsule(boolean meshGround) {
+        int world = NativeBox3D.createWorld(0f, -10f, 0f, false, true);
+        long capsule = 0L;
+        long ground = 0L;
+        long[] mesh = null;
+        try {
+            if (meshGround) {
+                mesh = NativeBox3D.createStaticMesh(world,
+                        new float[]{-50f, 0f, -50f, 50f, 0f, -50f,
+                                50f, 0f, 50f, -50f, 0f, 50f},
+                        new int[]{0, 2, 1, 0, 3, 2}, 0f, 0f);
+            } else {
+                ground = body(world, NativeBox3D.STATIC_BODY,
+                        50f, 0.5f, 50f, 0f, 0f, -0.5f, 0f);
+            }
+            capsule = NativeBox3D.createBody(world, NativeBox3D.DYNAMIC_BODY,
+                    0f, 0.02f, 0f, 0f, 0f, 0f, 1f,
+                    2f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, false);
+            NativeBox3D.addCapsuleShape(capsule,
+                    -0.05f, 0f, 0f, 0.05f, 0f, 0f, 0.02f,
+                    1f, 0f, 0f, 0f, -1L, -1L, 0);
+            NativeBox3D.finalizeBodyMass(capsule, 1f);
+
+            int recycled = 0;
+            for (int step = 0; step < 60; step++) {
+                NativeBox3D.step(world, 1f / 120f, 4);
+                recycled += NativeBox3D.recycledContactCount(world);
+            }
+            float[] state = new float[13];
+            NativeBox3D.readBodyState(capsule, state);
+            assertTrue(state[0] > 0.5f, "the capsule must keep sliding across the floor");
+            assertTrue(state[1] > 0f && state[1] < 0.05f,
+                    "the moving capsule must remain in contact without tunnelling: y=" + state[1]);
+            assertTrue(NativeBox3D.contactCount(world) > 0);
+            return recycled;
+        } finally {
+            if (capsule != 0L) NativeBox3D.destroyBody(capsule);
+            if (ground != 0L) NativeBox3D.destroyBody(ground);
+            if (mesh != null) NativeBox3D.destroyStaticMesh(mesh[0], mesh[1]);
+            NativeBox3D.destroyWorld(world);
+        }
+    }
+
     private static long body(int world, int type, float sx, float sy, float sz,
                              float mass, float px, float py, float pz) {
         long body = NativeBox3D.createBody(world, type,

@@ -3,6 +3,7 @@
 
 #include "compound.h"
 
+#include "dynamic_tree.h"
 #include "hull.h"
 #include "math_internal.h"
 #include "shape.h"
@@ -31,26 +32,25 @@ typedef struct b3HullInstance
 {
 	b3Transform transform;
 	uint32_t hullOffset;
-	uint32_t materialIndex;
+	uint16_t materialIndex;
+	uint16_t padding;
 } b3HullInstance;
+
+_Static_assert( sizeof( b3HullInstance ) == sizeof( b3Transform ) + sizeof( uint32_t ) + 2 * sizeof( uint16_t ),
+				"review padding" );
 
 typedef struct b3MeshInstance
 {
 	b3Transform transform;
 	b3Vec3 scale;
 	uint32_t meshOffset;
-	uint32_t materialIndices[B3_MAX_COMPOUND_MESH_MATERIALS];
+	uint32_t materialOffset;
+	uint32_t materialCount;
 } b3MeshInstance;
 
-static inline b3TreeNode* b3GetCompoundNodes( b3CompoundData* compound )
-{
-	if ( compound->nodeOffset == 0 )
-	{
-		return NULL;
-	}
-
-	return (b3TreeNode*)( (intptr_t)compound + compound->nodeOffset );
-}
+_Static_assert( sizeof( b3CompoundCapsule ) == sizeof( b3Capsule ) + 2 * sizeof( uint16_t ), "review padding" );
+_Static_assert( sizeof( b3CompoundSphere ) == sizeof( b3Sphere ) + 2 * sizeof( uint16_t ), "review padding" );
+_Static_assert( sizeof( b3CompoundData ) == sizeof( uint64_t ) + sizeof( b3AABB ) + 16 * sizeof( int ), "review padding" );
 
 const b3SurfaceMaterial* b3GetCompoundMaterials( const b3CompoundData* compound )
 {
@@ -111,10 +111,8 @@ b3CompoundMesh b3GetCompoundMesh( const b3CompoundData* compound, int index )
 	result.meshData = (const b3MeshData*)( (intptr_t)compound + meshOffset );
 	result.transform = meshInstances[index].transform;
 	result.scale = meshInstances[index].scale;
-	for ( int i = 0; i < B3_MAX_COMPOUND_MESH_MATERIALS; ++i )
-	{
-		result.materialIndices[i] = meshInstances[index].materialIndices[i];
-	}
+	result.materialIndices = (const uint16_t*)( (intptr_t)compound + meshInstances[index].materialOffset );
+	result.materialCount = (int)meshInstances[index].materialCount;
 	return result;
 }
 
@@ -137,11 +135,13 @@ b3ChildShape b3GetCompoundChild( const b3CompoundData* compound, int childIndex 
 	// Capsule?
 	if ( 0 <= childIndex && childIndex < compound->capsuleCount )
 	{
-		b3CompoundCapsule compoundCapsule = b3GetCompoundCapsule( compound, childIndex );
+		B3_ASSERT( compound->capsuleOffset > 0 );
+		const b3CompoundCapsule* capsules = (const b3CompoundCapsule*)( (intptr_t)compound + compound->capsuleOffset );
 		return (b3ChildShape){
-			.capsule = compoundCapsule.capsule,
+			.capsule = capsules[childIndex].capsule,
 			.transform = b3Transform_identity,
-			.materialIndices = { compoundCapsule.materialIndex },
+			.materialIndices = &capsules[childIndex].materialIndex,
+			.materialCount = 1,
 			.type = b3_capsuleShape,
 		};
 	}
@@ -150,11 +150,14 @@ b3ChildShape b3GetCompoundChild( const b3CompoundData* compound, int childIndex 
 	// Hull?
 	if ( 0 <= childIndex && childIndex < compound->hullCount )
 	{
-		b3CompoundHull compoundHull = b3GetCompoundHull( compound, childIndex );
+		B3_ASSERT( compound->hullOffset > 0 );
+		const b3HullInstance* hullInstances = (const b3HullInstance*)( (intptr_t)compound + compound->hullOffset );
+		uint32_t hullOffset = hullInstances[childIndex].hullOffset;
 		return (b3ChildShape){
-			.hull = compoundHull.hull,
-			.transform = compoundHull.transform,
-			.materialIndices = { compoundHull.materialIndex },
+			.hull = (const b3HullData*)( (intptr_t)compound + hullOffset ),
+			.transform = hullInstances[childIndex].transform,
+			.materialIndices = &hullInstances[childIndex].materialIndex,
+			.materialCount = 1,
 			.type = b3_hullShape,
 		};
 	}
@@ -164,8 +167,6 @@ b3ChildShape b3GetCompoundChild( const b3CompoundData* compound, int childIndex 
 	if ( 0 <= childIndex && childIndex < compound->meshCount )
 	{
 		b3CompoundMesh compoundMesh = b3GetCompoundMesh( compound, childIndex );
-		const int* m = compoundMesh.materialIndices;
-		_Static_assert( B3_MAX_COMPOUND_MESH_MATERIALS == 4, "too many materials in compound mesh" );
 
 		return (b3ChildShape){
 			.mesh =
@@ -174,7 +175,8 @@ b3ChildShape b3GetCompoundChild( const b3CompoundData* compound, int childIndex 
 					.scale = compoundMesh.scale,
 				},
 			.transform = compoundMesh.transform,
-			.materialIndices = { m[0], m[1], m[2], m[3] },
+			.materialIndices = compoundMesh.materialIndices,
+			.materialCount = compoundMesh.materialCount,
 			.type = b3_meshShape,
 		};
 	}
@@ -184,11 +186,13 @@ b3ChildShape b3GetCompoundChild( const b3CompoundData* compound, int childIndex 
 
 	// Sphere?
 	{
-		b3CompoundSphere compoundSphere = b3GetCompoundSphere( compound, childIndex );
+		B3_ASSERT( compound->sphereOffset > 0 );
+		const b3CompoundSphere* spheres = (const b3CompoundSphere*)( (intptr_t)compound + compound->sphereOffset );
 		return (b3ChildShape){
-			.sphere = compoundSphere.sphere,
+			.sphere = spheres[childIndex].sphere,
 			.transform = b3Transform_identity,
-			.materialIndices = { compoundSphere.materialIndex },
+			.materialIndices = &spheres[childIndex].materialIndex,
+			.materialCount = 1,
 			.type = b3_sphereShape,
 		};
 	}
@@ -237,7 +241,7 @@ static inline uint64_t b3HashMaterial( const b3SurfaceMaterial* material )
 
 static bool b3CompareMaterials( const b3SurfaceMaterial* mat1, const b3SurfaceMaterial* mat2 )
 {
-	B3_ASSERT( mat1->padding == 0 && mat2->padding == 0);
+	B3_ASSERT( mat1->padding == 0 && mat2->padding == 0 );
 
 	if ( mat1 == mat2 )
 	{
@@ -274,13 +278,13 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 
 	// Instances
 	int capsuleCount = def->capsuleCount;
-	b3CompoundCapsule* capsuleInstances = b3AllocZeroed( capsuleCount * sizeof( b3CompoundCapsule ) );
+	b3CompoundCapsule* capsuleInstances = b3AllocZero( capsuleCount * sizeof( b3CompoundCapsule ) );
 	int hullCount = def->hullCount;
-	b3HullInstance* hullInstances = b3AllocZeroed( hullCount * sizeof( b3HullInstance ) );
+	b3HullInstance* hullInstances = b3AllocZero( hullCount * sizeof( b3HullInstance ) );
 	int meshCount = def->meshCount;
-	b3MeshInstance* meshInstances = b3AllocZeroed( meshCount * sizeof( b3MeshInstance ) );
+	b3MeshInstance* meshInstances = b3AllocZero( meshCount * sizeof( b3MeshInstance ) );
 	int sphereCount = def->sphereCount;
-	b3CompoundSphere* sphereInstances = b3AllocZeroed( sphereCount * sizeof( b3CompoundSphere ) );
+	b3CompoundSphere* sphereInstances = b3AllocZero( sphereCount * sizeof( b3CompoundSphere ) );
 
 	// Determine material capacity.
 	int materialCapacity = convexCount;
@@ -294,8 +298,12 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 	b3MaterialMap materialMap;
 	b3MaterialMap_init( &materialMap );
 	b3MaterialMap_reserve( &materialMap, materialCapacity );
-	b3SurfaceMaterial* materials = b3AllocZeroed( materialCapacity * sizeof( b3SurfaceMaterial ) );
+	b3SurfaceMaterial* materials = b3AllocZero( materialCapacity * sizeof( b3SurfaceMaterial ) );
 	int materialCount = 0;
+
+	int meshMaterialTotal = materialCapacity - convexCount;
+	uint16_t* meshMaterialStaging = b3AllocZero( meshMaterialTotal * sizeof( uint16_t ) );
+	int meshMaterialCursor = 0;
 
 	for ( int i = 0; i < def->capsuleCount; ++i )
 	{
@@ -307,7 +315,7 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 
 		// Get the shared material index.
 		int materialIndex = materialItr.data->val;
-		capsuleInstances[i].materialIndex = materialIndex;
+		capsuleInstances[i].materialIndex = (uint16_t)materialIndex;
 
 		// Is this a new material?
 		if ( materialIndex == materialCount )
@@ -322,7 +330,7 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 	}
 
 	// Hulls
-	b3SharedHull* sharedHulls = b3AllocZeroed( hullCount * sizeof( b3SharedHull ) );
+	b3SharedHull* sharedHulls = b3AllocZero( hullCount * sizeof( b3SharedHull ) );
 	int sharedHullCount = 0;
 
 	if ( hullCount > 0 )
@@ -344,7 +352,7 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 
 			// Get the shared material index.
 			int materialIndex = materialItr.data->val;
-			hullInstances[i].materialIndex = materialIndex;
+			hullInstances[i].materialIndex = (uint16_t)materialIndex;
 
 			// Is this a new material?
 			if ( materialIndex == materialCount )
@@ -378,7 +386,7 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 	}
 
 	// Meshes
-	b3SharedMesh* sharedMeshes = b3AllocZeroed( meshCount * sizeof( b3SharedMesh ) );
+	b3SharedMesh* sharedMeshes = b3AllocZero( meshCount * sizeof( b3SharedMesh ) );
 	int sharedMeshCount = 0;
 
 	if ( meshCount > 0 )
@@ -399,6 +407,8 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 			// No effort to share mesh materials. It would be easier to do if the number of materials was limited.
 			B3_ASSERT( meshData->materialCount == meshDef->materialCount );
 
+			int meshMaterialStart = meshMaterialCursor;
+
 			for ( int j = 0; j < meshDef->materialCount; ++j )
 			{
 				// Look for an existing material.
@@ -407,7 +417,8 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 
 				// Get the shared material index.
 				int materialIndex = materialItr.data->val;
-				meshInstances[i].materialIndices[j] = materialIndex;
+				meshMaterialStaging[meshMaterialCursor] = (uint16_t)materialIndex;
+				meshMaterialCursor += 1;
 
 				// Is this a new material?
 				if ( materialIndex == materialCount )
@@ -426,6 +437,9 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 			// Create mesh instance.
 			meshInstances[i].transform = def->meshes[i].transform;
 			meshInstances[i].scale = def->meshes[i].scale;
+
+			meshInstances[i].materialOffset = (uint32_t)meshMaterialStart;
+			meshInstances[i].materialCount = (uint32_t)meshDef->materialCount;
 
 			// The offset isn't known yet, so store the index of the shared mesh.
 			meshInstances[i].meshOffset = sharedMeshIndex;
@@ -454,7 +468,7 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 
 		// Get the shared material index.
 		int materialIndex = materialItr.data->val;
-		sphereInstances[i].materialIndex = materialIndex;
+		sphereInstances[i].materialIndex = (uint16_t)materialIndex;
 
 		// Is this a new material?
 		if ( materialIndex == materialCount )
@@ -469,14 +483,15 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 	}
 
 	B3_ASSERT( materialCount <= materialCapacity );
-	B3_ASSERT( tree.nodeCount > 0 );
+	B3_ASSERT( materialCount <= UINT16_MAX );
+	B3_ASSERT( tree.proxyCount > 0 );
 
 	b3DynamicTree_Rebuild( &tree, true );
 
-	// Tree nodes
+	// Tree nodes. The rebuild is dense, so only the live nodes travel.
 	size_t byteCount = b3AlignUp8( sizeof( b3CompoundData ) );
 	int nodeOffset = (int)byteCount;
-	byteCount += b3AlignUp8( tree.nodeCapacity * sizeof( b3TreeNode ) );
+	byteCount += b3AlignUp8( tree.nodeEnd * sizeof( b3TreeNode ) );
 	int materialOffset = (int)byteCount;
 	byteCount += b3AlignUp8( materialCount * sizeof( b3SurfaceMaterial ) );
 	int capsuleOffset = (int)byteCount;
@@ -507,6 +522,9 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 	// Array of mesh instances
 	byteCount += b3AlignUp8( meshCount * sizeof( b3MeshInstance ) );
 
+	int meshMaterialMapOffset = (int)byteCount;
+	byteCount += b3AlignUp8( meshMaterialTotal * sizeof( uint16_t ) );
+
 	// Packed shared mesh blobs
 	for ( int i = 0; i < sharedMeshCount; ++i )
 	{
@@ -523,17 +541,9 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 	compound->version = B3_COMPOUND_VERSION;
 	compound->byteCount = (int)byteCount;
 	compound->nodeOffset = nodeOffset;
-	memcpy( &compound->tree, &tree, sizeof( b3DynamicTree ) );
-
-	// todo clean up this mess
-	compound->tree.freeList = 0;
-	compound->tree.leafIndices = NULL;
-	compound->tree.leafBoxes = NULL;
-	compound->tree.leafCenters = NULL;
-	compound->tree.binIndices = NULL;
-	compound->tree.rebuildCapacity = 0;
-
-	compound->tree.nodes = NULL;
+	compound->bounds = b3DynamicTree_GetRootBounds( &tree );
+	compound->treeHeight = b3DynamicTree_GetHeight( &tree );
+	compound->nodeCount = tree.nodeEnd;
 	compound->materialOffset = materialOffset;
 	compound->materialCount = materialCount;
 	compound->capsuleOffset = capsuleOffset;
@@ -546,9 +556,8 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 	compound->sphereCount = sphereCount;
 
 	// Tree nodes
-	b3TreeNode* nodes = b3GetCompoundNodes( compound );
-	memcpy( nodes, tree.nodes, tree.nodeCapacity * sizeof( b3TreeNode ) );
-	compound->tree.nodes = nodes;
+	b3TreeNode* nodes = (b3TreeNode*)( (intptr_t)compound + nodeOffset );
+	memcpy( nodes, tree.nodes, tree.nodeEnd * sizeof( b3TreeNode ) );
 
 	// Materials
 	B3_ASSERT( materialCount > 0 );
@@ -594,10 +603,19 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 		int sharedIndex = meshInstances[i].meshOffset;
 		B3_ASSERT( 0 <= sharedIndex && sharedIndex < sharedMeshCount );
 		meshInstances[i].meshOffset = sharedMeshes[sharedIndex].meshOffset;
+
+		uint32_t materialStart = meshInstances[i].materialOffset;
+		meshInstances[i].materialOffset = (uint32_t)meshMaterialMapOffset + materialStart * (uint32_t)sizeof( uint16_t );
 	}
 
 	b3MeshInstance* destinationMeshInstances = (b3MeshInstance*)( (intptr_t)compound + meshArrayOffset );
 	memcpy( destinationMeshInstances, meshInstances, meshCount * sizeof( b3MeshInstance ) );
+
+	if ( meshMaterialTotal > 0 )
+	{
+		uint16_t* destinationMeshMaterials = (uint16_t*)( (intptr_t)compound + meshMaterialMapOffset );
+		memcpy( destinationMeshMaterials, meshMaterialStaging, meshMaterialTotal * sizeof( uint16_t ) );
+	}
 
 	for ( int i = 0; i < sharedMeshCount; ++i )
 	{
@@ -624,6 +642,7 @@ b3CompoundData* b3CreateCompound( const b3CompoundDef* def )
 	b3Free( meshInstances, meshCount * sizeof( b3MeshInstance ) );
 	b3Free( sphereInstances, sphereCount * sizeof( b3CompoundSphere ) );
 	b3Free( materials, materialCapacity * sizeof( b3SurfaceMaterial ) );
+	b3Free( meshMaterialStaging, meshMaterialTotal * sizeof( uint16_t ) );
 	b3DynamicTree_Destroy( &tree );
 
 	return compound;
@@ -634,56 +653,52 @@ void b3DestroyCompound( b3CompoundData* compound )
 	b3Free( compound, compound->byteCount );
 }
 
-uint8_t* b3ConvertCompoundToBytes( b3CompoundData* compound )
+const b3CompoundData* b3ValidateCompound( const uint8_t* bytes, int byteCount )
 {
-	// scrub this pointer before serialization
-	compound->tree.nodes = NULL;
-	return (uint8_t*)compound;
-}
+	if ( bytes == NULL || byteCount < (int)sizeof( b3CompoundData ) )
+	{
+		return NULL;
+	}
 
-b3CompoundData* b3ConvertBytesToCompound( uint8_t* bytes, int byteCount )
-{
-	b3CompoundData* compound = (b3CompoundData*)bytes;
+	const b3CompoundData* compound = (const b3CompoundData*)bytes;
 	if ( compound->version != B3_COMPOUND_VERSION )
 	{
 		return NULL;
 	}
 
-	if ( compound->byteCount < (int)sizeof( b3CompoundData ) )
+	if ( compound->byteCount != byteCount )
 	{
 		return NULL;
 	}
 
-	if ( byteCount != compound->byteCount )
+	if ( compound->nodeOffset < (int)sizeof( b3CompoundData ) || ( compound->nodeOffset & 7 ) != 0 )
 	{
 		return NULL;
 	}
 
-	if ( compound->nodeOffset <= 0 )
+	if ( compound->nodeCount < 2 )
 	{
 		return NULL;
 	}
 
-	// this mutates the input bytes
-	compound->tree.nodes = (b3TreeNode*)( (intptr_t)compound + compound->nodeOffset );
+	int64_t nodeEnd = (int64_t)compound->nodeOffset + (int64_t)compound->nodeCount * (int64_t)sizeof( b3TreeNode );
+	if ( nodeEnd > byteCount )
+	{
+		return NULL;
+	}
+
 	return compound;
 }
 
 b3AABB b3ComputeCompoundAABB( const b3CompoundData* shape, b3Transform transform )
 {
-	B3_ASSERT( shape->nodeOffset > 0 );
-
-	const b3TreeNode* nodes = (const b3TreeNode*)( (intptr_t)shape + shape->nodeOffset );
-	int root = shape->tree.root;
-	b3AABB aabb = nodes[root].aabb;
-	return b3AABB_Transform( transform, aabb );
+	return b3AABB_Transform( transform, shape->bounds );
 }
 
 struct b3CompoundOverlapContext
 {
 	const b3CompoundData* compound;
-	// transform of the compound
-	b3Transform transform;
+	// proxy in the compound frame
 	b3ShapeProxy proxy;
 	bool overlap;
 };
@@ -696,25 +711,23 @@ static bool b3CompoundOverlapCallback( int proxyId, uint64_t userData, void* con
 	struct b3CompoundOverlapContext* overlapContext = context;
 	b3ChildShape child = b3GetCompoundChild( overlapContext->compound, childIndex );
 
-	b3Transform transform = b3MulTransforms( overlapContext->transform, child.transform );
-
 	bool overlap = false;
 	switch ( child.type )
 	{
 		case b3_capsuleShape:
-			overlap = b3OverlapCapsule( &child.capsule, transform, &overlapContext->proxy );
+			overlap = b3OverlapCapsule( &child.capsule, child.transform, &overlapContext->proxy );
 			break;
 
 		case b3_hullShape:
-			overlap = b3OverlapHull( child.hull, transform, &overlapContext->proxy );
+			overlap = b3OverlapHull( child.hull, child.transform, &overlapContext->proxy );
 			break;
 
 		case b3_meshShape:
-			overlap = b3OverlapMesh( &child.mesh, transform, &overlapContext->proxy );
+			overlap = b3OverlapMesh( &child.mesh, child.transform, &overlapContext->proxy );
 			break;
 
 		case b3_sphereShape:
-			overlap = b3OverlapSphere( &child.sphere, transform, &overlapContext->proxy );
+			overlap = b3OverlapSphere( &child.sphere, child.transform, &overlapContext->proxy );
 			break;
 
 		default:
@@ -733,27 +746,26 @@ static bool b3CompoundOverlapCallback( int proxyId, uint64_t userData, void* con
 	return true;
 }
 
+// This is dealing with multiple transforms:
+// - the compound shape transform
+// - the compound child shape transforms
 bool b3OverlapCompound( const b3CompoundData* shape, b3Transform shapeTransform, const b3ShapeProxy* proxy )
 {
+	B3_ASSERT( 0 < proxy->count && proxy->count <= B3_MAX_SHAPE_CAST_POINTS );
+
+	// Use local proxy.
+	b3Vec3 buffer[B3_MAX_SHAPE_CAST_POINTS];
 	struct b3CompoundOverlapContext context = {
 		.compound = shape,
-		.transform = shapeTransform,
-		.proxy = *proxy,
+		.proxy = b3MakeLocalProxy( proxy, shapeTransform, buffer ),
 		.overlap = false,
 	};
 
-	b3AABB aabb = { proxy->points[0], proxy->points[0] };
-	for ( int i = 1; i < proxy->count; ++i )
-	{
-		aabb.lowerBound = b3Min( aabb.lowerBound, proxy->points[i] );
-		aabb.upperBound = b3Max( aabb.upperBound, proxy->points[i] );
-	}
+	b3AABB aabb = b3ComputeProxyAABB( &context.proxy );
 
-	b3Vec3 r = { proxy->radius, proxy->radius, proxy->radius };
-	aabb.lowerBound = b3Sub( aabb.lowerBound, r );
-	aabb.upperBound = b3Add( aabb.upperBound, r );
-
-	(void)b3DynamicTree_Query( &shape->tree, aabb, ~0ull, false, b3CompoundOverlapCallback, &context );
+	// This query must be in the compound frame.
+	b3TreeView view = b3GetCompoundTreeView( shape );
+	(void)b3TreeView_Query( &view, aabb, ~0ull, false, b3CompoundOverlapCallback, &context );
 
 	return context.overlap;
 }
@@ -777,6 +789,7 @@ static float b3CompoundRayCastCallback( const b3RayCastInput* input, int proxyId
 
 	b3ChildShape child = b3GetCompoundChild( compound, childIndex );
 
+	// Get the input in child local space.
 	b3RayCastInput localInput = *input;
 	localInput.origin = b3InvTransformPoint( child.transform, input->origin );
 	localInput.translation = b3InvRotateVector( child.transform.q, input->translation );
@@ -798,9 +811,8 @@ static float b3CompoundRayCastCallback( const b3RayCastInput* input, int proxyId
 		case b3_meshShape:
 		{
 			output = b3RayCastMesh( &child.mesh, &localInput );
-			B3_ASSERT( 0 <= output.materialIndex );
-			int childMaterialIndex = b3MinInt( output.materialIndex, B3_MAX_COMPOUND_MESH_MATERIALS - 1 );
-			output.materialIndex = child.materialIndices[childMaterialIndex];
+			B3_ASSERT( 0 <= output.materialIndex && output.materialIndex < child.materialCount );
+			output.materialIndex = child.materialIndices[output.materialIndex];
 		}
 		break;
 
@@ -834,7 +846,8 @@ b3CastOutput b3RayCastCompound( const b3CompoundData* shape, const b3RayCastInpu
 		.compound = shape,
 		.output = &result,
 	};
-	(void)b3DynamicTree_RayCast( &shape->tree, input, ~0ull, false, b3CompoundRayCastCallback, &context );
+	b3TreeView view = b3GetCompoundTreeView( shape );
+	(void)b3TreeView_RayCast( &view, input, ~0ull, false, b3CompoundRayCastCallback, &context );
 	return result;
 }
 
@@ -850,23 +863,13 @@ static float b3CompoundShapeCastCallback( const b3BoxCastInput* input, int proxy
 
 	b3ChildShape child = b3GetCompoundChild( compound, childIndex );
 
-	// Rebuild from the carried shape cast input, taking only the advancing fraction from the tree
-	b3ShapeCastInput localInput = *shapeInput;
-	localInput.maxFraction = input->maxFraction;
+	// Get the input in the child local space.
+	b3ShapeCastInput localInput = { 0 };
 	b3Vec3 localPoints[B3_MAX_SHAPE_CAST_POINTS];
-
-	localInput.proxy.count = b3MinInt( shapeInput->proxy.count, B3_MAX_SHAPE_CAST_POINTS );
-
-	b3Transform invTransform = b3InvertTransform( child.transform );
-	b3Matrix3 R = b3MakeMatrixFromQuat( invTransform.q );
-
-	for ( int i = 0; i < localInput.proxy.count; ++i )
-	{
-		localPoints[i] = b3Add( b3MulMV( R, shapeInput->proxy.points[i] ), invTransform.p );
-	}
-
-	localInput.proxy.points = localPoints;
-	localInput.translation = b3MulMV( R, shapeInput->translation );
+	localInput.proxy = b3MakeLocalProxy( &shapeInput->proxy, child.transform, localPoints );
+	localInput.translation = b3InvRotateVector( child.transform.q, shapeInput->translation );
+	localInput.maxFraction = input->maxFraction;
+	localInput.canEncroach = shapeInput->canEncroach;
 
 	b3CastOutput output = { 0 };
 
@@ -885,9 +888,8 @@ static float b3CompoundShapeCastCallback( const b3BoxCastInput* input, int proxy
 		case b3_meshShape:
 		{
 			output = b3ShapeCastMesh( &child.mesh, &localInput );
-			B3_ASSERT( 0 <= output.materialIndex );
-			int childMaterialIndex = b3MinInt( output.materialIndex, B3_MAX_COMPOUND_MESH_MATERIALS - 1 );
-			output.materialIndex = child.materialIndices[childMaterialIndex];
+			B3_ASSERT( 0 <= output.materialIndex && output.materialIndex < child.materialCount );
+			output.materialIndex = child.materialIndices[output.materialIndex];
 		}
 		break;
 
@@ -931,7 +933,8 @@ b3CastOutput b3ShapeCastCompound( const b3CompoundData* shape, const b3ShapeCast
 	// The compound tree is in the compound local frame, so the proxy box needs no origin offset
 	b3AABB box = b3MakeAABB( input->proxy.points, input->proxy.count, input->proxy.radius );
 	b3BoxCastInput treeInput = { box, input->translation, input->maxFraction };
-	(void)b3DynamicTree_BoxCast( &shape->tree, &treeInput, ~0ull, false, b3CompoundShapeCastCallback, &context );
+	b3TreeView view = b3GetCompoundTreeView( shape );
+	(void)b3TreeView_BoxCast( &view, &treeInput, ~0ull, false, b3CompoundShapeCastCallback, &context );
 	return result;
 }
 
@@ -957,7 +960,8 @@ void b3QueryCompound( const b3CompoundData* compound, b3AABB aabb, b3CompoundQue
 		.userContext = context,
 	};
 
-	b3DynamicTree_Query( &compound->tree, aabb, B3_DEFAULT_MASK_BITS, false, TreeQueryCallbackFcn, &compoundContext );
+	b3TreeView view = b3GetCompoundTreeView( compound );
+	b3TreeView_Query( &view, aabb, B3_DEFAULT_MASK_BITS, false, TreeQueryCallbackFcn, &compoundContext );
 }
 
 #if 0
@@ -1092,7 +1096,8 @@ b3TOIOutput b3CompoundTimeOfImpact(const b3CompoundData* compound, b3Transform t
 	b3AABB localBounds = b3AABB_Transform( b3InvertTransform( context.compoundTransform ), bounds );
 	context.localSweepBoundsB = localBounds;
 
-	b3DynamicTree_Query( &compound->tree, aabb, B3_DEFAULT_MASK_BITS, false, TreeQueryCallbackFcn, &compoundContext );
+	b3TreeView view = b3GetCompoundTreeView( compound );
+	b3TreeView_Query( &view, aabb, B3_DEFAULT_MASK_BITS, false, TreeQueryCallbackFcn, &compoundContext );
 
 	return context.toiOutput;
 }
@@ -1168,6 +1173,10 @@ static bool b3CompoundMoverCallback( int proxyId, uint64_t userData, void* conte
 	{
 		planes[i].plane.normal = b3RotateVector( child.transform.q, planes[i].plane.normal );
 		planes[i].point = b3TransformPoint( child.transform, planes[i].point );
+
+		planes[i].childIndex = childIndex;
+		B3_ASSERT( 0 <= planes[i].materialIndex && planes[i].materialIndex < child.materialCount );
+		planes[i].materialIndex = child.materialIndices[planes[i].materialIndex];
 	}
 
 	moverContext->planeCount += planeCount;
@@ -1193,7 +1202,8 @@ int b3CollideMoverAndCompound( b3PlaneResult* planes, int capacity, const b3Comp
 	aabb.lowerBound = b3Sub( aabb.lowerBound, r );
 	aabb.upperBound = b3Add( aabb.upperBound, r );
 
-	(void)b3DynamicTree_Query( &shape->tree, aabb, ~0ull, false, b3CompoundMoverCallback, &context );
+	b3TreeView view = b3GetCompoundTreeView( shape );
+	(void)b3TreeView_Query( &view, aabb, ~0ull, false, b3CompoundMoverCallback, &context );
 
 	return context.planeCount;
 }

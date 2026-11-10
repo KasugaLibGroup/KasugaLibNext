@@ -5,7 +5,6 @@
 
 #include "algorithm.h"
 #include "body.h"
-#include "compound.h"
 #include "island.h"
 #include "manifold.h"
 #include "physics_world.h"
@@ -210,12 +209,8 @@ void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int chil
 	contact->shapeIdA = shapeIdA;
 	contact->shapeIdB = shapeIdB;
 	contact->childIndex = childIndex;
-
-	// Both bodies must enable recycling
-	if ( ( bodyA->flags & b3_bodyEnableContactRecycling ) != 0 && ( bodyB->flags & b3_bodyEnableContactRecycling ) != 0 )
-	{
-		contact->flags |= b3_contactRecycleFlag;
-	}
+	contact->encodedBodySimA = b3EncodeBodySimIndex( bodyA );
+	contact->encodedBodySimB = b3EncodeBodySimIndex( bodyB );
 
 	if ( shapeA->type == b3_meshShape || shapeA->type == b3_heightShape )
 	{
@@ -251,6 +246,13 @@ void b3CreateContact( b3World* world, b3Shape* shapeA, b3Shape* shapeB, int chil
 	if ( ( shapeA->flags & b3_enableSpeculative ) && ( shapeB->flags & b3_enableSpeculative ) )
 	{
 		contact->flags |= b3_enableSpeculativePoints;
+	}
+
+	// Disabling speculative collision also disables recycling.
+	if ( ( bodyA->flags & b3_enableContactRecycling ) != 0 && ( bodyB->flags & b3_enableContactRecycling ) != 0 &&
+		 ( contact->flags & b3_enableSpeculativePoints ) != 0 )
+	{
+		contact->flags |= b3_contactRecycleFlag;
 	}
 
 	// Connect to body A
@@ -485,7 +487,7 @@ static bool b3ComputeConvexManifold( b3World* world, int workerIndex, b3Contact*
 
 	b3ContactCache* cache = &contact->convexContact.cache;
 
-	int pointCapacity = 32;
+	int pointCapacity = B3_MAX_MANIFOLD_POINTS;
 	b3LocalManifoldPoint* pointBuffer = (b3LocalManifoldPoint*)b3Bump( &arena, pointCapacity * sizeof( b3LocalManifoldPoint ) );
 
 	b3LocalManifold geomManifold = { 0 };
@@ -527,7 +529,8 @@ static bool b3ComputeConvexManifold( b3World* world, int workerIndex, b3Contact*
 		else
 		{
 			B3_ASSERT( typeB == b3_hullShape );
-			b3CollideHulls( &geomManifold, pointCapacity, shapeA->hull, shapeB->hull, transformBtoA, &cache->satCache );
+			b3CollideHullsAtWidth( &geomManifold, pointCapacity, shapeA->hull, shapeB->hull, transformBtoA, &cache->satCache,
+								   world->simdWidth );
 			world->taskContexts.data[workerIndex].satCallCount += 1;
 			world->taskContexts.data[workerIndex].satCacheHitCount += cache->satCache.hit;
 		}
@@ -560,6 +563,7 @@ static bool b3ComputeConvexManifold( b3World* world, int workerIndex, b3Contact*
 	}
 
 	b3Manifold* manifold = contact->manifolds;
+	B3_ASSERT( 0 < geomManifold.pointCount && geomManifold.pointCount <= B3_MAX_MANIFOLD_POINTS );
 	manifold->pointCount = geomManifold.pointCount;
 
 	b3Matrix3 matrixA = b3MakeMatrixFromQuat( xfA.q );
@@ -708,6 +712,9 @@ static bool b3UpdateConvexContact( b3World* world, int workerIndex, b3Contact* c
 			b3FreeManifolds( world, contact->manifolds, contact->manifoldCount );
 			contact->manifolds = NULL;
 			contact->manifoldCount = 0;
+
+			// Invalidate recycling cache.
+			contact->flags &= ~b3_relativeTransformValid;
 			return false;
 		}
 	}

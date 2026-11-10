@@ -69,18 +69,41 @@ b3BodyState* b3GetBodyState( b3World* world, b3Body* body )
 	return NULL;
 }
 
+void b3RefreshBodyContactIndices( b3World* world, b3Body* body )
+{
+	int encodedBodySimIndex = b3EncodeBodySimIndex( body );
+
+	int contactKey = body->headContactKey;
+	while ( contactKey != B3_NULL_INDEX )
+	{
+		int edgeIndex = contactKey & 1;
+		int contactId = contactKey >> 1;
+
+		b3Contact* contact = b3Array_Get( world->contacts, contactId );
+		contactKey = contact->edges[edgeIndex].nextKey;
+
+		if ( edgeIndex == 0 )
+		{
+			contact->encodedBodySimA = encodedBodySimIndex;
+		}
+		else
+		{
+			contact->encodedBodySimB = encodedBodySimIndex;
+		}
+	}
+}
+
 void b3SyncBodyFlags( b3World* world, b3Body* body )
 {
-	// Never sync transient flags
-	uint32_t flags = body->flags & ~b3_bodyTransientFlags;
-
 	b3BodySim* bodySim = b3GetBodySim( world, body );
-	bodySim->flags = flags;
+
+	// Preserve the sim only flags: fast for contact recycling, time of impact for debug draw.
+	bodySim->flags = ( bodySim->flags & ( b3_isFast | b3_hadTimeOfImpact ) ) | ( body->flags & ~b3_bodyTransientFlags );
 
 	b3BodyState* bodyState = b3GetBodyState( world, body );
 	if ( bodyState != NULL )
 	{
-		bodyState->flags = flags;
+		bodyState->flags = body->flags & ~b3_bodyTransientFlags;
 	}
 }
 
@@ -161,6 +184,7 @@ b3BodyId b3CreateBody( b3WorldId worldId, const b3BodyDef* def )
 	B3_ASSERT( b3IsValidFloat( def->linearDamping ) && def->linearDamping >= 0.0f );
 	B3_ASSERT( b3IsValidFloat( def->angularDamping ) && def->angularDamping >= 0.0f );
 	B3_ASSERT( b3IsValidFloat( def->sleepThreshold ) && def->sleepThreshold >= 0.0f );
+	B3_ASSERT( b3IsValidFloat( def->safetyFactor ) && def->safetyFactor >= 0.0f );
 	B3_ASSERT( b3IsValidFloat( def->gravityScale ) );
 
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
@@ -230,6 +254,7 @@ b3BodyId b3CreateBody( b3WorldId worldId, const b3BodyDef* def )
 	bodySim->force = b3Vec3_zero;
 	bodySim->torque = b3Vec3_zero;
 	bodySim->invMass = 0.0f;
+	bodySim->inertia = b3Mat3_zero;
 	bodySim->invInertiaLocal = b3Mat3_zero;
 	bodySim->minExtent = B3_HUGE;
 	bodySim->maxExtent = b3Vec3_zero;
@@ -242,7 +267,7 @@ b3BodyId b3CreateBody( b3WorldId worldId, const b3BodyDef* def )
 	bodySim->flags |= def->allowFastRotation ? b3_allowFastRotation : 0;
 	bodySim->flags |= def->type == b3_dynamicBody ? b3_dynamicFlag : 0;
 	bodySim->flags |= def->enableSleep ? b3_enableSleep : 0;
-	bodySim->flags |= def->enableContactRecycling ? b3_bodyEnableContactRecycling : 0;
+	bodySim->flags |= def->enableContactRecycling ? b3_enableContactRecycling : 0;
 
 	if ( setId == b3_awakeSet )
 	{
@@ -283,8 +308,8 @@ b3BodyId b3CreateBody( b3WorldId worldId, const b3BodyDef* def )
 	body->sleepThreshold = def->sleepThreshold;
 	body->sleepTime = 0.0f;
 	body->sleepVelocity = 0.0f;
+	body->safetyFactor = def->safetyFactor;
 	body->mass = 0.0f;
-	body->inertia = b3Mat3_zero;
 	body->nameId = b3AddName( &world->names, def->name );
 	body->type = def->type;
 	body->flags = bodySim->flags;
@@ -373,6 +398,12 @@ void b3DestroyBody( b3BodyId bodyId )
 	{
 		b3Shape* shape = b3Array_Get( world->shapes, shapeId );
 
+		if ( shape->type == b3_compoundShape )
+		{
+			B3_ASSERT( world->compoundShapeCount > 0 );
+			world->compoundShapeCount -= 1;
+		}
+
 		if ( shape->sensorIndex != B3_NULL_INDEX )
 		{
 			b3DestroySensor( world, shape );
@@ -402,6 +433,7 @@ void b3DestroyBody( b3BodyId bodyId )
 		b3Body* movedBody = b3Array_Get( world->bodies, movedId );
 		B3_ASSERT( movedBody->localIndex == movedIndex );
 		movedBody->localIndex = body->localIndex;
+		b3RefreshBodyContactIndices( world, movedBody );
 	}
 
 	// Remove body state from awake set
@@ -779,18 +811,130 @@ int b3Body_CollideMover( b3BodyId bodyId, b3BodyPlaneResult* bodyPlanes, int pla
 	return resultCount;
 }
 
+b3BodyTOIResult b3Body_TimeOfImpactMover( b3BodyId bodyId, b3Pos origin, const b3Capsule* mover, b3Vec3 moverTranslation,
+										  b3QueryFilter filter, b3WorldTransform bodyTransform1, b3WorldTransform bodyTransform2 )
+{
+	b3BodyTOIResult result = { 0 };
+	result.fraction = 1.0f;
+
+	b3World* world = b3GetUnlockedWorld( bodyId.world0 );
+	if ( world == NULL )
+	{
+		return result;
+	}
+
+	b3Transform xf1 = b3ToRelativeTransform( bodyTransform1, origin );
+	b3Transform xf2 = b3ToRelativeTransform( bodyTransform2, origin );
+
+	b3Body* body = b3GetBodyFullId( world, bodyId );
+	b3BodySim* bodySim = b3GetBodySim( world, body );
+	b3Vec3 localCenter = bodySim->localCenter;
+
+	b3Vec3 capsulePoints[2] = { mover->center1, mover->center2 };
+	b3TOIInput input = { 0 };
+	input.proxyB = (b3ShapeProxy){
+		.points = capsulePoints,
+		.count = 2,
+		.radius = mover->radius,
+	};
+	input.sweepA.c1 = b3TransformPoint( xf1, localCenter );
+	input.sweepA.c2 = b3TransformPoint( xf2, localCenter );
+	input.sweepA.q1 = bodyTransform1.q;
+	input.sweepA.q2 = bodyTransform2.q;
+	input.sweepA.localCenter = localCenter;
+
+	input.sweepB.c1 = b3Vec3_zero;
+	input.sweepB.c2 = moverTranslation;
+	input.sweepB.q1 = b3Quat_identity;
+	input.sweepB.q2 = b3Quat_identity;
+	input.sweepB.localCenter = b3Vec3_zero;
+
+	input.maxFraction = 1.0f;
+
+	int shapeId = body->headShapeId;
+	while ( shapeId != B3_NULL_INDEX )
+	{
+		b3Shape* shape = b3Array_Get( world->shapes, shapeId );
+		shapeId = shape->nextShapeId;
+
+		if ( b3ShouldQueryCollide( &shape->filter, &filter ) == false )
+		{
+			continue;
+		}
+
+		b3ShapeType type = shape->type;
+		if ( type != b3_sphereShape && type != b3_capsuleShape && type != b3_hullShape )
+		{
+			continue;
+		}
+
+		input.proxyA = b3MakeShapeProxy( shape );
+
+		b3TOIOutput output = b3TimeOfImpact( &input );
+		B3_VALIDATE( output.state != b3_toiStateUnknown );
+
+		// Mimic behavior in b3ContinuousQueryCallback. Ignore shapes that initially overlap.
+		if (0.0f < output.fraction && output.fraction < result.fraction)
+		{
+			input.maxFraction = output.fraction;
+
+			result.point = b3OffsetPos( origin, output.point );
+			result.normal = output.normal;
+			result.fraction = output.fraction;
+			result.shapeId = (b3ShapeId){
+				.index1 = shape->id + 1,
+				.world0 = world->worldId,
+				.generation = shape->generation,
+			};
+		}
+	}
+
+	return result;
+}
+
+// This computes the deviation of the principal inertia values without computing eigenvalues.
+// It computes:
+// ((I1 - I2)^2 + (I1 - I3)^2 + (I2 - I3)^2) / (I1^2 + I2^2 + I3^2)
+// https://en.wikipedia.org/wiki/Cauchy_stress_tensor#Stress_deviator_tensor
+static void b3UpdateIsotropicInertia( b3World* world, b3Body* body, b3BodySim* bodySim )
+{
+	b3Matrix3 inertia = bodySim->inertia;
+	float mean = ( inertia.cx.x + inertia.cy.y + inertia.cz.z ) / 3.0f;
+	float dx = inertia.cx.x - mean;
+	float dy = inertia.cy.y - mean;
+	float dz = inertia.cz.z - mean;
+	float offDiagonal = inertia.cy.x * inertia.cy.x + inertia.cz.x * inertia.cz.x + inertia.cz.y * inertia.cz.y;
+
+	// This is the square of the Frobenius matrix norm.
+	// https://en.wikipedia.org/wiki/Matrix_norm
+	float deviation = dx * dx + dy * dy + dz * dz + 2.0f * offDiagonal;
+
+	float tolerance = world->isotropicInertiaTolerance;
+
+	if ( 2.0f * deviation > 3.0f * tolerance * tolerance * mean * mean )
+	{
+		body->flags |= b3_enableGyroscopicTorque;
+	}
+	else
+	{
+		body->flags &= ~b3_enableGyroscopicTorque;
+	}
+
+	b3SyncBodyFlags( world, body );
+}
+
 void b3UpdateBodyMassData( b3World* world, b3Body* body )
 {
 	b3BodySim* bodySim = b3GetBodySim( world, body );
 
 	// Mass is no longer dirty
 	body->flags &= ~b3_dirtyMass;
+	body->flags &= ~b3_enableGyroscopicTorque;
 	b3SyncBodyFlags( world, body );
 
 	// Compute mass data from shapes. Each shape has its own density.
 	body->mass = 0.0f;
-	body->inertia = b3Mat3_zero;
-
+	bodySim->inertia = b3Mat3_zero;
 	bodySim->invMass = 0.0f;
 	bodySim->invInertiaLocal = b3Mat3_zero;
 	bodySim->invInertiaWorld = b3Mat3_zero;
@@ -874,19 +1018,19 @@ void b3UpdateBodyMassData( b3World* world, b3Body* body )
 		// Shift to center of mass. This is safe because it can only increase.
 		b3Vec3 offset = b3Sub( localCenter, massData.center );
 		b3Matrix3 inertia = b3AddMM( massData.inertia, b3Steiner( massData.mass, offset ) );
-		body->inertia = b3AddMM( body->inertia, inertia );
+		bodySim->inertia = b3AddMM( bodySim->inertia, inertia );
 	}
 
 	b3StackFree( &world->stack, masses );
 	masses = NULL;
 
-	float det = b3Det( body->inertia );
+	float det = b3Det( bodySim->inertia );
 	B3_ASSERT( det >= 0.0f );
 
 	if ( det > 0.0f )
 	{
 		// This call is faster than b3Invert
-		bodySim->invInertiaLocal = b3InvertT( body->inertia );
+		bodySim->invInertiaLocal = b3InvertT( bodySim->inertia );
 
 		b3Matrix3 rotationMatrix = b3MakeMatrixFromQuat( bodySim->transform.q );
 		bodySim->invInertiaWorld = b3MulMM( b3MulMM( rotationMatrix, bodySim->invInertiaLocal ), b3Transpose( rotationMatrix ) );
@@ -919,13 +1063,28 @@ void b3UpdateBodyMassData( b3World* world, b3Body* body )
 		shapeId = s->nextShapeId;
 	}
 
+	// When the center of mass changes, any cached contact manifold becomes invalid.
+	int edgeKey = body->headContactKey;
+	while ( edgeKey != B3_NULL_INDEX )
+	{
+		int contactId = edgeKey >> 1;
+		int edgeIndex = edgeKey & 1;
+
+		b3Contact* contact = b3Array_Get( world->contacts, contactId );
+		contact->flags &= ~b3_relativeTransformValid;
+
+		edgeKey = contact->edges[edgeIndex].nextKey;
+	}
+
 	// Apply fixed rotation
 	if ( ( bodySim->flags & b3_fixedRotation ) == b3_fixedRotation )
 	{
-		body->inertia = b3Mat3_zero;
+		bodySim->inertia = b3Mat3_zero;
 		bodySim->invInertiaLocal = b3Mat3_zero;
 		bodySim->invInertiaWorld = b3Mat3_zero;
 	}
+
+	b3UpdateIsotropicInertia( world, body, bodySim );
 }
 
 b3Pos b3Body_GetPosition( b3BodyId bodyId )
@@ -1018,17 +1177,11 @@ void b3Body_SetTransform( b3BodyId bodyId, b3Pos position, b3Quat rotation )
 		b3AABB aabb = b3ComputeFatShapeAABB( shape, transform, speculativeDistance );
 		shape->aabb = aabb;
 
-		if ( b3AABB_Contains( shape->fatAABB, aabb ) == false )
+		b3AABB* shapeFatAABB = world->fatAABBs.data + shapeId;
+		if ( b3AABB_Contains( *shapeFatAABB, aabb ) == false )
 		{
-			float margin = shape->aabbMargin;
-			b3AABB fatAABB;
-			fatAABB.lowerBound.x = aabb.lowerBound.x - margin;
-			fatAABB.lowerBound.y = aabb.lowerBound.y - margin;
-			fatAABB.lowerBound.z = aabb.lowerBound.z - margin;
-			fatAABB.upperBound.x = aabb.upperBound.x + margin;
-			fatAABB.upperBound.y = aabb.upperBound.y + margin;
-			fatAABB.upperBound.z = aabb.upperBound.z + margin;
-			shape->fatAABB = fatAABB;
+			b3AABB fatAABB = b3AABB_Inflate( aabb, shape->aabbMargin );
+			*shapeFatAABB = fatAABB;
 
 			// The body could be disabled
 			if ( shape->proxyKey != B3_NULL_INDEX )
@@ -1615,7 +1768,7 @@ void b3Body_SetType( b3BodyId bodyId, b3BodyType type )
 		shapeId = shape->nextShapeId;
 		b3DestroyShapeProxy( shape, &world->broadPhase );
 		bool forcePairCreation = true;
-		b3CreateShapeProxy( shape, &world->broadPhase, type, transform, forcePairCreation );
+		b3CreateShapeProxy( world, shape, type, transform, forcePairCreation );
 	}
 
 	// Relink all joints
@@ -1698,7 +1851,8 @@ b3Matrix3 b3Body_GetLocalRotationalInertia( b3BodyId bodyId )
 {
 	b3World* world = b3GetWorld( bodyId.world0 );
 	b3Body* body = b3GetBodyFullId( world, bodyId );
-	return body->inertia;
+	b3BodySim* bodySim = b3GetBodySim( world, body );
+	return bodySim->inertia;
 }
 
 float b3Body_GetInverseMass( b3BodyId bodyId )
@@ -1755,7 +1909,6 @@ void b3Body_SetMassData( b3BodyId bodyId, b3MassData massData )
 	b3SyncBodyFlags( world, body );
 
 	body->mass = massData.mass;
-	body->inertia = massData.inertia;
 	bodySim->localCenter = massData.center;
 
 	b3Pos oldCenter = bodySim->center;
@@ -1763,6 +1916,7 @@ void b3Body_SetMassData( b3BodyId bodyId, b3MassData massData )
 	bodySim->center = center;
 	bodySim->center0 = center;
 	bodySim->invMass = body->mass > 0.0f ? 1.0f / body->mass : 0.0f;
+	bodySim->inertia = massData.inertia;
 
 	// Update center of mass velocity
 	b3BodyState* state = b3GetBodyState( world, body );
@@ -1772,13 +1926,13 @@ void b3Body_SetMassData( b3BodyId bodyId, b3MassData massData )
 		state->linearVelocity = b3Add( state->linearVelocity, deltaLinear );
 	}
 
-	float det = b3Det( body->inertia );
+	float det = b3Det( bodySim->inertia );
 	B3_ASSERT( det >= 0.0f );
 
 	if ( det > 0.0f )
 	{
 		// This call is faster than b3Invert
-		bodySim->invInertiaLocal = b3InvertT( body->inertia );
+		bodySim->invInertiaLocal = b3InvertT( bodySim->inertia );
 
 		b3Matrix3 rotationMatrix = b3MakeMatrixFromQuat( bodySim->transform.q );
 		bodySim->invInertiaWorld = b3MulMM( b3MulMM( rotationMatrix, bodySim->invInertiaLocal ), b3Transpose( rotationMatrix ) );
@@ -1792,10 +1946,12 @@ void b3Body_SetMassData( b3BodyId bodyId, b3MassData massData )
 	// Apply fixed rotation
 	if ( ( bodySim->flags & b3_fixedRotation ) == b3_fixedRotation )
 	{
-		body->inertia = b3Mat3_zero;
+		bodySim->inertia = b3Mat3_zero;
 		bodySim->invInertiaLocal = b3Mat3_zero;
 		bodySim->invInertiaWorld = b3Mat3_zero;
 	}
+
+	b3UpdateIsotropicInertia( world, body, bodySim );
 
 	// Update extents using supplied mass center.
 	bodySim->minExtent = B3_HUGE;
@@ -1809,6 +1965,19 @@ void b3Body_SetMassData( b3BodyId bodyId, b3MassData massData )
 		bodySim->maxExtent = b3Max( bodySim->maxExtent, extent.maxExtent );
 		shapeId = s->nextShapeId;
 	}
+
+	// When the center of mass changes, any cached contact manifold becomes invalid.
+	int edgeKey = body->headContactKey;
+	while ( edgeKey != B3_NULL_INDEX )
+	{
+		int contactId = edgeKey >> 1;
+		int edgeIndex = edgeKey & 1;
+
+		b3Contact* contact = b3Array_Get( world->contacts, contactId );
+		contact->flags &= ~b3_relativeTransformValid;
+
+		edgeKey = contact->edges[edgeIndex].nextKey;
+	}
 }
 
 b3MassData b3Body_GetMassData( b3BodyId bodyId )
@@ -1816,7 +1985,7 @@ b3MassData b3Body_GetMassData( b3BodyId bodyId )
 	b3World* world = b3GetWorld( bodyId.world0 );
 	b3Body* body = b3GetBodyFullId( world, bodyId );
 	b3BodySim* bodySim = b3GetBodySim( world, body );
-	b3MassData massData = { body->mass, bodySim->localCenter, body->inertia };
+	b3MassData massData = { body->mass, bodySim->localCenter, bodySim->inertia };
 	return massData;
 }
 
@@ -1982,6 +2151,29 @@ float b3Body_GetSleepThreshold( b3BodyId bodyId )
 	return body->sleepThreshold;
 }
 
+void b3Body_SetSafetyFactor( b3BodyId bodyId, float safetyFactor )
+{
+	B3_ASSERT( b3IsValidFloat( safetyFactor ) && safetyFactor >= 0.0f );
+
+	b3World* world = b3GetUnlockedWorld( bodyId.world0 );
+	if ( world == NULL )
+	{
+		return;
+	}
+
+	B3_REC( world, BodySetSafetyFactor, bodyId, safetyFactor );
+
+	b3Body* body = b3GetBodyFullId( world, bodyId );
+	body->safetyFactor = safetyFactor;
+}
+
+float b3Body_GetSafetyFactor( b3BodyId bodyId )
+{
+	b3World* world = b3GetWorld( bodyId.world0 );
+	b3Body* body = b3GetBodyFullId( world, bodyId );
+	return body->safetyFactor;
+}
+
 void b3Body_EnableSleep( b3BodyId bodyId, bool enableSleep )
 {
 	b3World* world = b3GetUnlockedWorld( bodyId.world0 );
@@ -2061,7 +2253,7 @@ void b3Body_Disable( b3BodyId bodyId )
 			continue;
 		}
 
-		B3_ASSERT( joint->setIndex == set->setIndex || set->setIndex == b3_staticSet );
+		B3_ASSERT( joint->setIndex == set->setIndex || set->setIndex == b3_staticSet || joint->setIndex == b3_staticSet );
 
 		// Remove joint from island
 		b3UnlinkJoint( world, joint );
@@ -2125,7 +2317,7 @@ void b3Body_Enable( b3BodyId bodyId )
 		b3Shape* shape = b3Array_Get( world->shapes, shapeId );
 		shapeId = shape->nextShapeId;
 
-		b3CreateShapeProxy( shape, &world->broadPhase, proxyType, transform, forcePairCreation );
+		b3CreateShapeProxy( world, shape, proxyType, transform, forcePairCreation );
 	}
 
 	if ( setId != b3_staticSet )
@@ -2158,7 +2350,7 @@ void b3Body_Enable( b3BodyId bodyId )
 
 		// Transfer joint first
 		int jointSetId;
-		if ( bodyA->setIndex == b3_staticSet && bodyB->setIndex == b3_staticSet )
+		if ( bodyA->type != b3_dynamicBody && bodyB->type != b3_dynamicBody )
 		{
 			jointSetId = b3_staticSet;
 		}
@@ -2303,7 +2495,7 @@ bool b3Body_IsBullet( b3BodyId bodyId )
 	return ( body->flags & b3_isBullet ) != 0;
 }
 
-void b3Body_AllowFastRotation(b3BodyId bodyId, bool flag)
+void b3Body_AllowFastRotation( b3BodyId bodyId, bool flag )
 {
 	b3World* world = b3GetUnlockedWorld( bodyId.world0 );
 	if ( world == NULL )
@@ -2327,7 +2519,7 @@ void b3Body_AllowFastRotation(b3BodyId bodyId, bool flag)
 	b3SyncBodyFlags( world, body );
 }
 
-bool b3Body_IsFastRotationAllowed(b3BodyId bodyId)
+bool b3Body_IsFastRotationAllowed( b3BodyId bodyId )
 {
 	b3World* world = b3GetWorld( bodyId.world0 );
 	b3Body* body = b3GetBodyFullId( world, bodyId );
@@ -2344,15 +2536,15 @@ void b3Body_EnableContactRecycling( b3BodyId bodyId, bool flag )
 
 	B3_REC( world, BodyEnableContactRecycling, bodyId, flag );
 
-	uint32_t newFlag = flag ? b3_bodyEnableContactRecycling : 0;
+	uint32_t newFlag = flag ? b3_enableContactRecycling : 0;
 
 	b3Body* body = b3GetBodyFullId( world, bodyId );
-	if ( ( body->flags & b3_bodyEnableContactRecycling ) == newFlag )
+	if ( ( body->flags & b3_enableContactRecycling ) == newFlag )
 	{
 		return;
 	}
 
-	body->flags &= ~b3_bodyEnableContactRecycling;
+	body->flags &= ~b3_enableContactRecycling;
 	body->flags |= newFlag;
 
 	b3SyncBodyFlags( world, body );
@@ -2362,7 +2554,7 @@ bool b3Body_IsContactRecyclingEnabled( b3BodyId bodyId )
 {
 	b3World* world = b3GetWorld( bodyId.world0 );
 	b3Body* body = b3GetBodyFullId( world, bodyId );
-	return ( body->flags & b3_bodyEnableContactRecycling ) != 0;
+	return ( body->flags & b3_enableContactRecycling ) != 0;
 }
 
 void b3Body_EnableHitEvents( b3BodyId bodyId, bool flag )
@@ -2480,4 +2672,28 @@ bool b3ShouldBodiesCollide( b3World* world, b3Body* bodyA, b3Body* bodyB )
 	}
 
 	return true;
+}
+
+float b3Body_GetMinExtent( b3BodyId bodyId )
+{
+	b3World* world = b3GetWorld( bodyId.world0 );
+	b3Body* body = b3GetBodyFullId( world, bodyId );
+	b3BodySim* bodySim = b3GetBodySim( world, body );
+	return bodySim->minExtent;
+}
+
+b3Vec3 b3Body_GetMaxExtent( b3BodyId bodyId )
+{
+	b3World* world = b3GetWorld( bodyId.world0 );
+	b3Body* body = b3GetBodyFullId( world, bodyId );
+	b3BodySim* bodySim = b3GetBodySim( world, body );
+	return bodySim->maxExtent;
+}
+
+b3Vec3 b3Body_GetMaxExtentOrigin( b3BodyId bodyId )
+{
+	b3World* world = b3GetWorld( bodyId.world0 );
+	b3Body* body = b3GetBodyFullId( world, bodyId );
+	b3BodySim* bodySim = b3GetBodySim( world, body );
+	return b3Add( bodySim->maxExtent, b3Abs( bodySim->localCenter ) );
 }

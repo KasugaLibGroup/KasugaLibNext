@@ -627,7 +627,7 @@ tasks.register('configureBox3D', Exec) {
     group = 'build'
     onlyIf('CMake is available') { box3dCanBuild }
     inputs.files(fileTree(box3dSourceDirectory) {
-        include '**/*.c', '**/*.h', '**/CMakeLists.txt', 'BOX3D_VERSION'
+        include '**/*.c', '**/*.h', '**/*.inl', '**/*.in', '**/CMakeLists.txt', 'BOX3D_VERSION'
     })
     outputs.file(box3dBuildDirectory.map { it.file('CMakeCache.txt') })
     doFirst {
@@ -646,7 +646,7 @@ tasks.register('buildBox3D', Exec) {
     dependsOn tasks.named('configureBox3D')
     onlyIf('CMake is available') { box3dCanBuild }
     inputs.files(fileTree(box3dSourceDirectory) {
-        include '**/*.c', '**/*.h', '**/CMakeLists.txt', 'BOX3D_VERSION'
+        include '**/*.c', '**/*.h', '**/*.inl', '**/*.in', '**/CMakeLists.txt', 'BOX3D_VERSION'
     })
     outputs.dir(box3dResourceDirectory)
     doFirst {
