@@ -1,5 +1,6 @@
 package lib.kasuga.rendering.models.mc.typo;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import lib.kasuga.rendering.models.mc.Constants;
 import lib.kasuga.rendering.models.mc.backend.RenderState;
 import lib.kasuga.rendering.models.mc.java_and_bedrock.IdentifierHelper;
@@ -50,11 +51,13 @@ public class KsgObjLoader extends ObjModelLoader<String, ResourceLocation, Strin
     private final HashMap<String, ResourceLocation> loadedModels;
 
     private final HashMap<String, lib.kasuga.rendering.models.uml.structure.material.Material> materials;
+    private final HashMap<ResourceLocation, TextureAlpha> textureAlphas;
 
     public KsgObjLoader(String name) {
         super(name, true, true, true);
         loadedModels = new HashMap<>();
         materials = new HashMap<>();
+        textureAlphas = new HashMap<>();
     }
 
     /** Uses the standard OBJ/MTL processors, exporting a custom interleaved GPU stream. */
@@ -121,8 +124,7 @@ public class KsgObjLoader extends ObjModelLoader<String, ResourceLocation, Strin
                 faceNormal.normalize();
                 for (var corner : face.corners()) {
                     var position = getObjVertexPositions().get(corner.vertexIndex());
-                    var normal = corner.normalIndex() < 0 ? faceNormal
-                            : new Vector3f(getObjVertexNormals().get(corner.normalIndex())).normalize();
+                    var normal = resolveNormal(corner, faceNormal);
                     var uv = corner.textureIndex() < 0 ? new Vector2f() : getObjVertexUvs().get(corner.textureIndex());
                     if (!position.isFinite() || !normal.isFinite() || !uv.isFinite())
                         throw new IllegalArgumentException("Non-finite OBJ vertex attributes");
@@ -140,6 +142,24 @@ public class KsgObjLoader extends ObjModelLoader<String, ResourceLocation, Strin
             result = new FlatMesh(vertices, faces.size(), faces.size() * 3,
                     min.x, min.y, min.z, max.x, max.y, max.z, Map.copyOf(flatMaterials));
             clear();
+        }
+
+        private Vector3f resolveNormal(
+                lib.kasuga.rendering.models.uml.typo.wavefont_obj.ObjVertexBinding corner,
+                Vector3f faceNormal
+        ) {
+            if (corner.normalIndex() < 0) {
+                return new Vector3f(faceNormal);
+            }
+            Vector3f normal = getObjVertexNormals().get(corner.normalIndex());
+            if (normal == null
+                    || !Float.isFinite(normal.x())
+                    || !Float.isFinite(normal.y())
+                    || !Float.isFinite(normal.z())
+                    || normal.lengthSquared() <= 1e-12f) {
+                return new Vector3f(faceNormal);
+            }
+            return new Vector3f(normal).normalize();
         }
     }
 
@@ -237,6 +257,7 @@ public class KsgObjLoader extends ObjModelLoader<String, ResourceLocation, Strin
         materialSetBuilder()
                 .registerTexture(texture.getName(), tex)
                 .useTexture(texture.getName())
+                .setMaterialData(resolveMaterialData(texture, rl))
                 .addSpriteBuildingFunc((mtlb, sprb, mtl) -> {
                     sprb.textureId(texture.getName()).flipV(true).endSprite();
                 }).endMaterial();
@@ -264,6 +285,7 @@ public class KsgObjLoader extends ObjModelLoader<String, ResourceLocation, Strin
         materialSetBuilder()
                 .registerTexture(textureId, tex)
                 .useTexture(textureId)
+                .setMaterialData(ObjMaterialData.from(1f, true, false))
                 .addSpriteBuildingFunc((mtlb, sprb, mtl) -> sprb.textureId(textureId).endSprite())
                 .endMaterial();
         lib.kasuga.rendering.models.uml.structure.material.Material created = materialSetBuilder().getMaterials().getLast();
@@ -272,6 +294,53 @@ public class KsgObjLoader extends ObjModelLoader<String, ResourceLocation, Strin
             materials.put(null, created);
         }
         return created;
+    }
+
+    private ObjMaterialData resolveMaterialData(ObjTextureData texture, ResourceLocation textureLocation) {
+        TextureAlpha alpha = textureAlphas.computeIfAbsent(
+                textureLocation,
+                this::readTextureAlpha
+        );
+        ObjMaterialData materialData = ObjMaterialData.from(
+                texture.getD(),
+                alpha.hasTransparentPixels(),
+                alpha.hasPartialTransparency()
+        );
+        return materialData;
+    }
+
+    private TextureAlpha readTextureAlpha(ResourceLocation textureLocation) {
+        String path = textureLocation.getPath();
+        if (!path.startsWith("textures/")) path = "textures/" + path;
+        if (!path.endsWith(".png")) path += ".png";
+        ResourceLocation imageLocation = ResourceLocation.tryBuild(
+                textureLocation.getNamespace(),
+                path
+        );
+        if (imageLocation == null) return TextureAlpha.UNKNOWN;
+
+        Optional<InputStream> stream = IdentifierHelper.getInputStream(imageLocation);
+        if (stream.isEmpty()) return TextureAlpha.UNKNOWN;
+        try (InputStream input = stream.get(); NativeImage image = NativeImage.read(input)) {
+            boolean transparent = false;
+            for (int y = 0; y < image.getHeight(); y++) {
+                for (int x = 0; x < image.getWidth(); x++) {
+                    int alpha = image.getPixelRGBA(x, y) >>> 24;
+                    if (alpha == 255) continue;
+                    transparent = true;
+                    if (alpha != 0) {
+                        return new TextureAlpha(true, true);
+                    }
+                }
+            }
+            return new TextureAlpha(transparent, false);
+        } catch (IOException | RuntimeException exception) {
+            return TextureAlpha.UNKNOWN;
+        }
+    }
+
+    private record TextureAlpha(boolean hasTransparentPixels, boolean hasPartialTransparency) {
+        private static final TextureAlpha UNKNOWN = new TextureAlpha(false, false);
     }
 
     @Nullable
