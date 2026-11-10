@@ -8,6 +8,14 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class WorldUiInputRouterTest {
+    @Test void forwardProjectionUsesTheSameZoomedRenderSurfaceAsPicking() {
+        var router=new WorldUiInputRouter();
+        router.beginFrame(new Matrix4f().translate(.15f,-.08f,0).scale(1.8f).perspective(.9f,16f/9,.05f,100),854,480,0,0);
+        var listener=new Listener();router.addSurface(listener,new Matrix4f().translate(-.5f,.5f,-3).rotateY(.3f).scale(.003f,-.003f,.003f),260,240);
+        var screen=router.screenPosition(listener,35,34);assertNotNull(screen);
+        router.move(screen.x,screen.y);assertEquals(35,router.positionOn(listener).x,.002);assertEquals(34,router.positionOn(listener).y,.002);
+        router.remove(listener);assertNull(router.screenPosition(listener,35,34));
+    }
     private static Matrix4f panel(float z) {
         return new Matrix4f().translation(-1, 1, z).scale(.01f, -.01f, 1);
     }

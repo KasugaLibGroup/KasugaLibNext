@@ -3,10 +3,13 @@ package lib.kasuga.rendering.models.mc.backend.ui;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.joml.Vector3f;
+import org.joml.Vector2f;
+import org.jetbrains.annotations.Nullable;
 
 /** A render-time projection snapshot. Coordinates are GUI pixels, with the origin at the top left. */
 public final class ScreenPointerProjection {
     private final Matrix4f inverseProjection;
+    private final Matrix4f projection;
     private final double width;
     private final double height;
 
@@ -16,9 +19,17 @@ public final class ScreenPointerProjection {
             throw new IllegalArgumentException("A finite, invertible projection and positive viewport are required");
         }
         inverseProjection = new Matrix4f(projection).invert();
+        this.projection = new Matrix4f(projection);
         if (!inverseProjection.isFinite()) throw new IllegalArgumentException("Projection inverse is not finite");
         this.width = width;
         this.height = height;
+    }
+
+    /** Projects a view-local point through the same render-time matrix used by pointer rays. */
+    public @Nullable Vector2f project(Vector3f point) {
+        var clip=projection.transform(new org.joml.Vector4f(point,1));
+        if(!clip.isFinite()||clip.w<=0)return null;
+        return new org.joml.Vector2f((float)((clip.x/clip.w+1)*width*.5),(float)((1-clip.y/clip.w)*height*.5));
     }
 
     /**

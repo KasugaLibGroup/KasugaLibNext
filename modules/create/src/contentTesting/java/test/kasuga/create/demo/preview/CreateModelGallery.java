@@ -113,7 +113,8 @@ public final class CreateModelGallery {
                 var layers = source.snapshot(LayerLayout.ASSEMBLED.separation(.001),0);
                 current.factoryMinimum = layers.parts().stream().mapToInt(part -> part.layer()).min().orElse(0);
                 current.factoryMaximum = layers.parts().stream().mapToInt(part -> part.layer()).max().orElse(0);
-                current.factoryEntry = current.scene.add(source,CENTER).transform(current.factoryBase).visible(false);
+                current.factoryDisplay = new lib.kasuga.rendering.models.mc.scene.display.ModelDisplayTarget(source).autoPanel();
+                current.factoryEntry = current.scene.add(current.factoryDisplay,CENTER).transform(current.factoryBase).visible(false);
             } catch (Exception error) {
                 if (source != null && current.factoryEntry == null) source.close();
                 reject("Cannot inspect blueprint: " + error.getMessage());
@@ -239,6 +240,7 @@ public final class CreateModelGallery {
         SceneModels scene; SceneModels.Entry entry;
         SceneModels.Entry rigEntry, windmillEntry;
         SceneModels.Entry factoryEntry;
+        lib.kasuga.rendering.models.mc.scene.display.ModelDisplayTarget factoryDisplay;
         Matrix4f rigBase, windmillBase;
         Matrix4f factoryBase;
         int rigMinimum, rigMaximum, windmillMinimum, windmillMaximum;
@@ -263,6 +265,17 @@ public final class CreateModelGallery {
         }
         @Override protected void init() {
             int bottom = height - 30;
+            if(state.factorySelected && state.factoryDisplay!=null) {
+                addRenderableWidget(net.minecraft.client.gui.components.Button.builder(Component.literal("Animation + counts / 分层统计"),button->{
+                    state.entry.layers(LayerLayout.ASSEMBLED);
+                    state.factoryDisplay.layers(state.layout);
+                    Minecraft.getInstance().setScreen(new lib.kasuga.rendering.models.mc.backend.ui.WorldDisplayScreen(
+                            Component.literal("Factory / 蓝图"),state.factoryDisplay,state.factoryDisplay,true,false,()->{
+                        state.layout=state.factoryDisplay.layers();state.entry.layers(state.layout);
+                        Minecraft.getInstance().setScreen(new InspectionScreen(state));
+                    }));
+                }).bounds(12,32,220,20).build());
+            }
             addRenderableWidget(net.minecraft.client.gui.components.Button.builder(Component.literal("◀"), button -> {
                 state.all = false; state.layer = Math.max(state.minimumLayer, state.layer - 1); apply();
             }).bounds(12, bottom, 24, 20).build());

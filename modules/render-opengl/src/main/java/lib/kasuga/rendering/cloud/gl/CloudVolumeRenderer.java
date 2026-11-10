@@ -31,7 +31,8 @@ public final class CloudVolumeRenderer implements AutoCloseable {
     private final LinkedHashMap<ViewKey, ViewTarget> views = new LinkedHashMap<>(8, .75f, true);
     private final LinkedHashMap<LightKey, LightTarget> lights = new LinkedHashMap<>(8, .75f, true);
     private final LinkedHashMap<SkyCloudField.Key, WeatherTarget> weather = new LinkedHashMap<>(8, .75f, true);
-    private Program march, illuminate, upsample, sky;
+    private final LinkedHashMap<String, History> histories = new LinkedHashMap<>(8, .75f, true);
+    private Program march, illuminate, upsample, sky, skyComposite, historyResolve;
     private int vao, noise, shape;
     private boolean closed, inPass, adaptiveMarching = true;
 
@@ -39,6 +40,35 @@ public final class CloudVolumeRenderer implements AutoCloseable {
     public boolean isReady() { return READY.isDone(); }
     public int cachedWeatherCount() { return weather.size(); }
     public int cachedViewCount() { return views.size(); }
+    public int cachedHistoryCount() { return histories.size(); }
+    public void clearHistory() {
+        if (inPass) throw new IllegalStateException("Clear cloud history outside a pass");
+        histories.values().forEach(History::close); histories.clear();
+    }
+    /** Diagnostic ownership snapshot; IDs are borrowed and must not be deleted by callers. */
+    public Resources resources() {
+        var textures = new java.util.ArrayList<Integer>();
+        var framebuffers = new java.util.ArrayList<Integer>();
+        var programs = new java.util.ArrayList<Integer>();
+        if (noise != 0) textures.add(noise); if (shape != 0) textures.add(shape);
+        for (var target : views.values()) {
+            textures.add(target.depth); framebuffers.add(target.fbo);
+            for (var color : target.colors.values()) { textures.add(color.texture); framebuffers.add(color.fbo); }
+            for (var color : target.skyColors.values()) {
+                textures.add(color.texture); textures.add(color.metadata); framebuffers.add(color.fbo);
+            }
+            if (target.scene != null) { textures.add(target.scene.texture); framebuffers.add(target.scene.fbo); }
+        }
+        for (var target : lights.values()) { textures.add(target.texture); framebuffers.add(target.fbo); }
+        for (var target : weather.values()) { textures.add(target.layout); textures.add(target.dimensions); textures.add(target.layers); }
+        for (var history : histories.values()) for (var color : history.targets) {
+            textures.add(color.texture); textures.add(color.metadata); framebuffers.add(color.fbo);
+        }
+        for (var program : new Program[]{march, illuminate, upsample, sky, skyComposite, historyResolve}) if (program != null) programs.add(program.id);
+        return new Resources(java.util.List.copyOf(textures), java.util.List.copyOf(framebuffers), java.util.List.copyOf(programs), vao);
+    }
+    public record Resources(java.util.List<Integer> textures, java.util.List<Integer> framebuffers,
+                            java.util.List<Integer> programs, int vertexArray) {}
     public void adaptiveMarching(boolean value) {
         if (closed || inPass) throw new IllegalStateException("Change cloud sampling outside an open pass");
         adaptiveMarching = value;
@@ -47,6 +77,13 @@ public final class CloudVolumeRenderer implements AutoCloseable {
     /** The current draw framebuffer supplies scene depth and receives the cloud composite. */
     public Pass begin(Matrix4fc view, Matrix4fc projection, Vector3dc camera,
                       Vector3fc sunDirection, Vector3fc sunColor, Vector3fc ambientColor) {
+        return begin(view, projection, camera, sunDirection, sunColor, ambientColor, null);
+    }
+
+    /** A stable view identity enables independent temporal history. Pass null
+     * for stateless spatial rendering; clearHistory when the world changes. */
+    public Pass begin(Matrix4fc view, Matrix4fc projection, Vector3dc camera,
+                      Vector3fc sunDirection, Vector3fc sunColor, Vector3fc ambientColor, String viewId) {
         if (closed || inPass) throw new IllegalStateException("Cloud renderer is closed or already in a pass");
         if (!isReady()) throw new IllegalStateException("Cloud noise is still preparing");
         Objects.requireNonNull(camera); Objects.requireNonNull(sunColor); Objects.requireNonNull(ambientColor);
@@ -73,7 +110,7 @@ public final class CloudVolumeRenderer implements AutoCloseable {
             if (GL.getCapabilities().OpenGL33) for (int unit = 0; unit < 6; unit++) GL33.glBindSampler(unit, 0);
             inPass = true;
             return new Pass(state, target, new Vector3d(camera), sun.normalize(), new Vector3f(sunColor),
-                    new Vector3f(ambientColor), viewProjection, inverse);
+                    new Vector3f(ambientColor), viewProjection, inverse, viewId);
         } catch (RuntimeException | Error failure) { state.close(); throw failure; }
     }
 
@@ -84,7 +121,9 @@ public final class CloudVolumeRenderer implements AutoCloseable {
             march = new Program(resource("cumulonimbus.fsh").replace("// CLOUD_DENSITY", density));
             illuminate = new Program(resource("lighting.fsh").replace("// CLOUD_DENSITY", density));
             upsample = new Program(resource("upsample.fsh"));
-            sky = new Program(resource("sky.fsh"));
+            sky = new Program(resource("sky.fsh"), true);
+            skyComposite = new Program(resource("sky_composite.fsh"));
+            historyResolve = new Program(resource("sky_history.fsh"), true);
             vao = GL30.glGenVertexArrays();
             noise = texture3d(1, true);
             var data = READY.join();
@@ -176,7 +215,10 @@ public final class CloudVolumeRenderer implements AutoCloseable {
     private void release() {
         views.values().forEach(ViewTarget::close); views.clear(); lights.values().forEach(LightTarget::close); lights.clear();
         weather.values().forEach(WeatherTarget::close); weather.clear();
+        histories.values().forEach(History::close); histories.clear();
         if (sky != null) sky.close(); sky = null;
+        if (skyComposite != null) skyComposite.close(); skyComposite = null;
+        if (historyResolve != null) historyResolve.close(); historyResolve = null;
         if (noise != 0) GL11.glDeleteTextures(noise); if (shape != 0) GL11.glDeleteTextures(shape);
         if (vao != 0) GL30.glDeleteVertexArrays(vao);
         if (march != null) march.close(); if (illuminate != null) illuminate.close(); if (upsample != null) upsample.close();
@@ -194,12 +236,14 @@ public final class CloudVolumeRenderer implements AutoCloseable {
         private final Vector3d camera;
         private final Vector3f sun, sunColor, ambient;
         private final Matrix4f viewProjection, inverse;
+        private final String viewId;
         private final Vector3f atmosphere = new Vector3f(.22f, .42f, .67f);
         private boolean finished;
         private Pass(CloudGlState state, ViewTarget target, Vector3d camera, Vector3f sun, Vector3f sunColor,
-                     Vector3f ambient, Matrix4f viewProjection, Matrix4f inverse) {
+                     Vector3f ambient, Matrix4f viewProjection, Matrix4f inverse, String viewId) {
             this.state = state; this.target = target; this.camera = camera; this.sun = sun;
             this.sunColor = sunColor; this.ambient = ambient; this.viewProjection = viewProjection; this.inverse = inverse;
+            this.viewId = viewId;
         }
         public void atmosphereColor(Vector3fc value) {
             if (finished) throw new IllegalStateException("Cloud pass is closed");
@@ -261,8 +305,32 @@ public final class CloudVolumeRenderer implements AutoCloseable {
                 try { weatherTarget.allocate(frame.window()); weather.put(key, weatherTarget); evict(weather); }
                 catch (RuntimeException | Error failure) { weatherTarget.close(); throw failure; }
             }
-            int divisor = settings.quality().resolutionDivisor;
-            var color = target.color(divisor);
+            var optics = settings.rendering();
+            int divisor = optics.resolutionDivisor(settings.quality());
+            var color = target.skyColor(divisor);
+            var sceneColor = target.scene();
+            History history = null;
+            if (viewId != null && optics.temporal().historyWeight() > 0
+                    && (optics.debug() == SkyCloudRendering.DebugView.NONE || optics.debug() == SkyCloudRendering.DebugView.HISTORY_VALIDITY)) {
+                history = histories.get(viewId);
+                if (history != null && (history.width != color.width || history.height != color.height)) {
+                    var replacement = new History(color.width, color.height);
+                    histories.put(viewId, replacement); history.close(); history = replacement;
+                }
+                if (history == null) {
+                    history = new History(color.width, color.height);
+                    histories.put(viewId, history); evict(histories);
+                }
+            }
+            // Snapshot host color separately from the ray target. Composite
+            // radiance/transmittance in linear light, even on vanilla's display
+            // referred framebuffer, without sampling from the draw attachment.
+            GL11.glDisable(GL30.GL_FRAMEBUFFER_SRGB);
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, state.draw);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, sceneColor.fbo);
+            GL30.glBlitFramebuffer(state.viewport[0], state.viewport[1], state.viewport[0] + target.key.width,
+                    state.viewport[1] + target.key.height, 0, 0, target.key.width, target.key.height,
+                    GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
             GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, color.fbo);
             GL11.glViewport(0, 0, color.width, color.height);
             GL11.glDisable(GL11.GL_SCISSOR_TEST); GL11.glDisable(GL11.GL_BLEND);
@@ -278,6 +346,14 @@ public final class CloudVolumeRenderer implements AutoCloseable {
             sky.vector("SunDirection", sun); sky.vector("SunColor", sunColor); sky.vector("AmbientColor", ambient);
             sky.scalar("CellSize", settings.cellSize()); sky.scalar("MaxHeight", settings.maxHeight());
             sky.scalar("Coverage", frame.coverage()); sky.scalar("MaxDistance", settings.distance());
+            sky.scalar("Extinction", optics.extinction()); sky.scalar("Erosion", optics.erosion());
+            sky.scalar("DetailFrequency", optics.detailFrequency()); sky.scalar("AmbientStrength", optics.ambientStrength());
+            sky.scalar("AtmosphereDistance", optics.atmosphereDistance());
+            sky.quad("Scattering", optics.forwardAnisotropy(), optics.backwardAnisotropy(), optics.backwardWeight(), optics.multipleScattering());
+            sky.integer("DebugView", optics.debug().ordinal());
+            sky.integer("DisplayColorSpace", optics.colorSpace() == SkyCloudRendering.ColorSpace.DISPLAY_SRGB ? 1 : 0);
+            sky.integer("AdaptiveMarching", adaptiveMarching && optics.adaptive() ? 1 : 0);
+            sky.scalar("JitterPhase", history == null ? 0 : phase(history.frames * .61803398875));
             sky.vector("NoiseOffset", new Vector3f(phase(frame.timeSeconds() * .004), phase(-frame.timeSeconds() * .0014), 0));
             sky.integer("GridSize", SkyCloudField.GRID_SIZE);
             sky.integer("LayerCount", settings.layers().size());
@@ -296,17 +372,61 @@ public final class CloudVolumeRenderer implements AutoCloseable {
                         phase((cirrus ? worldX * .25 + worldZ * .5 : worldX) / layer.detailScale() + index * .173 + frame.timeSeconds() * .001),
                         phase(frame.timeSeconds() * -.0007 + index * .31),
                         phase(worldZ * (cirrus ? 2.7 : 1) / layer.detailScale() + index * .419)));
+                // Compute each frequency's phase in double precision before
+                // reducing modulo one. Multiplying a reduced base phase by a
+                // noninteger detail frequency creates seams on window shifts.
+                double fx = (cirrus ? worldX * .25 + worldZ * .5 : worldX) / layer.detailScale() + index * .173 + frame.timeSeconds() * .001;
+                double fy = frame.timeSeconds() * -.0007 + index * .31;
+                double fz = worldZ * (cirrus ? 2.7 : 1) / layer.detailScale() + index * .419;
+                sky.vector("LayerDetailOrigin[" + index + "]", new Vector3f(
+                        phase(fx * optics.detailFrequency() * (cirrus ? .5 : 1)),
+                        phase(fy * optics.detailFrequency()), phase(fz * optics.detailFrequency() * (cirrus ? 2 : 1))));
             }
-            sky.integer("StormLayer", stormLayer); sky.integer("LightSteps", settings.quality().lightSteps);
-            sky.integer("SampleBudget", settings.quality().sampleBudget * (adaptiveMarching ? 1 : 2)); triangle();
+            sky.integer("StormLayer", stormLayer); sky.integer("LightSteps", optics.lightSteps(settings.quality()));
+            sky.integer("SampleBudget", Math.min(512, optics.viewSteps(settings.quality()) * (adaptiveMarching ? 1 : 2))); triangle();
+            ColorTarget reconstructed = history == null ? color : resolveHistory(frame, color, history);
             GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, state.draw);
             GL11.glViewport(state.viewport[0], state.viewport[1], target.key.width, target.key.height);
-            GL11.glEnable(GL11.GL_BLEND);
-            upsample.use(); bind2d(0, target.depth); bind2d(1, color.texture);
-            upsample.integer("SceneDepth", 0); upsample.integer("CloudColor", 1); upsample.matrix("InverseViewProjection", inverse);
-            upsample.viewport(state.viewport[0], state.viewport[1], target.key.width, target.key.height);
-            upsample.pair("CloudSize", color.width, color.height);
-            upsample.pair("DepthFootprint", .49f / color.width, .49f / color.height); triangle();
+            GL11.glDisable(GL11.GL_BLEND);
+            skyComposite.use(); bind2d(0, target.depth); bind2d(1, reconstructed.texture); bind2d(2, sceneColor.texture);
+            skyComposite.integer("SceneDepth", 0); skyComposite.integer("CloudColor", 1); skyComposite.integer("SceneColor", 2);
+            skyComposite.integer("DisplayColorSpace", optics.colorSpace() == SkyCloudRendering.ColorSpace.DISPLAY_SRGB ? 1 : 0);
+            skyComposite.matrix("InverseViewProjection", inverse);
+            skyComposite.viewport(state.viewport[0], state.viewport[1], target.key.width, target.key.height);
+            skyComposite.pair("CloudSize", color.width, color.height);
+            skyComposite.pair("DepthFootprint", .49f / color.width, .49f / color.height); triangle();
+        }
+
+        private SkyTarget resolveHistory(SkyCloudField.Frame frame, SkyTarget current, History history) {
+            var controls = frame.settings().rendering().temporal();
+            double dt = frame.timeSeconds() - history.time;
+            var delta = new Vector3d(camera).sub(history.camera);
+            boolean valid = history.settings != null && history.settings.equals(frame.settings())
+                    && dt >= 0 && dt <= controls.maxTimeGap() && delta.length() <= controls.maxCameraMovement()
+                    && Math.abs(history.coverage - frame.coverage()) < .005
+                    && history.sun.distanceSquared(sun) < .001f && history.sunColor.distanceSquared(sunColor) < .001f
+                    && history.ambient.distanceSquared(ambient) < .001f && history.atmosphere.distanceSquared(atmosphere) < .001f;
+            SkyTarget previous = history.targets[history.read], next = history.targets[1 - history.read];
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, next.fbo);
+            GL11.glViewport(0, 0, next.width, next.height); GL11.glDisable(GL11.GL_BLEND);
+            historyResolve.use();
+            bind2d(0, current.texture); bind2d(1, current.metadata); bind2d(3, previous.texture); bind2d(4, previous.metadata);
+            historyResolve.integer("CurrentColor", 0); historyResolve.integer("CurrentMetadata", 1);
+            historyResolve.integer("HistoryColor", 3); historyResolve.integer("HistoryMetadata", 4);
+            historyResolve.matrix("InverseViewProjection", inverse); historyResolve.matrix("PreviousViewProjection", history.viewProjection);
+            historyResolve.vector("CameraAndWindDelta", new Vector3f((float) (delta.x - frame.settings().windX() * dt),
+                    (float) delta.y, (float) (delta.z - frame.settings().windZ() * dt)));
+            historyResolve.pair("CloudSize", current.width, current.height);
+            historyResolve.scalar("HistoryWeight", controls.historyWeight());
+            historyResolve.scalar("RelativeDepthTolerance", controls.relativeDepthTolerance());
+            historyResolve.integer("HistoryValid", valid ? 1 : 0);
+            historyResolve.integer("DebugHistory", frame.settings().rendering().debug() == SkyCloudRendering.DebugView.HISTORY_VALIDITY ? 1 : 0);
+            triangle();
+            history.read = 1 - history.read; history.frames++;
+            history.camera.set(camera); history.time = frame.timeSeconds(); history.settings = frame.settings();
+            history.coverage = frame.coverage(); history.viewProjection.set(viewProjection);
+            history.sun.set(sun); history.sunColor.set(sunColor); history.ambient.set(ambient); history.atmosphere.set(atmosphere);
+            return next;
         }
 
         private void densityUniforms(Program shader, CumulonimbusVolume.Frame frame, double time) {
@@ -381,8 +501,18 @@ public final class CloudVolumeRenderer implements AutoCloseable {
     private interface Target extends AutoCloseable { @Override void close(); }
     private static final class ViewTarget implements Target {
         final ViewKey key; int depth, fbo;
+        private ColorTarget scene;
         final Map<Integer, ColorTarget> colors = new HashMap<>();
+        final Map<Integer, SkyTarget> skyColors = new HashMap<>();
         ViewTarget(ViewKey key) { this.key = key; }
+        ColorTarget scene() {
+            if (scene == null) {
+                var next = new ColorTarget(key.width, key.height);
+                try { next.allocate(); scene = next; }
+                catch (RuntimeException | Error failure) { next.close(); throw failure; }
+            }
+            return scene;
+        }
         ColorTarget color(int divisor) {
             var result = colors.get(divisor);
             if (result != null) return result;
@@ -390,8 +520,17 @@ public final class CloudVolumeRenderer implements AutoCloseable {
             try { result.allocate(); colors.put(divisor, result); return result; }
             catch (RuntimeException | Error failure) { result.close(); throw failure; }
         }
+        SkyTarget skyColor(int divisor) {
+            var result = skyColors.get(divisor);
+            if (result != null) return result;
+            result = new SkyTarget((key.width + divisor - 1) / divisor, (key.height + divisor - 1) / divisor, false);
+            try { result.allocate(); skyColors.put(divisor, result); return result; }
+            catch (RuntimeException | Error failure) { result.close(); throw failure; }
+        }
         @Override public void close() {
             colors.values().forEach(ColorTarget::close); colors.clear();
+            skyColors.values().forEach(SkyTarget::close); skyColors.clear();
+            if (scene != null) { scene.close(); scene = null; }
             if (fbo != 0) GL30.glDeleteFramebuffers(fbo); if (depth != 0) GL11.glDeleteTextures(depth); fbo = depth = 0;
         }
     }
@@ -404,6 +543,43 @@ public final class CloudVolumeRenderer implements AutoCloseable {
         @Override public void close() {
             if (fbo != 0) GL30.glDeleteFramebuffers(fbo); if (texture != 0) GL11.glDeleteTextures(texture); fbo = texture = 0;
         }
+    }
+    private static final class SkyTarget extends ColorTarget {
+        int metadata;
+        final boolean linear;
+        SkyTarget(int width, int height, boolean linear) { super(width, height); this.linear = linear; }
+        @Override void allocate() {
+            super.allocate();
+            if (linear) {
+                bind2d(1, texture);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+            }
+            metadata = texture2d(2, GL30.GL_RG32F, GL30.GL_RG, GL11.GL_FLOAT, width, height, false);
+            GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT1, GL11.GL_TEXTURE_2D, metadata, 0);
+            GL20.glDrawBuffers(new int[]{GL30.GL_COLOR_ATTACHMENT0, GL30.GL_COLOR_ATTACHMENT1});
+            if (GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE)
+                throw new IllegalStateException("Cloud metadata framebuffer incomplete");
+        }
+        @Override public void close() {
+            if (metadata != 0) GL11.glDeleteTextures(metadata); metadata = 0; super.close();
+        }
+    }
+    private static final class History implements Target {
+        final int width, height;
+        final SkyTarget[] targets = new SkyTarget[2];
+        final Matrix4f viewProjection = new Matrix4f();
+        final Vector3d camera = new Vector3d();
+        final Vector3f sun = new Vector3f(), sunColor = new Vector3f(), ambient = new Vector3f(), atmosphere = new Vector3f();
+        int read; long frames; double time; float coverage;
+        SkyCloudSettings settings;
+        History(int width, int height) {
+            this.width = width; this.height = height;
+            try {
+                for (int i = 0; i < 2; i++) { targets[i] = new SkyTarget(width, height, true); targets[i].allocate(); }
+            } catch (RuntimeException | Error failure) { close(); throw failure; }
+        }
+        @Override public void close() { for (var target : targets) if (target != null) target.close(); }
     }
     private static final class LightTarget extends ColorTarget {
         final int grid;
@@ -438,7 +614,11 @@ public final class CloudVolumeRenderer implements AutoCloseable {
     }
     private static final class Program implements AutoCloseable {
         final int id; final Map<String, Integer> uniforms = new HashMap<>();
-        Program(String fragment) { id = GlslProgram.link(GlslProgram.FULLSCREEN_VERTEX, fragment); }
+        Program(String fragment) { this(fragment, false); }
+        Program(String fragment, boolean metadata) {
+            id = GlslProgram.link(GlslProgram.FULLSCREEN_VERTEX, fragment, Map.of(), new String[0],
+                    metadata ? Map.of("fragColor", 0, "cloudMetadata", 1) : Map.of("fragColor", 0));
+        }
         int uniform(String name) { return uniforms.computeIfAbsent(name, key -> GL20.glGetUniformLocation(id, key)); }
         void use() { GL20.glUseProgram(id); }
         void integer(String name, int value) { GL20.glUniform1i(uniform(name), value); }

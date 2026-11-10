@@ -34,7 +34,7 @@ layers. The `SCATTERED`, `CLOUDY`, and `OVERCAST` presets use coverage controls 
 scattered cloud keeps large areas of clear sky, cloudy weather connects the cloud clusters, and overcast forms a continuous sheet.
 
 `SkyCloudSettings` parameters are the seed, weather cell size, raw cloud base, maximum cumulonimbus thickness, coverage control,
-maximum display distance, X/Z wind speed, quality, and a layer list. The nine-parameter constructor generates three default layers from the cloud base and thickness.
+maximum display distance, X/Z wind speed, quality, a layer list, and rendering controls. The nine-parameter constructor generates three default layers from the cloud base and thickness.
 The actual height of each layer is controlled by `SkyCloudLayer`, and the list can contain several layers of the same type; changing the quality,
 coverage, or seed keeps the layer list. Wind speed uses world units per second.
 `coverage=0` hides the clouds completely in clear weather, and rain increases the coverage; the sun direction, day/night, and weather colors come from the world.
@@ -57,6 +57,28 @@ Each observer position uses a 32×32 weather window. The window relocates with t
 unchanged; a standalone camera view can observe its own local window at a distant position. Near the world border, the camera position is first subtracted in double,
 then converted to GPU coordinates. `Frame.weatherCellCount()` only counts the candidate occupancy of weather control
 cells; a continuous cloud body has no per-cloud numbering, and that statistic cannot represent the on-screen coverage either. Each layer generates its weather independently.
+
+`SkyCloudRendering` controls extinction, erosion, detail frequency, forward/backward scattering, approximate multiple
+scattering, ambient light, sample counts, resolution, debug views, color space, and temporal accumulation. Extinction
+uses inverse world units; zero sampling or resolution values select the quality preset. Settings can change at runtime:
+
+```java
+import lib.kasuga.rendering.cloud.SkyCloudRendering;
+import lib.kasuga.rendering.cloud.SkyCloudTemporal;
+
+var rendering = SkyCloudRendering.DEFAULT
+        .withDensityDetail(.009f, .12f, 4)
+        .withScattering(.55f, -.25f, .15f, .5f, 1)
+        .withSampling(160, 4, 2, true)
+        .withTemporal(SkyCloudTemporal.STABLE);
+CloudEffects.sky().settings(CloudEffects.sky().settings()
+        .withWind(8, 3).withRendering(rendering));
+```
+
+`SkyCloudTemporal.STABLE` defaults to weight .65, a maximum time gap of .2 seconds, camera displacement of 16 blocks,
+and relative depth tolerance .05; `OFF` disables history. `withDebug(...)` selects `DENSITY`, `TRANSMITTANCE`,
+`RADIANCE`, `MARCH_STEPS`, or `HISTORY_VALIDITY`; `NONE` restores the normal image. `withColorSpace(...)` selects
+`DISPLAY_SRGB` or `LINEAR_HDR` and should match the host target's color space.
 
 ## Creating a single cumulonimbus
 
@@ -97,20 +119,32 @@ The weather window and the GPU textures use a cache of at most 8 entries, so tra
 
 A shared shape texture preserves the cloud tower and anvil envelopes of the cumulonimbus; periodically
 generated Perlin-Worley/Worley noise provides the body, rolling, and erosion of the continuous layers. Each layer uses its own weather,
-noise phase, and shape scale, and thin clouds use a stretched anisotropic shape. The cloud field samples nearby
-density along the sun direction to approximate self-shadowing, and uses density scattering and highlight compression to preserve the relief of the cloud body;
+noise phase, and shape scale, and thin clouds use a stretched anisotropic shape. Quadratically spaced light intervals
+integrate to layer exits for soft self-shadowing. Beer–Lambert extinction accumulates premultiplied radiance and
+transmittance; dual Henyey–Greenstein lobes control forward/backward scattering. Three approximate scattering orders
+progressively halve extinction and anisotropy with normalized energy.
 a single cumulonimbus uses a cached lighting voxel atlas, usually updated every 0.25 seconds.
 
 For the cloud field, FAST/BALANCED/HIGH use width and height resolutions of 1/3, 1/2, and 1 of the original viewport, respectively;
-the total budget per ray is 112/160/256 samples, with 1/2/3 local lighting samples; high thin clouds use simplified lighting.
+the total budget per ray is 112/160/256 samples, with 2/4/6 light samples.
 For single-cloud quality, the corresponding resolutions are 1/3, 1/2, and 1, with at most 48/80/128 fine steps.
 Low-resolution results are upscaled with conservative depth and depth-aware interpolation. Both paths clip at the opaque scene
 depth, write no depth, do not limit the sky clouds by the terrain far plane, and restore the host GL state.
 
+RGBA16F stores radiance/opacity and RG32F stores extinction-weighted mean cloud distance plus the scene-ray endpoint.
+Stable view IDs enable independent ping-pong histories. Reprojection compensates camera movement and wind, rejects incompatible
+depth/endpoints, boundaries, time, lighting and settings, and clamps history to the current 3×3 neighborhood. Teleports,
+world changes, resize and lighting discontinuities reset history; at most eight views are cached. Anonymous views or
+historyWeight=0 keep the independent spatial path, and empty current rays never resurrect old cloud silhouettes.
+Resize replaces and releases old history targets; cache eviction, world changes, and renderer shutdown also release history textures.
+
+Composition snapshots host color and evaluates `Lcloud + Tcloud * Lscene` in linear light. The default explicitly decodes and
+encodes display sRGB; linear HDR mode does not tone-map or clamp radiance. The host owns final exposure.
+
 Distant views add atmospheric perspective and distance fade. There is currently no long-range cross-cloud shadowing, no ground cloud
-shadows, no temporal reprojection, and no complete weather simulation; compositing with transparent objects such as water follows render
-stages. The extra gbuffer channels of an Iris shader pack are not yet verified, and acceptance with the shader pack
-disabled cannot be used to infer its compatibility.
+shadows, and no complete weather simulation; compositing with transparent objects such as water follows render stages. The extra
+gbuffer channels of an Iris shader pack are not yet verified, and acceptance with the shader pack disabled cannot be used to infer
+its compatibility.
 
 ## Examples and verification
 
@@ -137,25 +171,26 @@ Images and reports are in `modules/modelling/build/reports/renderHarness/`.
 ```bash
 ./gradlew renderingReleaseCheck :modules:modelling:renderGlTest --offline --no-daemon
 ./gradlew :modules:modelling:renderBench -PkasugaRenderScene=sky \
-  -PkasugaRenderWidth=1920 -PkasugaRenderHeight=1080 \
-  -PkasugaRenderWarmup=8 -PkasugaRenderFrames=24 --offline --no-daemon
+  -PkasugaRenderWidth=1280 -PkasugaRenderHeight=720 \
+  -PkasugaRenderWarmup=20 -PkasugaRenderFrames=60 --offline --no-daemon
 ```
 
 The benchmark uses `GL_TIME_ELAPSED` and covers the depth copy, the complete cloud field, and compositing, across ground, scattered cloud, overcast,
 inside the cloud layer, rain, and a distant observer position. This is GPU time for a standalone scene and cannot be converted into a full Minecraft frame FPS.
 
-On 2026-10-04, on an Apple M3 Max, 1920×1080, BALANCED, with 16 warm-up frames and 64 sampled frames:
+On 2026-11-09, on an Apple M3 Max using OpenGL 4.1 Metal, 1280×720, with 20 warm-up frames and 60 sampled frames:
 
 | View / state | GPU P50 | GPU P95 |
 | --- | ---: | ---: |
-| Ground, default multi-layer | 4.72 ms | 5.99 ms |
-| Scattered | 4.77 ms | 5.84 ms |
-| Overcast | 1.65 ms | 1.97 ms |
-| Inside the cloud layer | 7.21 ms | 8.56 ms |
-| Rain | 2.01 ms | 3.18 ms |
-| Distant observer position | 3.78 ms | 5.19 ms |
+| FAST ground | 2.05 ms | 2.35 ms |
+| BALANCED ground | 5.86 ms | 6.43 ms |
+| BALANCED sparse | 3.67 ms | 4.22 ms |
+| BALANCED inside | 6.80 ms | 9.01 ms |
+| BALANCED temporal | 5.89 ms | 6.39 ms |
+| HIGH ground | 25.91 ms | 29.38 ms |
+| HIGH inside | 44.66 ms | 50.57 ms |
 
-Overcast is faster because occlusion makes the ray marching end earlier. The values come from a standalone run of `renderBench`;
+The HIGH setting is substantially more expensive in the dense and inside views, so BALANCED remains the practical default. The values come from a standalone run of `renderBench`;
 the report is at `build/reports/renderHarness/bench/report.json`, relative to the module directory.
 
 The pure-JVM regression checks per-layer weather independence, configuration immutability, weather continuity, spatial overlap,

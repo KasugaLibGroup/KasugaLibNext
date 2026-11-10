@@ -22,6 +22,20 @@ import java.util.Objects;
 public interface MinecraftModelSource extends AutoCloseable {
     Snapshot snapshot(LayerLayout layout, float partialTick);
 
+    /** Keeps per-layer parts even when the model is fully assembled, for display animation. */
+    default Snapshot snapshotLayers(LayerLayout layout, float partialTick) { return snapshot(layout, partialTick); }
+
+    /** Nonempty source-local layers. Adapters may override without building a render snapshot. */
+    default List<Integer> layerCoordinates(LayerLayout.Axis axis) {
+        var frame = snapshot(LayerLayout.ASSEMBLED.axis(axis).separation(.000001), 0);
+        return frame == null ? List.of() : frame.parts().stream().map(Part::layer).distinct().sorted().toList();
+    }
+
+    /** Counts source blocks, never rendered faces; models without block data return an empty map. */
+    default java.util.Map<Integer, java.util.Map<net.minecraft.resources.ResourceLocation, Integer>> blockStatistics(LayerLayout.Axis axis) {
+        return java.util.Map.of();
+    }
+
     @Override default void close() {}
 
     @FunctionalInterface

@@ -27,20 +27,31 @@ without limit.
 A shared shape texture keeps the cumulonimbus tower and anvil envelopes; periodic
 Perlin-Worley/Worley noise generated in the background provides the body, billowing, and erosion of the
 continuous cloud layers. Each layer uses its own weather, noise phase, and shape scale, and thin clouds use a
-stretched, anisotropic shape. The cloud field samples nearby density along the sun direction to approximate
-self-shadowing and uses density scattering with highlight compression to keep the relief of the cloud body;
-a single cumulonimbus uses a cached lighting voxel atlas, usually updated every 0.25 seconds.
+stretched, anisotropic shape. Quadratically spaced light intervals integrate to layer exits for soft self-shadowing.
+Beer–Lambert extinction accumulates premultiplied radiance and transmittance front to back, with empty-envelope skipping.
+Dual Henyey–Greenstein lobes control forward/backward scattering. Three approximate scattering orders progressively
+halve extinction and anisotropy, with decaying normalized energy; this is not a full radiative-transfer solver.
+A single cumulonimbus uses a cached lighting voxel atlas, usually updated every 0.25 seconds.
 
 For the cloud field, FAST/BALANCED/HIGH use width and height resolutions of 1/3, 1/2, and 1 of the original
-viewport; the total budget per ray is 112/160/256 samples and the local lighting samples are 1/2/3; thin high
-clouds use simplified lighting.
+viewport; the total budget per ray is 112/160/256 samples, with 2/4/6 light samples.
 The corresponding resolutions for per-cloud quality are 1/3, 1/2, and 1, with at most 48/80/128 fine steps.
 A low-resolution result is upscaled with conservative depth and depth-aware interpolation. Both paths truncate at
 the opaque scene depth and write no depth; sky clouds are not limited by the terrain far plane, and the host GL
-state is restored.
+state is restored. Infinite perspective far planes are also supported.
 
-Long-range views add atmospheric perspective and distance fade. There is currently no long-distance shadowing
-across clouds, no ground cloud shadow, no temporal reprojection, and no full weather simulation; translucent
+RGBA16F stores radiance/opacity; RG32F stores extinction-weighted mean cloud distance and the scene-ray endpoint.
+Stable view IDs enable independent ping-pong histories. Reprojection compensates camera movement and wind, rejects
+incompatible depth/endpoints, boundaries, time, lighting and settings, and clamps history to the current 3×3 neighborhood.
+Teleports, world changes, resize and lighting discontinuities reset history. At most eight views are cached. Anonymous
+views or historyWeight=0 keep the independent spatial path. Mean depth approximates separated layers, so rejection is
+conservative; empty current rays never resurrect old silhouettes.
+
+Composition snapshots host color and evaluates `Lcloud + Tcloud * Lscene` in linear light. The default explicitly
+decodes/encodes display sRGB; linear HDR mode does not tone-map or clamp radiance. The host owns final exposure.
+
+Long-range views add host-sky atmospheric perspective and distance fade. Ground cloud shadows and complete
+weather/spectral-atmosphere simulation remain extensions; translucent
 objects such as water are composited with the clouds by render stage. The extra gbuffer channels of an Iris
 shader pack are not verified yet, so acceptance with the shader pack disabled does not imply compatibility.
 

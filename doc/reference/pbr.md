@@ -70,7 +70,7 @@ atlas 标识由“源纹理 + 最终 PBR 参数”共同决定：
 - 同一源图和 profile 的内容哈希会在一次加载中复用。
 - `BufferedImage` 直接转换为 `NativeImage`，不再先编码为内存 PNG 再解码。
 - CPU fallback 同时最多执行两个 bake，避免占满所有资源加载线程。
-- 世界内资源重载采用分代发布：新模型先在后台构建，atlas 和 sprite 映射全部 ready 后再在游戏线程原子替换；重载期间暂停 Kasuga 模型绘制，并清理被替换模型的旧 backend instance。
+- 世界内资源重载采用分代发布：新模型先在后台构建，atlas 和 sprite 映射全部 ready 后，在游戏线程原子切换跨管线的模型代；重载期间暂停 Kasuga 模型绘制，并清理被替换模型的旧 backend instance。纹理 atlas 和模型加载器的辅助索引不属于模型代事务，发布失败不会回滚这些资源。
 
 ## 3. 可观测性
 

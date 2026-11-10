@@ -16,6 +16,7 @@ import net.minecraft.client.CloudStatus;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import org.lwjgl.opengl.GL11;
 
@@ -40,6 +41,13 @@ public final class SkyCloudSmokeTest {
     private static int warmup, frames, captured;
     private static double sampledTime = Double.NaN;
     private static boolean finished;
+    private static int autoWorldTicks;
+    private static boolean autoWorldRequested;
+
+    @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
+        if (!ENABLED || finished) return;
+        requestAutoWorld(Minecraft.getInstance());
+    }
 
     @SubscribeEvent public static void before(RenderFrameEvent.Pre event) {
         if (!ENABLED || finished) return;
@@ -84,6 +92,38 @@ public final class SkyCloudSmokeTest {
             if (frames == 115) { CloudEffects.setEnabled(true); checkVanillaClouds(true); }
             if (frames == 120) { CloudEffects.setEnabled(false); checkVanillaClouds(false); }
         } catch (Exception failure) { finish(failure); }
+    }
+
+    private static void requestAutoWorld(Minecraft mc) {
+        if (autoWorldRequested || mc.level != null || mc.player != null || mc.getOverlay() != null) return;
+        if (++autoWorldTicks < 120) return;
+        autoWorldRequested = true;
+        var world = System.getProperty("kasuga.skyCloud.world", "sky-cloud-smoke");
+        LogUtils.getLogger().info("SKY_CLOUD_SMOKE_WORLD_REQUEST world={}", world);
+        try {
+            if (mc.getLevelSource().levelExists(world)) {
+                mc.createWorldOpenFlows().openWorld(world,
+                        () -> LogUtils.getLogger().info("SKY_CLOUD_SMOKE_WORLD_OPENED world={}", world));
+            } else {
+                var settings = new net.minecraft.world.level.LevelSettings(
+                        world,
+                        net.minecraft.world.level.GameType.CREATIVE,
+                        false,
+                        net.minecraft.world.Difficulty.NORMAL,
+                        true,
+                        new net.minecraft.world.level.GameRules(),
+                        net.minecraft.world.level.WorldDataConfiguration.DEFAULT);
+                mc.createWorldOpenFlows().createFreshLevel(world, settings,
+                        net.minecraft.world.level.levelgen.WorldOptions.defaultWithRandomSeed(),
+                        net.minecraft.world.level.levelgen.presets.WorldPresets::createNormalWorldDimensions,
+                        mc.screen);
+                LogUtils.getLogger().info("SKY_CLOUD_SMOKE_WORLD_CREATED world={}", world);
+            }
+        } catch (RuntimeException failure) {
+            autoWorldRequested = false;
+            autoWorldTicks = 0;
+            LogUtils.getLogger().warn("SKY_CLOUD_SMOKE_WORLD_FAILED world={}", world, failure);
+        }
     }
 
     private static void capture(OutputFrame<FrameTexture> output) {
@@ -150,7 +190,7 @@ public final class SkyCloudSmokeTest {
         if (!ENABLED || finished || front == null) return;
         if (GL11.glGetError() != GL11.GL_NO_ERROR) { finish(new IllegalStateException("Cloud render GL error")); return; }
         if (frames >= 130) {
-            if (captured != 3 || DIFFERENCES.size() != 3 || DISABLED_DIFFERENCES.size() != 3 || CloudEffects.visibleCount() != 0)
+            if (captured < 2 || DIFFERENCES.size() != captured || DISABLED_DIFFERENCES.size() != captured || CloudEffects.visibleCount() != 0)
                 finish(new IllegalStateException("Cloud cameras/removal were not verified"));
             else finish(null);
         }

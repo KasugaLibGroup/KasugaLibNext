@@ -2,8 +2,9 @@ package test.kasuga.modelling.demo.preview;
 
 import com.mojang.logging.LogUtils;
 import lib.kasuga.KasugaLib;
-import lib.kasuga.rendering.models.mc.backend.GuiModelPreview;
-import lib.kasuga.rendering.models.mc.backend.ui.MinecraftModelPreviewScreen;
+import lib.kasuga.rendering.models.mc.backend.ui.WorldDisplayScreen;
+import lib.kasuga.rendering.models.mc.backend.ui.BlueprintImportScreen;
+import lib.kasuga.rendering.models.mc.scene.display.*;
 import lib.kasuga.rendering.models.mc.scene.*;
 import lib.kasuga.scene.SceneModels;
 import net.minecraft.client.Minecraft;
@@ -65,6 +66,7 @@ public final class MinecraftPreviewDemo {
     @SubscribeEvent public static void commands(RegisterClientCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("kasuga_model_preview")
                 .executes(context -> { Minecraft.getInstance().tell(MinecraftPreviewDemo::open); return 1; })
+                .then(Commands.literal("import").executes(context -> { openImport(); return 1; }))
                 .then(Commands.literal("clear").executes(context -> { clearWorld(); return 1; })));
     }
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
@@ -79,19 +81,24 @@ public final class MinecraftPreviewDemo {
         if (scene != null) scene.close();
         scene = null; sceneLevel = null;
     }
+    public static void openImport() {
+        Minecraft.getInstance().setScreen(new BlueprintImportScreen((next,display)->{
+            clearWorld();scene=next;sceneLevel=Minecraft.getInstance().level;
+        },MinecraftPreviewDemo::open));
+    }
     private static void showWorld(Example choice) throws Exception {
         var mc = Minecraft.getInstance();
         MinecraftModelSource source = choice.factory().create();
         try {
             var bounds = source.snapshot(LayerLayout.ASSEMBLED, 0).bounds();
-            float scale = 3 / (float) Math.max(.001, Math.max(bounds.maxX() - bounds.minX(),
-                    Math.max(bounds.maxY() - bounds.minY(), bounds.maxZ() - bounds.minZ())));
-            var center = bounds.minimum().add(bounds.maximum()).mul(.5f);
             var camera = mc.gameRenderer.getMainCamera();
-            Vec3 position = camera.getPosition().add(new Vec3(camera.getLookVector()).scale(6));
+            Vec3 position = camera.getPosition().add(new Vec3(camera.getLookVector()).scale(3.5));
             clearWorld(); scene = SceneModels.open(mc.level); sceneLevel = mc.level;
-            scene.add(source, position).transform(new Matrix4f().scale(scale).translate(-center.x, -center.y, -center.z));
-            mc.setScreen(null);
+            var display=new ModelDisplayTarget(source).fit(3).autoPanel();
+            var root=new WorldDisplayScene();root.add(display);
+            root.transform(new Matrix4f().rotate(camera.rotation()));
+            scene.add(root, position);
+            mc.setScreen(new WorldDisplayScreen(Component.literal(choice.name()),root,display,true,false,MinecraftPreviewDemo::open));
         } catch (Exception failure) { source.close(); clearWorld(); throw failure; }
     }
     private static final class Selector extends Screen {
@@ -102,13 +109,11 @@ public final class MinecraftPreviewDemo {
             for (var choice : examples()) {
                 addRenderableWidget(Button.builder(Component.literal(choice.name()), button -> run(() -> {
                     var source = choice.factory().create();
-                    GuiModelPreview preview = null;
+                    ModelDisplayTarget target = null;
                     try {
-                        var bounds = source.snapshot(LayerLayout.ASSEMBLED, 0).bounds();
-                        preview = new GuiModelPreview(source);
-                        minecraft.setScreen(new MinecraftModelPreviewScreen(Component.literal(choice.name()), preview,
-                                (int) Math.floor(bounds.minY()), (int) Math.ceil(bounds.maxY()) - 1, MinecraftPreviewDemo::open));
-                    } catch (Exception failure) { if (preview != null) preview.close(); else source.close(); throw failure; }
+                        target=new ModelDisplayTarget(source);
+                        minecraft.setScreen(new WorldDisplayScreen(Component.literal(choice.name()),target,target,false,true,MinecraftPreviewDemo::open));
+                    } catch (Exception failure) { if (target != null) target.close(); else source.close(); throw failure; }
                 })).bounds(width / 2 - 170, y, 270, 20).build());
                 addRenderableWidget(Button.builder(Component.literal(choice.inspection() == null ? "World" : "Inspect"), button -> run(() -> {
                     if (choice.inspection() == null) showWorld(choice);
@@ -121,6 +126,8 @@ public final class MinecraftPreviewDemo {
                     .bounds(width / 2 - 170, y + 6, 340, 20).build());
             addRenderableWidget(Button.builder(Component.literal("Return to game / 返回游戏"), button -> onClose())
                     .bounds(width / 2 - 170, y + 32, 340, 20).build());
+            addRenderableWidget(Button.builder(Component.literal("Import blueprint / 导入蓝图"),button->openImport())
+                    .bounds(width/2-170,y+58,340,20).build());
         }
         @FunctionalInterface private interface Action { void run() throws Exception; }
         private void run(Action action) {

@@ -15,6 +15,7 @@ final class CloudGlState implements AutoCloseable {
     private final boolean depth = GL11.glIsEnabled(GL11.GL_DEPTH_TEST), blend = GL11.glIsEnabled(GL11.GL_BLEND);
     private final boolean cull = GL11.glIsEnabled(GL11.GL_CULL_FACE), scissor = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
     private final boolean stencil = GL11.glIsEnabled(GL11.GL_STENCIL_TEST), discard = GL11.glIsEnabled(GL30.GL_RASTERIZER_DISCARD);
+    private final boolean framebufferSrgb = GL11.glIsEnabled(GL30.GL_FRAMEBUFFER_SRGB);
     private final boolean depthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
     private final byte[] colorMask = new byte[4];
     private final int srcRgb = GL11.glGetInteger(GL14.GL_BLEND_SRC_RGB), dstRgb = GL11.glGetInteger(GL14.GL_BLEND_DST_RGB);
@@ -50,6 +51,7 @@ final class CloudGlState implements AutoCloseable {
         GL20.glUseProgram(program); GL30.glBindVertexArray(vao);
         enable(GL11.GL_DEPTH_TEST, depth); enable(GL11.GL_BLEND, blend); enable(GL11.GL_CULL_FACE, cull); enable(GL11.GL_SCISSOR_TEST, scissor);
         enable(GL11.GL_STENCIL_TEST, stencil); enable(GL30.GL_RASTERIZER_DISCARD, discard);
+        enable(GL30.GL_FRAMEBUFFER_SRGB, framebufferSrgb);
         GL11.glDepthMask(depthMask); GL11.glColorMask(colorMask[0] != 0, colorMask[1] != 0, colorMask[2] != 0, colorMask[3] != 0);
         GL14.glBlendFuncSeparate(srcRgb, dstRgb, srcAlpha, dstAlpha); GL20.glBlendEquationSeparate(eqRgb, eqAlpha);
         for (int i = 0; i < unpack.length; i++) GL11.glPixelStorei(UNPACK_PARAMETERS[i], unpack[i]);
