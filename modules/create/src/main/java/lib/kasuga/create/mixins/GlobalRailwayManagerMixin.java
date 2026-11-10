@@ -5,14 +5,14 @@ import com.simibubi.create.content.trains.GlobalRailwayManager;
 import com.simibubi.create.content.trains.graph.TrackEdge;
 import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.graph.TrackNode;
-import cpw.mods.util.Lazy;
 import lib.kasuga.KasugaLib;
 import lib.kasuga.create.content.train.graph.RailwayManager;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.Level;
-import org.checkerframework.common.aliasing.qual.Unique;
+import net.neoforged.neoforge.common.util.Lazy;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -24,7 +24,8 @@ import java.util.UUID;
 @Mixin(value = GlobalRailwayManager.class, remap = false)
 public class GlobalRailwayManagerMixin {
 
-    @Unique protected static Lazy<RailwayManager> railwayManager = Lazy.of(()->KasugaLib.getBean(RailwayManager.class));
+    @Unique private static Lazy<RailwayManager> railwayManager =
+            Lazy.of(() -> KasugaLib.getBean(RailwayManager.class));
 
 
     @Shadow public Map<UUID, TrackGraph> trackNetworks;
