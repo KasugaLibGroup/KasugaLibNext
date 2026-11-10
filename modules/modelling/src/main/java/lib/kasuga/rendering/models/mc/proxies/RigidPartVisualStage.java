@@ -9,6 +9,7 @@ import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
+import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +34,7 @@ public final class RigidPartVisualStage implements AutoCloseable {
     private final ResourceLocation instanceBase;
     private final Supplier<@Nullable StateMachine<?>> machine;
     private final PartHandleFactory handleFactory;
+    private final Vector3f worldLightOffset;
     private final List<Part> parts;
     private final ModelGroupFrameState frameState = new ModelGroupFrameState();
     private final Object publicationLock = new Object();
@@ -48,11 +50,16 @@ public final class RigidPartVisualStage implements AutoCloseable {
             List<ModelPart> specs,
             Supplier<@Nullable StateMachine<?>> machine,
             Transform initialRoot,
+            Vector3f worldLightOffset,
             PartHandleFactory handleFactory
     ) {
         this.instanceBase = Objects.requireNonNull(instanceBase, "instanceBase");
         this.machine = Objects.requireNonNull(machine, "machine");
         this.handleFactory = Objects.requireNonNull(handleFactory, "handleFactory");
+        this.worldLightOffset = new Vector3f(Objects.requireNonNull(worldLightOffset, "worldLightOffset"));
+        if (!this.worldLightOffset.isFinite()) {
+            throw new IllegalArgumentException("worldLightOffset must be finite");
+        }
         Objects.requireNonNull(initialRoot, "initialRoot");
         RootSnapshot root = new RootSnapshot(initialRoot, initialRoot);
         this.evaluationRoot = root;
@@ -64,7 +71,7 @@ public final class RigidPartVisualStage implements AutoCloseable {
                 PartMotionSampler sampler = new PartMotionSampler(spec.motion());
                 sampler.initialSnapshot(machine.get());
                 RigidPartBinding target = new RigidPartBinding(
-                        index, sampler, machine, frameState, spec.local());
+                        index, sampler, machine, frameState, spec.local(), this.worldLightOffset);
                 TargetBinding<RigidPartOutput> binding = new TargetBinding<>(
                         target,
                         ignored -> target.evaluate(evaluationRoot),
@@ -92,9 +99,31 @@ public final class RigidPartVisualStage implements AutoCloseable {
             Supplier<@Nullable StateMachine<?>> machine,
             Transform initialRoot
     ) {
-        this(instanceBase, specs, machine, initialRoot,
+        this(instanceBase, specs, machine, initialRoot, new Vector3f(),
                 (part, instanceLoc) -> McModelHandle.of(
                         part.model(), part.modelName(), instanceLoc, null));
+    }
+
+    public RigidPartVisualStage(
+            ResourceLocation instanceBase,
+            List<ModelPart> specs,
+            Supplier<@Nullable StateMachine<?>> machine,
+            Transform initialRoot,
+            Vector3f worldLightOffset
+    ) {
+        this(instanceBase, specs, machine, initialRoot, worldLightOffset,
+                (part, instanceLoc) -> McModelHandle.of(
+                        part.model(), part.modelName(), instanceLoc, null));
+    }
+
+    public RigidPartVisualStage(
+            ResourceLocation instanceBase,
+            List<ModelPart> specs,
+            Supplier<@Nullable StateMachine<?>> machine,
+            Transform initialRoot,
+            PartHandleFactory handleFactory
+    ) {
+        this(instanceBase, specs, machine, initialRoot, new Vector3f(), handleFactory);
     }
 
     /** Registers one logical target per part in the caller-owned animation scope. */

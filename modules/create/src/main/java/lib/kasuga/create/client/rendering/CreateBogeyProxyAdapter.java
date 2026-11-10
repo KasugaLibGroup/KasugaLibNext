@@ -25,6 +25,7 @@ import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.VarProvider;
 import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
+import org.joml.Vector3f;
 
 import java.util.List;
 import java.util.Objects;
@@ -125,12 +126,14 @@ public final class CreateBogeyProxyAdapter {
             FsmAnimatedModel activeMachineHost = machineHost;
             java.util.function.Supplier<@Nullable StateMachine<?>> machine =
                     () -> activeMachineHost == null ? null : activeMachineHost.machine(level);
+            Vector3f worldLightOffset = new Vector3f(0f, -element.placementYOffset(), 0f);
             stage = handleFactory == null
                     ? new RigidPartVisualStage(
-                            identity.key(), config.parts(), machine, element.normalizedRoot())
+                            identity.key(), config.parts(), machine,
+                            element.normalizedRoot(), worldLightOffset)
                     : new RigidPartVisualStage(
                             identity.key(), config.parts(), machine,
-                            element.normalizedRoot(), handleFactory);
+                            element.normalizedRoot(), worldLightOffset, handleFactory);
             ProxyInputPort<ContraptionBogey, ContraptionBogey.HostFrame> input =
                     ContraptionBogey::hostFrame;
             ProxyControllerPort<ContraptionBogey.HostFrame, Void> controller =

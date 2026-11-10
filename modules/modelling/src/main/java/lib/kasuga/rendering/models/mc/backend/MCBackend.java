@@ -112,14 +112,6 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
         PoseStack poseStack = context.getPoseStack();
         poseStack.pushPose();
         try {
-            Vec3 cameraPosition = context.getCamera() == null ? Vec3.ZERO : context.getCamera().getPosition();
-            var worldOrigin = model.getSkeletonInstance().getWorldOrigin();
-            // Compose camera-relative translation in double before it enters the
-            // float pose matrix. Origin-local skeletons therefore never subtract
-            // two huge float values during rendering.
-            Vector3f cameraRelativeOrigin = cameraRelativeOrigin(worldOrigin, cameraPosition);
-            poseStack.translate(cameraRelativeOrigin.x, cameraRelativeOrigin.y, cameraRelativeOrigin.z);
-
             // Animation is sampled once per rendered frame. Configured ragdoll
             // physics is advanced by MinecraftRagdollRuntime independently of
             // render visibility; tying it to this method froze culled instances.
@@ -129,6 +121,18 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
                         context.getPartialTickFraction(),
                         FrameInputSnapshot.empty()));
             }
+
+            // The scheduling transform describes the previous render sample. Re-read
+            // the root after animation so camera rebasing and lighting use this frame's
+            // world position rather than a one-frame-old value.
+            transform = renderable.beforeRender(context);
+            Vec3 cameraPosition = context.getCamera() == null ? Vec3.ZERO : context.getCamera().getPosition();
+            var worldOrigin = model.getSkeletonInstance().getWorldOrigin();
+            // Compose camera-relative translation in double before it enters the
+            // float pose matrix. Origin-local skeletons therefore never subtract
+            // two huge float values during rendering.
+            Vector3f cameraRelativeOrigin = cameraRelativeOrigin(worldOrigin, cameraPosition);
+            poseStack.translate(cameraRelativeOrigin.x, cameraRelativeOrigin.y, cameraRelativeOrigin.z);
 
             LightData lightData;
             int overlay;

@@ -92,6 +92,11 @@ public final class ContraptionBogey {
         this.placementYOffset = yOffset;
     }
 
+    /** Placement offset currently applied by {@link #normalizedRoot()}. */
+    public float placementYOffset() {
+        return placementYOffset;
+    }
+
     /** Root from one host snapshot with the placement's vertical offset applied exactly once. */
     public Transform normalizedRoot() {
         return normalizedRoot(hostFrame());

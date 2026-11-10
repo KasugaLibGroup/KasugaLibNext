@@ -5,6 +5,7 @@ import lib.kasuga.rendering.models.uml.math.QuaternionHelper;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
+import org.joml.Vector3d;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -51,6 +52,17 @@ class MCRenderableTransformExtractTest {
         assertNull(transform.getRotation(), "pure translation must yield null rotation");
         assertNull(transform.getScale(), "pure translation must yield null scale");
         assertFalse(transform.isAppliesTransform(), "extracted (baked-root) transforms must not re-apply into the pose stack");
+    }
+
+    @Test
+    void explicitWorldLightProbeOverridesTheVisualRoot() {
+        MCBackend.BackendTransform transform = MCRenderableContext.toBackendTransform(
+                new Transform(),
+                new Vector3d(),
+                new Vector3d(1f, 2f, 3f)
+        );
+
+        assertEquals(new Vector3d(1f, 2f, 3f), transform.getPreciseWorldPosition());
     }
 
     @Test
