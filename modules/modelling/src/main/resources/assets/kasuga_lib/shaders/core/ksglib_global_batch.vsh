@@ -76,6 +76,8 @@ void main() {
 
     vec4 posWorld = modelPose * vec4(skinnedPosition, 1.0);
     vertexColor = vec4(Color.rgb, Color.a);
+    // LightTexture.pack stores 0..15 block/sky levels as packed 16-bit
+    // components (0, 16, ... 240), while the light texture is 16x16.
     lightMapColor = texelFetch(Sampler2, ivec2(packedLighting.xy) / 16, 0);
     overlayColor = texelFetch(Sampler1, ivec2(packedLighting.zw), 0);
     texCoord0 = UV0;

@@ -9,6 +9,7 @@ import lib.kasuga.rendering.models.uml.dynamic.animation.scope.FrameInputSnapsho
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.RenderFrameToken;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.RenderSampleContext;
 import lib.kasuga.rendering.models.uml.math.Transform;
+import org.joml.Vector3d;
 import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
@@ -74,6 +75,25 @@ class RigidPartBindingTest {
         assertEquals(42f, root.x, 1e-4f);
         assertEquals(23f, root.y, 1e-4f);
         assertEquals(34f, root.z, 1e-4f);
+    }
+
+    @Test
+    void groupLightProbeIgnoresThePartLocalOffset() {
+        ModelGroupFrameState state = new ModelGroupFrameState();
+        Transform local = new Transform().translate(0f, 5f, 0f);
+        RigidPartBinding target = new RigidPartBinding(
+                0, new PartMotionSampler(null), () -> null, state, local,
+                new Vector3f(0f, 1.5f, 0f));
+        var instance = ModelInstanceFixture.minimal();
+        target.attachTo(instance);
+        ModelGroupScope scope = new ModelGroupScope(
+                state, new Transform(), java.util.List.of(target));
+
+        scope.tick(0.05f, new Transform().translate(10f, 20f, 30f));
+        instance.sample(1f);
+
+        assertEquals(25f, instance.getSkeletonInstance().getWorldRootPosition().y, 1e-4f);
+        assertEquals(new Vector3d(10f, 21.5f, 30f), target.worldLightPosition());
     }
 
     @Test

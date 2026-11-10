@@ -9,6 +9,7 @@ import lib.kasuga.rendering.models.uml.framework.render.RenderableFactory;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import org.joml.Vector3dc;
 
 public class MCRenderableContext extends BackendContext<MCBridge, BackendInstance, MCBackendContext, MCBackend.BackendTransform> {
 
@@ -49,7 +50,13 @@ public class MCRenderableContext extends BackendContext<MCBridge, BackendInstanc
     @Override
     public MCBackend.BackendTransform beforeRender(MCBackendContext context) {
         var skeleton = getModelInstance().getSkeletonInstance();
-        return toBackendTransform(skeleton.getTransform(), skeleton.getWorldOrigin());
+        var rootDriver = getModelInstance().getRootTransformDriver();
+        Vector3dc worldLightPosition = rootDriver == null ? null : rootDriver.worldLightPosition();
+        return toBackendTransform(
+                skeleton.getTransform(),
+                skeleton.getWorldOrigin(),
+                worldLightPosition
+        );
     }
 
     /** Push the full root matrix onto the pose stack; kept as a public utility (beforeRender uses TRS extraction instead, to avoid double application). */
@@ -72,16 +79,24 @@ public class MCRenderableContext extends BackendContext<MCBridge, BackendInstanc
      * {@code appliesTransform=false}; identity → all components null; pure translation → rotation/scale null.
      */
     static MCBackend.BackendTransform toBackendTransform(@Nullable Transform transform) {
-        return toBackendTransform(transform, new org.joml.Vector3d());
+        return toBackendTransform(transform, new org.joml.Vector3d(), null);
     }
 
     static MCBackend.BackendTransform toBackendTransform(@Nullable Transform transform,
                                                           org.joml.Vector3dc worldOrigin) {
+        return toBackendTransform(transform, worldOrigin, null);
+    }
+
+    static MCBackend.BackendTransform toBackendTransform(
+            @Nullable Transform transform,
+            org.joml.Vector3dc worldOrigin,
+            @Nullable Vector3dc worldLightPosition
+    ) {
         if (transform == null) {
             return DEFAULT_TRANSFORM;
         }
         boolean zeroOrigin = worldOrigin.x() == 0.0 && worldOrigin.y() == 0.0 && worldOrigin.z() == 0.0;
-        if (transform.isIdentity() && zeroOrigin) {
+        if (transform.isIdentity() && zeroOrigin && worldLightPosition == null) {
             return IDENTITY_TRANSFORM;
         }
         Vector3f position = transform.isIdentity() ? null : transform.getPosition();
@@ -90,8 +105,12 @@ public class MCRenderableContext extends BackendContext<MCBridge, BackendInstanc
         if (scale != null && close(scale.x(), 1f) && close(scale.y(), 1f) && close(scale.z(), 1f)) {
             scale = null;
         }
-        org.joml.Vector3d preciseWorldPosition = new org.joml.Vector3d(worldOrigin);
-        if (position != null) preciseWorldPosition.add(position.x, position.y, position.z);
+        org.joml.Vector3d preciseWorldPosition = worldLightPosition == null
+                ? new org.joml.Vector3d(worldOrigin)
+                : new org.joml.Vector3d(worldLightPosition);
+        if (worldLightPosition == null && position != null) {
+            preciseWorldPosition.add(position.x, position.y, position.z);
+        }
         return new MCBackend.BackendTransform(position, rotation, scale,
                 false, false, true, true,
                 1f, 1f, -1, -1, false /* root already baked into skinning matrices */,

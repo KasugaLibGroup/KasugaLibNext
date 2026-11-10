@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.uml.dynamic;
 
 import org.jetbrains.annotations.Nullable;
+import org.joml.Vector3dc;
 
 /**
  * Render-frame writer for one model instance's root transform.
@@ -21,6 +22,14 @@ public interface RootTransformDriver extends AutoCloseable {
 
     /** Writes this frame's root transform by interpolating with {@code partialTick}. */
     void sampleRoot(float partialTick);
+
+    /**
+     * Optional world-space point used to sample lighting when the visual root is not a suitable
+     * light probe. Returning {@code null} keeps the normal root-position behavior.
+     */
+    default @Nullable Vector3dc worldLightPosition() {
+        return null;
+    }
 
     /** Detaches this non-terminal driver from a model that is being destroyed or reloaded. */
     default void detach(ModelInstance instance) {

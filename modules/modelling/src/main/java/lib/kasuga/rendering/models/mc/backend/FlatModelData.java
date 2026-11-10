@@ -582,7 +582,6 @@ public class FlatModelData implements AutoCloseable {
         brightness = Math.clamp(brightness, 0f, 1f);
         if (this.brightness != brightness) {
             this.brightness = brightness;
-            this.needToUpdateAll = true;
         }
     }
 
@@ -919,12 +918,15 @@ public class FlatModelData implements AutoCloseable {
         int matIndex = vertexMaterials[index] * 4;
         int meshIndex = vertexMeshes[index] * 4;
         int posPos = index * 4;
-        float r = colors[posPos] * materialColors[matIndex] * meshColors[meshIndex] * brightness;
-        float g = colors[posPos + 1] * materialColors[matIndex + 1] * meshColors[meshIndex + 1] * brightness;
-        float b = colors[posPos + 2] * materialColors[matIndex + 2] * meshColors[meshIndex + 2] * brightness;
-        // Lighting changes RGB, never material coverage. Applying brightness
-        // to alpha would make a fully opaque MASK texel fail its cutoff in a
-        // dark area and create artificial holes.
+        // Brightness is a shader/light lookup input, never vertex color. Baking
+        // it into Color.rgb makes brightness == 0 erase the albedo before the
+        // fragment shader can apply the light map and turns the model pure black.
+        float r = colors[posPos] * materialColors[matIndex] * meshColors[meshIndex];
+        float g = colors[posPos + 1] * materialColors[matIndex + 1] * meshColors[meshIndex + 1];
+        float b = colors[posPos + 2] * materialColors[matIndex + 2] * meshColors[meshIndex + 2];
+        // Lighting changes RGB, never material coverage. Applying lighting to
+        // alpha would make a fully opaque MASK texel fail its cutoff in a dark
+        // area and create artificial holes.
         float a = colors[posPos + 3] * materialColors[matIndex + 3] * meshColors[meshIndex + 3];
 
         // Preserve RGB even for low-alpha BLEND texels. The shader owns the
