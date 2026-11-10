@@ -623,24 +623,30 @@ class ProxyKernelTest {
             assertTrue(input.entered.await(2, TimeUnit.SECONDS));
             suspendThread.start();
             assertTrue(suspendStarted.await(2, TimeUnit.SECONDS));
-            awaitCondition(() -> suspendThread.getState() == Thread.State.BLOCKED
-                    || session.state() == ProxyLifecycleState.SUSPENDED);
-
-            input.release.countDown();
-            tickThread.join(2_000L);
-            suspendThread.join(2_000L);
+            // The tick deliberately owns the session monitor until we release
+            // its input. Calling session.state() here would acquire that same
+            // monitor and prevent this thread from ever releasing the latch.
+            awaitCondition(() -> suspendThread.getState() == Thread.State.BLOCKED);
         } finally {
             input.release.countDown();
+            tickThread.join(10_000L);
+            suspendThread.join(10_000L);
         }
 
         assertFalse(tickThread.isAlive());
         assertFalse(suspendThread.isAlive());
         assertNotNull(tickOutcome.get());
+        assertFalse(tickOutcome.get().aborted(), () -> "tick failed: " + tickOutcome.get().failure());
         assertEquals(ProxyLifecycleState.ACTIVE, tickOutcome.get().state());
         assertEquals(ProxyLifecycleState.SUSPENDED, session.state());
+        List<String> order;
+        synchronized (visual.order) {
+            order = List.copyOf(visual.order);
+        }
+        assertTrue(order.size() >= 3, () -> "visual order was incomplete: " + order);
         assertEquals(
                 List.of("tick", "writeback", "suspend"),
-                visual.order.subList(visual.order.size() - 3, visual.order.size()));
+                order.subList(order.size() - 3, order.size()));
     }
 
     @Test
@@ -913,7 +919,7 @@ class ProxyKernelTest {
         public String observe(String element) {
             entered.countDown();
             try {
-                if (!release.await(2, TimeUnit.SECONDS)) {
+                if (!release.await(10, TimeUnit.SECONDS)) {
                     throw new IllegalStateException("timed out waiting to release input");
                 }
             } catch (InterruptedException interrupted) {
