@@ -15,20 +15,23 @@ native configuration and as part of `check`; changed, extra or missing files
 fail the build. When updating, regenerate the manifest from the new official
 commit, not from a locally modified vendor directory.
 
-## Known integration regression
+## Passive ragdoll profiles
 
-The unmodified `336263320469e5e9febfe18697ab562488f7e97a` revision exposes a
-glTF high-drop resting-limit regression: Maribel's spine joint exceeds the
-existing 3-degree tolerance (approximately 3.93 degrees in the recorded run).
-Bisecting isolated the behavioral trigger to the contact-recycling gate in
-upstream commit `954cf879e717334eb96da9a5c255788fdc9f5f87` (#157). This does
-not establish a defect in joint equations or in Kasuga's frame mapping.
+The upstream update exposed a local ragdoll-policy error. Generated profiles
+implicitly enabled a 2 Hz alignment spring toward each joint's bind rotation,
+including in the skeleton's RELAXED state. An independent force-free test
+showed that a legal bend moved toward bind pose despite no gravity, contact or
+limit violation. In the glTF high-drop scene this extra drive also affected
+the resting-limit result (approximately 3.93 degrees before the correction).
 
-The earlier local vendor compatibility patch has been removed. No solver
-strength, model profile, simulation step or test tolerance is changed to hide
-the regression. The unchanged `GltfLoaderTest` still checks the original limit
-when its optional model fixtures exist. Until an integration-layer correction
-is independently established, this regression remains unresolved.
+Generated profiles now leave alignment springs disabled. Cone/twist limits,
+joint friction and explicit pose drives remain enabled by their existing
+policies; custom SimBody implementations can still explicitly opt into an
+alignment spring. No model JSON, solver strength, simulation step or test
+tolerance is changed. The unchanged `GltfLoaderTest` passes its original
+3-degree high-drop check for both optional models with unmodified upstream
+source. `SkeletonRagdollTest` also covers force-free passive bends at three
+segment lengths, without requiring private model assets.
 
 `NativeBox3DTest` checks moving capsules on convex and mesh floors for continued
 contact and no tunnelling, without asserting an upstream caching strategy.
