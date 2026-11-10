@@ -100,14 +100,6 @@ class KasugaMonorepoPlugin implements Plugin<Project> {
                 }
             }
 
-            project.sourceSets {
-                main {
-                    resources {
-                        srcDirs targetProject.sourceSets.main.resources.srcDirs
-                    }
-                }
-            }
-
             project.dependencies {
                 compileOnly targetProject
                 if(project.configurations.findByName("shadowOnly")) {
@@ -116,6 +108,10 @@ class KasugaMonorepoPlugin implements Plugin<Project> {
             }
 
             project.tasks.named("processResources").configure {
+                from(targetProject.sourceSets.main.resources) {
+                    exclude "META-INF/neoforge.mods.toml"
+                    exclude "META-INF/mods.toml"
+                }
                 dependsOn(targetProject.tasks.named("processResources"))
             }
 
@@ -149,7 +145,10 @@ class KasugaMonorepoPlugin implements Plugin<Project> {
 
                 if (shadowExtension != null) {
                     shadowExtension.configure {
-                        from(targetProject.sourceSets.main.output)
+                        from(targetProject.sourceSets.main.output) {
+                            exclude "META-INF/neoforge.mods.toml"
+                            exclude "META-INF/mods.toml"
+                        }
                     }
                 }
 

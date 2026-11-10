@@ -31,14 +31,10 @@ useModProject(project(':modules:modelling'), false)
 // same mod class loader as their Minecraft callers in dev runs and integration tests.
 useModProject(project(':modules:render-core'))
 useModProject(project(':modules:render-opengl'))
-
-// Create-side content is meant to be data-driven eventually (bogey/track registrations come from
-// JSON), so the index reader is a real dependency rather than a later addition. It arrives on the
-// classpath through modelling's `implementation` dependency, but that is not transitive for
-// compilation -- hence the explicit dependency in the `dependencies` block below. The mods{} mirror
-// needs the source set before it is evaluated, otherwise the cross-project lookup silently resolves
-// to the root project's source sets.
-evaluationDependsOn(':modules:data-driven')
+// Compile against data-driven while packing its main source set into this mod layer. A runtime
+// project dependency would also put its GAMELIBRARY jar on the module path and split its packages
+// from kasuga_lib.
+useModProject(project(':modules:data-driven'), false)
 
 
 
@@ -129,11 +125,6 @@ neoForge {
             // Inlcude the core subproject as a dependency.
             sourceSet(sourceSets.main)
             sourceSet(sourceSets.contentTesting)
-            // Mirror: data-driven is on this module's classpath (see the dependencies block) and must
-            // therefore also be part of the mod layer, otherwise NeoForge loads it a second time through
-            // the classpath loader and its @Context beans end up with a different Class identity than the
-            // core types they inject (NoSuchBeanDefinitionException).
-            sourceSet(project(':modules:data-driven').sourceSets.main)
         }
     }
 
@@ -165,11 +156,6 @@ dependencies {
     implementation project(":modules:inject")
 
     implementation project(":modules:utils")
-
-    // Data-driven index reader for Create-side content (bogey/track registrations). modelling carries
-    // it as `implementation`, which is not on this module's compile classpath, so it is declared again
-    // here; the mods{} mirror above keeps a single Class identity at runtime.
-    implementation project(":modules:data-driven")
 
     // modelling is mirrored into this mod layer through useModProject(), which only contributes
     // compileOnly. A real dependency is needed so its runtime-only libraries (formula, shader, utils,
