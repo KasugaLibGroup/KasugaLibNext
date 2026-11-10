@@ -37,6 +37,12 @@ public abstract class LayeredModelSource implements MinecraftModelSource {
     private record Layer(int coordinate, Slice slice, ModelBounds bounds) {}
     private record Plan(List<Element> elements, Slice assembled, ModelBounds bounds, List<Layer> layers, int first) {}
 
+    @Override public final List<Integer> layerCoordinates(LayerLayout.Axis axis) {
+        if (closed) return List.of();
+        var plan = plan(axis);
+        return plan == null ? List.of() : plan.layers.stream().map(Layer::coordinate).toList();
+    }
+
     private Plan plan(LayerLayout.Axis axis) {
         Object key = geometryKey();
         if (key != plannedGeometry) { plans.clear(); plannedGeometry = key; }
@@ -62,13 +68,21 @@ public abstract class LayeredModelSource implements MinecraftModelSource {
     }
 
     @Override @Nullable public final Snapshot snapshot(LayerLayout layout, float partialTick) {
+        return snapshot(layout, partialTick, false);
+    }
+
+    @Override @Nullable public final Snapshot snapshotLayers(LayerLayout layout, float partialTick) {
+        return snapshot(layout, partialTick, true);
+    }
+
+    @Nullable private Snapshot snapshot(LayerLayout layout, float partialTick, boolean forceLayers) {
         if (closed) return null;
         if (!Float.isFinite(partialTick)) throw new IllegalArgumentException("partialTick must be finite");
         prepare(partialTick);
         Plan plan = plan(layout.axis());
         if (plan == null) return null;
         Matrix4f transform = localTransform(partialTick);
-        if (layout.separation() == 0 && plan.layers.stream().allMatch(layer -> layout.includes(layer.coordinate))) {
+        if (!forceLayers && layout.separation() == 0 && plan.layers.stream().allMatch(layer -> layout.includes(layer.coordinate))) {
             var bounds = plan.bounds.transform(transform);
             return new Snapshot(bounds, List.of(new Part("assembled", plan.first, bounds,
                     ctx -> transformed(ctx, transform, 0, layout.axis(), this::renderAssembled),

@@ -27,6 +27,8 @@ public final class MinecraftModelSources {
     private MinecraftModelSources() {}
 
     public static BlockModelSource blocks(Level host, List<StructureBlockInfo> blocks) { return new BlockModelSource(host, blocks); }
+    /** Auto-detects installed blueprint formats; independent of extension and preview toolkit. */
+    public static BlockModelSource blueprint(Level host, Path file) throws IOException { return BlueprintImporters.load(host,file); }
     public static BlockModelSource structure(Level host, StructureTemplate structure) {
         return blocks(host, SchematicModelData.structure(structure, host.holderLookup(Registries.BLOCK)));
     }

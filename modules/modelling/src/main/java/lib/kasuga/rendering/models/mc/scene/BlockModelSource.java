@@ -81,6 +81,22 @@ public class BlockModelSource extends LayeredModelSource {
 
     @Override protected List<Element> elements() { return elements; }
     @Override protected Object geometryKey() { return elements; }
+    private final java.util.EnumMap<LayerLayout.Axis, Map<Integer, Map<net.minecraft.resources.ResourceLocation, Integer>>> statistics =
+            new java.util.EnumMap<>(LayerLayout.Axis.class);
+
+    @Override public Map<Integer, Map<net.minecraft.resources.ResourceLocation, Integer>> blockStatistics(LayerLayout.Axis axis) {
+        return statistics.computeIfAbsent(axis, key -> {
+            var counts = new java.util.TreeMap<Integer, Map<net.minecraft.resources.ResourceLocation, Integer>>();
+            blocks.forEach((position, state) -> {
+                var p = position.subtract(origin);
+                counts.computeIfAbsent(axis.coordinate(p.getX(), p.getY(), p.getZ()), ignored -> new java.util.TreeMap<>())
+                        .merge(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()), 1, Integer::sum);
+            });
+            var result = new java.util.TreeMap<Integer, Map<net.minecraft.resources.ResourceLocation, Integer>>();
+            counts.forEach((layer, values) -> result.put(layer, java.util.Collections.unmodifiableMap(values)));
+            return java.util.Collections.unmodifiableMap(result);
+        });
+    }
     @Override protected java.util.Optional<BlockHit> pickSlice(Slice slice, net.minecraft.world.phys.Vec3 from, net.minecraft.world.phys.Vec3 to) {
         var base = new net.minecraft.world.phys.Vec3(origin.getX(), origin.getY(), origin.getZ());
         var start = from.add(base); var end = to.add(base);

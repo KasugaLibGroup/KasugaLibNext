@@ -69,6 +69,13 @@ public final class WorldUiInputRouter {
         return hit == null ? null : hit.position;
     }
 
+    /** Panel-local pixels to screen pixels using its most recent actual render projection. */
+    public @Nullable Vector2f screenPosition(GuiEventListener listener, float localX, float localY) {
+        var surface=surfaces.get(listener);
+        if(surface==null||projection==null||!Float.isFinite(localX)||!Float.isFinite(localY))return null;
+        return projection.project(surface.transform.transformPosition(new Vector3f(localX,localY,0)));
+    }
+
     /** Call after all surfaces are registered, including when the cursor has not moved this frame. */
     public void endFrame() {
         for (var entry : Map.copyOf(buttons).entrySet()) {

@@ -38,6 +38,7 @@ public final class SceneModels implements AutoCloseable {
     private boolean closed;
     private lib.kasuga.rendering.models.mc.backend.ui.PreviewRenderBuffers buffers;
     private long resourceGeneration=-1;
+    private long displayTick;
 
     private SceneModels(ClientLevel level) {
         this.level = java.util.Objects.requireNonNull(level);
@@ -51,7 +52,9 @@ public final class SceneModels implements AutoCloseable {
     public Entry add(MinecraftModelSource source, Vec3 position) {
         if (closed) throw new IllegalStateException("Model scene is closed");
         if (models.stream().anyMatch(model -> model.source == source)) throw new IllegalArgumentException("Source is already owned by this scene");
-        var entry = new Entry(java.util.Objects.requireNonNull(source), position); models.add(entry); return entry;
+        var entry = new Entry(java.util.Objects.requireNonNull(source), position);
+        if (source instanceof lib.kasuga.rendering.models.mc.scene.display.WorldDisplayTarget display) display.claim(this);
+        models.add(entry); return entry;
     }
     /** Read-only model picking. Rays and hit locations are world-space; block positions remain source-local. */
     public java.util.Optional<MinecraftModelSource.BlockHit> pick(Vec3 from, Vec3 to, float partialTick) {
@@ -83,6 +86,7 @@ public final class SceneModels implements AutoCloseable {
         buffers.begin(context.mainRenderTarget().frameBufferId,context.mainRenderTarget().width,context.mainRenderTarget().height);
         try {
             for (Entry entry : models) if (entry.visible) {
+                entry.syncPanels();
                 var snapshot = entry.source.snapshot(entry.layout, partial);
                 if (snapshot == null) continue;
                 context.poseStack().pushPose();
@@ -96,7 +100,16 @@ public final class SceneModels implements AutoCloseable {
         } finally { buffers.flush(); }
     }
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
-        for (var scene : List.copyOf(ACTIVE)) if (Minecraft.getInstance().level != scene.level) scene.close();
+        for (var scene : List.copyOf(ACTIVE)) {
+            if (Minecraft.getInstance().level != scene.level) scene.close();
+            else if (!Minecraft.getInstance().isPaused()) {
+                long tick=++scene.displayTick;
+                for (var entry:List.copyOf(scene.models)) {
+                    if (entry.source instanceof lib.kasuga.rendering.models.mc.scene.display.WorldDisplayTarget display) display.tick(tick,.05);
+                    entry.syncPanels();
+                }
+            }
+        }
     }
     @Override public void close() {
         if (closed) return;
@@ -104,7 +117,7 @@ public final class SceneModels implements AutoCloseable {
         try { try { scope.close(); } finally { if (buffers!=null) buffers.close(); } }
         finally {
             RuntimeException failure = null;
-            for (Entry entry : models) try { entry.source.close(); }
+            for (Entry entry : models) try { try { entry.removePanels(); } finally { entry.source.close(); } }
             catch (RuntimeException error) { if (failure == null) failure = error; else failure.addSuppressed(error); }
             models.clear();
             if (failure != null) throw failure;
@@ -116,6 +129,7 @@ public final class SceneModels implements AutoCloseable {
         private Matrix4f transform = new Matrix4f();
         private LayerLayout layout = LayerLayout.ASSEMBLED;
         private boolean visible = true;
+        private final Set<net.minecraft.client.gui.components.Renderable> mountedPanels = new LinkedHashSet<>();
         private Entry(MinecraftModelSource source, Vec3 position) { this.source = source; position(position); }
         public Entry position(Vec3 value) {
             if (!Double.isFinite(value.x) || !Double.isFinite(value.y) || !Double.isFinite(value.z)) throw new IllegalArgumentException("Non-finite position");
@@ -126,6 +140,25 @@ public final class SceneModels implements AutoCloseable {
             transform = new Matrix4f(value); return this;
         }
         public Entry layers(LayerLayout value) { layout = java.util.Objects.requireNonNull(value); return this; }
-        public Entry visible(boolean value) { visible = value; return this; }
+        public Entry visible(boolean value) { visible = value; if(!visible)removePanels(); return this; }
+        private void removePanels() {
+            var backend=lib.kasuga.rendering.models.mc.Constants.UI_BACKEND;
+            if(backend!=null) for(var panel:mountedPanels)backend.removeRenderable(panel);
+            mountedPanels.clear();
+        }
+        private void syncPanels() {
+            if(!(source instanceof lib.kasuga.rendering.models.mc.scene.display.WorldDisplayTarget display))return;
+            var backend=lib.kasuga.rendering.models.mc.Constants.UI_BACKEND;
+            if(backend==null)return;
+            var panels=visible?display.panels():List.<lib.kasuga.rendering.models.mc.scene.display.WorldDisplayTarget.Panel>of();
+            var current=new LinkedHashSet<net.minecraft.client.gui.components.Renderable>();
+            for(var panel:panels) {
+                current.add(panel.view());
+                var matrix=new Matrix4f().translation((float)position.x,(float)position.y,(float)position.z).mul(transform).mul(panel.transform());
+                backend.addRenderable(panel.view(),matrix);
+            }
+            for(var old:mountedPanels)if(!current.contains(old))backend.removeRenderable(old);
+            mountedPanels.clear();mountedPanels.addAll(current);
+        }
     }
 }
