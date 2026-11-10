@@ -16,7 +16,7 @@ The modelling module vendors and links the Box3D rigid-body engine at commit
 - Upstream: https://github.com/erincatto/box3d
 - Vendored sources: `src/main/native/box3d`
 - Local JNI bridge: `src/main/native/kasuga_box3d_jni.c`
-- Local contact-recycling compatibility patch: see `src/main/native/README.md`.
+- Vendored source is immutable; see `src/main/native/README.md` for source verification.
 
 Copyright (c) 2026 Erin Catto
 

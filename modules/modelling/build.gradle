@@ -622,9 +622,56 @@ if (!box3dCanBuild) {
     logger.warn('CMake was not found on PATH. Box3D native support and its tests will be omitted; Java-only modelling features will still be built.')
 }
 
+def verifyBox3DUpstream = tasks.register('verifyBox3DUpstream') {
+    description = 'Verifies that vendored Box3D files exactly match the pinned upstream source manifest.'
+    group = 'verification'
+    def vendorDirectory = box3dSourceDirectory.dir('box3d')
+    def manifestFile = box3dSourceDirectory.file('BOX3D_SOURCES.json')
+    def versionFile = box3dSourceDirectory.file('BOX3D_VERSION')
+    inputs.dir(vendorDirectory)
+    inputs.file(manifestFile)
+    inputs.file(versionFile)
+    doLast {
+        def manifest = new groovy.json.JsonSlurper().parse(manifestFile.asFile)
+        def version = new Properties()
+        versionFile.asFile.withInputStream { version.load(it) }
+        if (manifest.commit != version.getProperty('commit')
+                || manifest.repository != version.getProperty('repository')) {
+            throw new GradleException('Box3D source manifest does not match BOX3D_VERSION.')
+        }
+        def root = vendorDirectory.asFile.toPath()
+        def actual = new TreeMap<String, String>()
+        java.nio.file.Files.walk(root).withCloseable { paths ->
+            paths.filter { !java.nio.file.Files.isDirectory(it, java.nio.file.LinkOption.NOFOLLOW_LINKS) }
+                    .forEach { path ->
+                        if (java.nio.file.Files.isSymbolicLink(path)) {
+                            throw new GradleException("Box3D vendor must contain upstream files, not symlinks: ${path}")
+                        }
+                        def relative = root.relativize(path).toString().replace('\\', '/')
+                        actual[relative] = java.security.MessageDigest.getInstance('SHA-256')
+                                .digest(java.nio.file.Files.readAllBytes(path)).encodeHex().toString()
+                    }
+        }
+        def expected = manifest.sha256
+        def missing = expected.keySet() - actual.keySet()
+        def extra = actual.keySet() - expected.keySet()
+        def changed = expected.keySet().intersect(actual.keySet()).findAll { actual[it] != expected[it] }
+        if (missing || extra || changed) {
+            throw new GradleException("Box3D vendor differs from upstream ${manifest.commit}: "
+                    + "missing=${missing}, extra=${extra}, changed=${changed}. "
+                    + 'Keep upstream immutable; implement adaptations outside the box3d directory.')
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn verifyBox3DUpstream
+}
+
 tasks.register('configureBox3D', Exec) {
     description = 'Configures the vendored Box3D JNI library for the current platform.'
     group = 'build'
+    dependsOn verifyBox3DUpstream
     onlyIf('CMake is available') { box3dCanBuild }
     inputs.files(fileTree(box3dSourceDirectory) {
         include '**/*.c', '**/*.h', '**/*.inl', '**/*.in', '**/CMakeLists.txt', 'BOX3D_VERSION'

@@ -80,13 +80,6 @@ JNIEXPORT void JNICALL JNI_METHOD(step)(JNIEnv* env, jclass type, jint packed, j
     }
 }
 
-JNIEXPORT jint JNICALL JNI_METHOD(recycledContactCount)(JNIEnv* env, jclass type, jint packed)
-{
-    (void)env;
-    (void)type;
-    return b3World_GetCounters(world_id(packed)).recycledContactCount;
-}
-
 JNIEXPORT void JNICALL JNI_METHOD(setGravity)(JNIEnv* env, jclass type, jint packed, jfloat x, jfloat y, jfloat z)
 {
     (void)env;

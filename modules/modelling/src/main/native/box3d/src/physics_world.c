@@ -654,12 +654,7 @@ static void b3CollideTask( int startIndex, int endIndex, int workerIndex, void* 
 		// Contact recycling optimization. Please cite this library if you use this optimization.
 		// This is inspired by persistent contact manifolds used in some physics engines, such as PhysX.
 		// However, this allows larger relative motion and has fewer tuning parameters (just one).
-		// Kasuga compatibility patch: fast mesh contacts must be refreshed for CCD,
-		// but a small convex body can be fast while still within the manifold's
-		// conservative motion tolerance. Keep its valid anchors in that case.
-		bool isMeshContact = ( contact->flags & b3_simMeshContact ) != 0;
-		if ( ( isFast == false || isMeshContact == false ) && recycleDistance > 0.0f &&
-			 ( contact->flags & b3_relativeTransformValid ) &&
+		if ( isFast == false && recycleDistance > 0.0f && ( contact->flags & b3_relativeTransformValid ) &&
 			 ( contact->flags & b3_contactRecycleFlag ) )
 		{
 			// The scalar part of b3InvMulQuat is just the quaternion dot product.

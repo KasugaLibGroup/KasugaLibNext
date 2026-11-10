@@ -122,8 +122,6 @@ public final class NativeBox3D {
     public static native void setRestitutionThreshold(int worldId, float threshold);
     public static native void setMaximumLinearSpeed(int worldId, float speed);
     public static native int contactCount(int worldId);
-    /** Number of contact manifolds reused in the world's most recent step. */
-    public static native int recycledContactCount(int worldId);
     /** Returns the hit body id and writes point xyz, normal xyz and distance. */
     public static native long raycast(int worldId, float originX, float originY, float originZ,
                                       float directionX, float directionY, float directionZ,

@@ -1,30 +1,36 @@
 # Box3D integration
 
 `BOX3D_VERSION` records the upstream repository, branch and exact source commit.
-The vendored `CMakeLists.txt`, `include`, `src` and `LICENSE` come from that commit.
-The JNI bridge and parent CMake project are maintained locally.
+The entire `box3d` directory is an immutable copy of that commit's vendored
+`CMakeLists.txt`, `include`, `src` and `LICENSE`. Do not patch, reformat or apply
+build-time substitutions to upstream files. Adaptations belong in Kasuga's
+JNI bridge, parent CMake project or Java adapter, using public Box3D APIs.
 
-## Local patch: fast convex contact recycling
+## Source verification
 
-Upstream commit `954cf879e717334eb96da9a5c255788fdc9f5f87` (#157) changed
-the contact-recycling gate from excluding fast mesh contacts to excluding all
-fast contacts. Small convex bodies can be classified as fast while their motion
-remains within the existing manifold-reuse tolerance.
+`BOX3D_SOURCES.json` records SHA-256 hashes of all 113 files from the pinned
+official Git tree. `:modules:modelling:verifyBox3DUpstream` checks the version,
+complete file set and file contents without network access. It runs before
+native configuration and as part of `check`; changed, extra or missing files
+fail the build. When updating, regenerate the manifest from the new official
+commit, not from a locally modified vendor directory.
 
-`box3d/src/physics_world.c` retains the earlier convex-contact gate. It leaves
-fast mesh contacts on the fresh-manifold path and preserves all rotation,
-translation and conservative-motion checks inside the recycling path. No
-solver strength, model profile, simulation step or test tolerance is changed.
+## Known integration regression
 
-Controlled comparisons on #157 and the recorded upstream revision isolated
-the glTF ragdoll resting-limit regression to this gate: restoring this condition
-alone makes the original 3-degree limit test pass. This establishes the
-behavioral trigger; it does not establish a defect in the joint equations.
+The unmodified `336263320469e5e9febfe18697ab562488f7e97a` revision exposes a
+glTF high-drop resting-limit regression: Maribel's spine joint exceeds the
+existing 3-degree tolerance (approximately 3.93 degrees in the recorded run).
+Bisecting isolated the behavioral trigger to the contact-recycling gate in
+upstream commit `954cf879e717334eb96da9a5c255788fdc9f5f87` (#157). This does
+not establish a defect in joint equations or in Kasuga's frame mapping.
 
-Regression coverage uses `NativeBox3DTest` for a small moving capsule on convex
-and mesh floors, `Box3DCollisionIntegrationTest` for high-speed collision, and
-the unchanged `GltfLoaderTest` high-drop scene when its optional models exist.
+The earlier local vendor compatibility patch has been removed. No solver
+strength, model profile, simulation step or test tolerance is changed to hide
+the regression. The unchanged `GltfLoaderTest` still checks the original limit
+when its optional model fixtures exist. Until an integration-layer correction
+is independently established, this regression remains unresolved.
 
-Run `./gradlew :modules:modelling:modelUnitTest` from the repository root.
-When updating the vendor again, review this patch and compare the remaining
-files with the pinned upstream commit.
+`NativeBox3DTest` checks moving capsules on convex and mesh floors for continued
+contact and no tunnelling, without asserting an upstream caching strategy.
+`Box3DCollisionIntegrationTest` covers high-speed collisions. Run
+`./gradlew :modules:modelling:modelUnitTest` from the repository root.
