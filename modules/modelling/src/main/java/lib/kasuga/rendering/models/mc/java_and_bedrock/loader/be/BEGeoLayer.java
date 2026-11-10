@@ -22,6 +22,10 @@ public class BEGeoLayer extends Layer<JsonObject> {
 
     @Override
     public void process(JsonObject input, Context context) {
+        var components = lib.kasuga.rendering.models.mc.component.ModelComponents.parse(input.get("kasuga_lib"));
+        context.setData("model_components", components);
+        context.setData("component_root", components.isEmpty() ? null : components.rootName());
+        if (!components.isEmpty()) context.getLoader().getBones().addBone(components.rootName(), new Transform(), null, null);
         Input definition = ModelJson.GSON.fromJson(input, Input.class);
         Description data = definition.description;
         String identifier = data.identifier;
@@ -59,11 +63,16 @@ public class BEGeoLayer extends Layer<JsonObject> {
                 identifier, formatVersion,
                 textureWidth, textureHeight,
                 visibleBoundsWidth, visibleBoundsHeight,
-                visibleBoundsOffset, legacy);
+                visibleBoundsOffset, legacy, components.isEmpty() ? null : components);
 
         context.setData("transform_map", new HashMap<String, Pair<Transform, Transform>>());
 
         java.util.List<JsonObject> bonesJson = definition.bones;
+        if (!components.isEmpty()) {
+            java.util.Set<String> nativeNames = new java.util.HashSet<>();
+            for (JsonObject bone : bonesJson) nativeNames.add(bone.get("name").getAsString());
+            components.addMissingBones(context.getLoader().getBones(), nativeNames);
+        }
         for (JsonObject bone : bonesJson) {
             addChildProcess(bone, "bone_layer");
         }

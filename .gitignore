@@ -66,3 +66,6 @@ logs/
 # Local contentTesting model assets; keep out of commits (see AGENTS.md 4.3)
 /modules/modelling/src/contentTesting/resources/assets/kasuga_lib/models/pmx/
 /modules/modelling/src/contentTesting/resources/assets/kasuga_lib/animations/vmd/
+
+# Local agent instructions and skills
+/.agents/

@@ -30,6 +30,7 @@ public class BEBoneLayer extends Layer<JsonObject> {
         Vector3f rotation = new Vector3f(definition.rotation);
         Transform transform = new Transform();
         String parent = definition.parent;
+        if (parent == null) parent = (String) context.getData("component_root");
         Vector3f parentPivot;
         if (parent != null) parentPivot = map.getOrDefault(parent, new Vector3f(0, 0, 0));
         else parentPivot = new Vector3f(0, 0, 0);
@@ -54,6 +55,6 @@ public class BEBoneLayer extends Layer<JsonObject> {
         @DefaultOnMismatch String name = "", parent;
         Vector3f pivot, rotation = new Vector3f();
         java.util.List<JsonObject> cubes = java.util.List.of();
-        java.util.Map<String, JsonObject> locators = java.util.Map.of();
+        java.util.Map<String, com.google.gson.JsonElement> locators = java.util.Map.of();
     }
 }

@@ -1072,14 +1072,16 @@ void b3DrawWheelJoint( b3DebugDraw* draw, b3JointSim* base, b3WorldTransform tra
 		float upper = joint->upperSteeringLimit;
 
 		b3CosSin cs = b3ComputeCosSin( lower );
+		b3CosSin delta = b3ComputeCosSin( ( upper - lower ) / sliceCount );
 		b3Pos vertex1 = b3TransformWorldPoint( frame, (b3Vec3){ 0.0f, -radius * cs.sine, radius * cs.cosine } );
 
 		for ( int index = 0; index < sliceCount; ++index )
 		{
-			float t2 = ( index + 1.0f ) / sliceCount;
-			float phi = b3LerpFloat( lower, upper, t2 );
+			float cosine = delta.cosine * cs.cosine - delta.sine * cs.sine;
+			float sine = delta.sine * cs.cosine + delta.cosine * cs.sine;
+			cs.cosine = cosine;
+			cs.sine = sine;
 
-			cs = b3ComputeCosSin( phi );
 			b3Pos vertex2 = b3TransformWorldPoint( frame, (b3Vec3){ 0.0f, -radius * cs.sine, radius * cs.cosine } );
 
 			if ( index == 0 )

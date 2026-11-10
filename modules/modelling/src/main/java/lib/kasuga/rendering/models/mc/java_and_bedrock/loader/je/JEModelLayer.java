@@ -17,6 +17,14 @@ public class JEModelLayer extends Layer<JsonObject> {
 
         addChildProcess(modelData, "texture_layer");
 
+        java.util.Map<JEElement, Integer> indices = new java.util.IdentityHashMap<>();
+        for (int i = 0; i < modelData.getElements().size(); i++) indices.put(modelData.getElements().get(i), i);
+        context.setData("component_element_indices", indices);
+        context.setData("component_vertex_bones", new java.util.IdentityHashMap<lib.kasuga.rendering.models.uml.structure.basic.Vertex, String>());
+        var components = lib.kasuga.rendering.models.mc.component.ModelComponents.parse(modelData.getComponents());
+        modelData.setKasugaComponents(components.isEmpty() ? null : components);
+        components.validateElementCount(modelData.getElements().size());
+        context.setData("model_components", components);
         for (JEElement element : modelData.getElements()) {
             addChildProcess(element, "element_layer");
         }

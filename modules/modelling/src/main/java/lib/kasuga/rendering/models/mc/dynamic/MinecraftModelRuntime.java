@@ -35,11 +35,15 @@ public final class MinecraftModelRuntime {
     public static synchronized void register(ModelInstance instance) {
         Objects.requireNonNull(instance, "instance");
         if (instance.isClosed()) INSTANCES.remove(instance);
-        else INSTANCES.put(instance, Boolean.TRUE);
+        else {
+            INSTANCES.put(instance, Boolean.TRUE);
+            ModelParticleRuntime.register(instance);
+        }
     }
 
     public static synchronized void unregister(ModelInstance instance) {
         INSTANCES.remove(instance);
+        ModelParticleRuntime.unregister(instance);
     }
 
     public static synchronized void register(ModelPhysicsScene scene) {
@@ -185,8 +189,10 @@ public final class MinecraftModelRuntime {
     public static void onClientLevelChanged(ClientTickEvent.Post event) {
         ClientLevel level = Minecraft.getInstance().level;
         if (level == previousLevel) return;
+        boolean hadLevel = previousLevel != null;
         previousLevel = level;
         MinecraftRagdollDragger.releaseActiveDrag();
         MinecraftRagdollDeployments.removeAll();
+        if (hadLevel || level == null) ModelParticleRuntime.clearWorldState();
     }
 }

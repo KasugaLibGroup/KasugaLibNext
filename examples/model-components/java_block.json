@@ -1,0 +1,98 @@
+{
+  "parent": "block/block",
+  "textures": { "all": "minecraft:block/iron_block" },
+  "elements": [
+    {
+      "from": [0, 0, 0],
+      "to": [16, 8, 16],
+      "faces": {
+        "up": { "texture": "#all" },
+        "down": { "texture": "#all" },
+        "north": { "texture": "#all" },
+        "south": { "texture": "#all" },
+        "west": { "texture": "#all" },
+        "east": { "texture": "#all" }
+      }
+    },
+    {
+      "from": [2, 8, 2],
+      "to": [14, 16, 14],
+      "faces": {
+        "up": { "texture": "#all" },
+        "down": { "texture": "#all" },
+        "north": { "texture": "#all" },
+        "south": { "texture": "#all" },
+        "west": { "texture": "#all" },
+        "east": { "texture": "#all" }
+      }
+    }
+  ],
+  "kasuga_lib": {
+    "version": 1,
+    "bones": [
+      {
+        "id": "base",
+        "name": "base",
+        "parent": null,
+        "pivot": [0, 0, 0],
+        "components": {
+          "physics": {
+            "shape": "box",
+            "mode": "kinematic",
+            "size": [16, 8, 16],
+            "position": [8, 4, 8],
+            "mass": 0
+          }
+        }
+      },
+      {
+        "id": "top",
+        "name": "top",
+        "parent": "base",
+        "pivot": [8, 8, 8],
+        "components": {
+          "ik": {
+            "target": "target",
+            "links": [{ "bone": "base" }],
+            "iterations": 32,
+            "tolerance": 0.01,
+            "max_step": 45
+          }
+        }
+      },
+      {
+        "id": "target",
+        "name": "target",
+        "parent": null,
+        "pivot": [8, 24, 8],
+        "components": {}
+      }
+    ],
+    "bindings": [
+      { "element": 0, "bone": "base" },
+      { "element": 1, "bone": "top" }
+    ],
+    "emitters": [
+      {
+        "id": "steam",
+        "name": "steam",
+        "bone": "top",
+        "position": [0, 8, 0],
+        "rotation": [0, 0, 0],
+        "enabled": true,
+        "rate": 20,
+        "max_particles": 128,
+        "space": "world",
+        "particle": {
+          "texture": "minecraft:particle/smoke",
+          "lifetime": 1.2,
+          "speed": 8,
+          "spread": 15,
+          "size": 2,
+          "color": "#d8d8d8",
+          "gravity": [0, 0, 0]
+        }
+      }
+    ]
+  }
+}

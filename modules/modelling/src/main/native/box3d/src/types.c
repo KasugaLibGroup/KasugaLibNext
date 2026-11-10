@@ -16,12 +16,16 @@ b3WorldDef b3DefaultWorldDef( void )
 	def.gravity.y = -10.0f;
 	def.hitEventThreshold = 1.0f * lengthUnits;
 	def.restitutionThreshold = 1.0f * lengthUnits;
+	def.restitutionIterations = 2;
+	def.enableRestitutionPropagation = false;
 	def.contactSpeed = 3.0f * lengthUnits;
 	def.contactHertz = 30.0f;
 	def.contactDampingRatio = 10.0f;
 
 	// 400 meters per second, faster than the speed of sound
 	def.maximumLinearSpeed = 400.0f * lengthUnits;
+
+	def.isotropicInertiaTolerance = 0.2f;
 
 	def.enableSleep = true;
 	def.enableContinuous = true;
@@ -35,6 +39,7 @@ b3BodyDef b3DefaultBodyDef( void )
 	def.type = b3_staticBody;
 	def.rotation = b3Quat_identity;
 	def.sleepThreshold = 0.05f * b3GetLengthUnitsPerMeter();
+	def.safetyFactor = 0.5f;
 	def.gravityScale = 1.0f;
 	def.enableSleep = true;
 	def.isAwake = true;
@@ -148,7 +153,7 @@ b3DebugDraw b3DefaultDebugDraw( void )
 	};
 
 	draw.jointScale = 1.0f;
-	draw.forceScale = 1.0f;
+	draw.forceScale = 0.001f;
 
 	return draw;
 }

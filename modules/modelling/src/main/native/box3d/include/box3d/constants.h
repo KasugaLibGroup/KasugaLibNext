@@ -14,12 +14,6 @@ B3_API void b3SetLengthUnitsPerMeter( float lengthUnits );
 /// Get the current length units per meter.
 B3_API float b3GetLengthUnitsPerMeter( void );
 
-/// Set the threshold for logging stalls.
-B3_API void b3SetStallThreshold( float seconds );
-
-/// Get the threshold for logging stalls.
-B3_API float b3GetStallThreshold( void );
-
 // Used to detect bad values. In float mode positions greater than about 16km have precision
 // problems, so 100km is a safe limit. Large world mode keeps coordinates accurate much farther
 // from the origin, so the sanity limit widens to keep valid far-field positions from tripping it.
@@ -76,7 +70,9 @@ B3_API float b3GetStallThreshold( void );
 #define B3_MAX_ROTATION ( 0.25f * B3_PI )
 
 /// @warning modifying this can have a significant impact on performance and stability
+#ifndef B3_SPECULATIVE_DISTANCE
 #define B3_SPECULATIVE_DISTANCE ( 4.0f * B3_LINEAR_SLOP )
+#endif
 
 /// The rest offset is used for mesh contact to reduce ghost collisions and assist with CCD.
 /// The rest offset adjusts the contact point separation value, making the solver push the shapes
@@ -103,8 +99,18 @@ B3_API float b3GetStallThreshold( void );
 /// The time that a body must be still before it will go to sleep. In seconds.
 #define B3_TIME_TO_SLEEP 0.5f
 
+/// The maximum number of restitution iterations. Needed to avoid a solver overflow.
+#define B3_MAX_RESTITUTION_ITERATIONS 63
+
 /// The maximum number of contact points between two touching shapes.
+/// The default and minimum is 4 and this case uses a fast approximate hull to reduce the
+/// point count. A larger value builds a 2D convex hull of the candidate points and then
+/// simplifies it to the target by dropping the vertices that contribute the least area.
+/// Useful for testing, but I don't recommend shipping with it adjusted.
+/// WARNING: if you change this you risk breaking ABI and a corrupted runtime.
+#ifndef B3_MAX_MANIFOLD_POINTS
 #define B3_MAX_MANIFOLD_POINTS 4
+#endif
 
 /// The number of iterations for gyroscopic torques.
 #ifndef B3_GYROSCOPIC_ITERATIONS
@@ -132,8 +138,9 @@ B3_API float b3GetStallThreshold( void );
 #define B3_MAX_SHAPES ( 1 << B3_SHAPE_POWER )
 #define B3_MAX_CHILD_SHAPES ( 1 << B3_CHILD_POWER )
 
-/// Increase this if your application needs more accurate restitution. Doing so will
-/// slow down the simulation. Must be 1 or more.
-#ifndef B3_RESTITUTION_ITERATIONS
-#define B3_RESTITUTION_ITERATIONS 1
+/// This is the limit on how many mesh or heightfield triangles a single convex shape can collide with.
+/// Increasing this will increase stack usage, so be careful. I recommend to simplify your collision data
+/// before increasing this. For example, using render mesh for collision often leads to poor performance.
+#ifndef B3_MAX_MESH_CONTACT_TRIANGLES
+#define B3_MAX_MESH_CONTACT_TRIANGLES 512
 #endif
