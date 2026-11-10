@@ -83,6 +83,13 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
     }
 
     @Override
+    public void add(Object key, MCBridge bridge, ModelInstance instance) {
+        super.add(key, bridge, instance);
+        if (lib.kasuga.rendering.models.mc.dynamic.ModelParticleRuntime.module(instance) != null)
+            lib.kasuga.rendering.models.mc.dynamic.MinecraftModelRuntime.register(instance);
+    }
+
+    @Override
     public void render(BackendContext<MCBridge, BackendInstance, MCBackendContext, BackendTransform> renderable, MCBackendContext context) {
         render(renderable, context, ModelRenderPass.OPAQUE);
     }
@@ -440,7 +447,11 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
         sampledThisFrame.forget(model);
         boolean stillMounted = getRenderingObjects().values().stream()
                 .anyMatch(context -> context.getModelInstance() == model);
-        if (!stillMounted) getScheduler().detach(model);
+        if (!stillMounted) {
+            getScheduler().detach(model);
+            if (lib.kasuga.rendering.models.mc.dynamic.ModelParticleRuntime.module(model) != null)
+                lib.kasuga.rendering.models.mc.dynamic.MinecraftModelRuntime.unregister(model);
+        }
     }
 
     @Override

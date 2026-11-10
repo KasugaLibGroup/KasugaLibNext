@@ -18,6 +18,7 @@
         "models/fmt/traincraft/*.fmtb",
         "models/fmt/traincraft/*.bob",
         "models/fmt/traincraft/*.beo",
-        "models/fmt/traincraft/*.fmf"
+        "models/fmt/traincraft/*.fmf",
+        "models/components/emitter_smoke.bbmodel"
     ]
 }

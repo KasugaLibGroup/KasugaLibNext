@@ -204,6 +204,10 @@ neoForge {
         // applies to all the run configs above
         configureEach {
             systemProperty 'forge.logging.markers', 'REGISTRIES'
+            if (providers.gradleProperty('kasugaTestModelEmitters').isPresent())
+                systemProperty 'kasuga.testModelEmitters', providers.gradleProperty('kasugaTestModelEmitters').get()
+            if (providers.gradleProperty('kasugaTestModelLiveSync').isPresent())
+                systemProperty 'kasuga.testModelLiveSync', providers.gradleProperty('kasugaTestModelLiveSync').get()
 
             if (providers.gradleProperty('kasugaNebulaAuto').getOrElse('false').toBoolean()) {
                 systemProperty 'kasuga.nebula.auto', 'true'

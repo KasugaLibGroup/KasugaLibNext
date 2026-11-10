@@ -66,6 +66,13 @@ public class JEElementLayer extends Layer<JEElement> {
         boolean hasRotation = (boolean) context.getTemp("has_rotation");
 
         Pair<Collection<Mesh>, Collection<Vertex>> meshesAndVertices = mapper.build(context.getLoader());
+        var components = (lib.kasuga.rendering.models.mc.component.ModelComponents) context.getData("model_components");
+        if (components != null && !components.isEmpty()) {
+            var indices = (java.util.Map<JEElement, Integer>) context.getData("component_element_indices");
+            var bindings = (java.util.Map<Vertex, String>) context.getData("component_vertex_bones");
+            String bone = components.elementBone(indices.get(element));
+            for (Vertex vertex : meshesAndVertices.getSecond()) bindings.put(vertex, bone);
+        }
         context.getLoader().getMeshes().addAll(meshesAndVertices.getFirst());
 
         int vertexCount = 0;

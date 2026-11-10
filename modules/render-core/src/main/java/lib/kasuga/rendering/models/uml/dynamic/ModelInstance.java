@@ -114,6 +114,14 @@ public class ModelInstance implements AutoCloseable {
         this.flushedSkeletonVersion = skeletonInstance.getVersion();
         this.frameSamplePrepared = false;
         this.tickLoop = new ModelTickLoop(this);
+        if (model.getModelData() != null) {
+            try {
+                model.getModelData().configureInstance(this);
+            } catch (RuntimeException | Error failure) {
+                try { close(); } catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); }
+                throw failure;
+            }
+        }
     }
 
     /** Lazily composes the common posing driver; playback controls install it when requested. */

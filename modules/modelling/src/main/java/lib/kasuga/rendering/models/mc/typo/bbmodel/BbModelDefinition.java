@@ -22,8 +22,14 @@ public record BbModelDefinition(
         List<Texture> textures,
         Map<String, Element> elements,
         List<OutlineNode> outliner,
-        List<BbModelAnimation> animations
+        List<BbModelAnimation> animations,
+        JsonObject components
 ) {
+    public BbModelDefinition(int textureWidth, int textureHeight, List<Texture> textures,
+                             Map<String, Element> elements, List<OutlineNode> outliner,
+                             List<BbModelAnimation> animations) {
+        this(textureWidth, textureHeight, textures, elements, outliner, animations, null);
+    }
     public static BbModelDefinition parse(String input) {
         Input root = ModelJson.GSON.fromJson(input, Input.class);
         int width = root.resolution.width, height = root.resolution.height;
@@ -66,7 +72,7 @@ public record BbModelDefinition(
         for (GroupInput group : root.groups) if (!group.uuid.isEmpty()) groups.put(group.uuid, group);
         List<OutlineNode> outliner = root.outliner.stream().map(value -> outline(value, groups)).toList();
         List<BbModelAnimation> animations = root.animations.stream().map(BbModelAnimation::parse).toList();
-        return new BbModelDefinition(width, height, List.copyOf(textures), Map.copyOf(elements), outliner, animations);
+        return new BbModelDefinition(width, height, List.copyOf(textures), Map.copyOf(elements), outliner, animations, root.kasuga_lib);
     }
 
     private static OutlineNode outline(JsonElement value, Map<String, GroupInput> groups) {
@@ -78,6 +84,7 @@ public record BbModelDefinition(
     }
 
     private static final class Input {
+        JsonObject kasuga_lib;
         Resolution resolution = new Resolution();
         List<TextureInput> textures = List.of();
         List<JsonObject> elements = List.of(), animations = List.of();

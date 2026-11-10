@@ -9,4 +9,7 @@ public interface ModelData {
 
     /** Registers converted subsystems after the shared model has been fully initialized. */
     default void configureModel(lib.kasuga.rendering.models.uml.structure.Model model) {}
+
+    /** Installs per-instance subsystems after its canonical skeleton and tick loop exist. */
+    default void configureInstance(lib.kasuga.rendering.models.uml.dynamic.ModelInstance instance) {}
 }

@@ -259,9 +259,15 @@ public class ModelTickLoop {
 
     public void destroy() {
         Model model = instance.getModel();
+        RuntimeException failure = null;
         for (var h : this.pipeline.list()) {
-            h.destroy(model);
+            try { h.destroy(model); }
+            catch (RuntimeException cleanup) {
+                if (failure == null) failure = cleanup;
+                else if (cleanup != failure) failure.addSuppressed(cleanup);
+            }
         }
+        if (failure != null) throw failure;
     }
 
     private static PendingTransform[] createTransforms(ModelInstance instance) {

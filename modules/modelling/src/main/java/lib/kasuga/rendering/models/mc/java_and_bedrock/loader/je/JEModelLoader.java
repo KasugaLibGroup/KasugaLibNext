@@ -91,6 +91,18 @@ public class JEModelLoader extends Loader<JsonObject, ResourceLocation, String> 
                 anchorBindingFunc,
                 vertexBindingFunc
         );
+        var components = (lib.kasuga.rendering.models.mc.component.ModelComponents) getContext().getData("model_components");
+        if (components != null && !components.isEmpty()) {
+            skeleton = components.createSkeleton();
+            var bindings = (java.util.Map<lib.kasuga.rendering.models.uml.structure.basic.Vertex, String>) getContext().getData("component_vertex_bones");
+            for (var vertex : getVertices()) {
+                String name = bindings.get(vertex);
+                var bone = name == null ? skeleton.getRoot() : skeleton.getBoneMap().get(name);
+                if (bone == null) throw new IllegalArgumentException("kasuga_lib.bindings: missing bone " + name);
+                vertex.setBinding(new BoneBinding(new Pair[]{Pair.of(bone, 1f)}, lib.kasuga.rendering.models.uml.math.binding.BoneBindingFunc.BDEF, null));
+            }
+            components.apply(skeleton);
+        }
 
         Model model = new Model(
                 getVertices().toArray(new Vertex[0]),

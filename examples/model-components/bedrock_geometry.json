@@ -1,0 +1,91 @@
+{
+  "format_version": "1.12.0",
+  "minecraft:geometry": [
+    {
+      "description": {
+        "identifier": "geometry.kasuga_demo",
+        "texture_width": 32,
+        "texture_height": 32
+      },
+      "bones": [
+        {
+          "name": "base",
+          "pivot": [0, 0, 0],
+          "cubes": [{ "origin": [-4, 0, -4], "size": [8, 8, 8] }]
+        },
+        {
+          "name": "arm",
+          "parent": "base",
+          "pivot": [0, 8, 0],
+          "rotation": [0, 0, 0],
+          "cubes": [{ "origin": [-2, 8, -2], "size": [4, 8, 4] }]
+        }
+      ],
+      "kasuga_lib": {
+        "version": 1,
+        "bones": [
+          {
+            "id": "base",
+            "name": "base",
+            "parent": null,
+            "pivot": [0, 0, 0],
+            "components": {
+              "physics": {
+                "shape": "box",
+                "mode": "kinematic",
+                "size": [8, 8, 8],
+                "position": [0, 4, 0],
+                "mass": 0
+              }
+            }
+          },
+          {
+            "id": "arm",
+            "name": "arm",
+            "parent": "base",
+            "pivot": [0, 8, 0],
+            "components": {
+              "ik": {
+                "target": "target",
+                "links": [{ "bone": "base" }],
+                "iterations": 32,
+                "tolerance": 0.01,
+                "max_step": 45
+              }
+            }
+          },
+          {
+            "id": "target",
+            "name": "target",
+            "parent": null,
+            "pivot": [8, 16, 0],
+            "components": {}
+          }
+        ],
+        "bindings": [],
+        "emitters": [
+          {
+            "id": "muzzle",
+            "name": "muzzle",
+            "bone": "arm",
+            "position": [0, 8, 0],
+            "rotation": [0, 0, 0],
+            "enabled": true,
+            "rate": 30,
+            "max_particles": 256,
+            "space": "local",
+            "particle": {
+              "texture": "minecraft:particle/flame",
+              "lifetime": 0.6,
+              "speed": 12,
+              "spread": 12,
+              "size": 1.5,
+              "color": "#ffb020",
+              "gravity": [0, -4, 0]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

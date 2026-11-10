@@ -21,6 +21,7 @@ public class BELocatorLayer extends Layer<JsonElement> {
             Vector3f pos = JsonHelper.jsonToV3f(input);
             pos.mul(-1/16f, 1/16f, 1/16f);
             Transform transform = new Transform();
+            transform.translate(pos);
             context.getLoader().getBones().addAnchor(name, transform, List.of(boneName), null);
         }
         if (input.isJsonObject()) {
