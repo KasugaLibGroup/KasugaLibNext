@@ -7,7 +7,7 @@ import java.util.List;
  * maxHeight also controls embedded cumulonimbus growth. */
 public record SkyCloudSettings(int seed, float cellSize, float baseHeight, float maxHeight,
                                float coverage, float distance, float windX, float windZ, Quality quality,
-                               List<SkyCloudLayer> layers) {
+                               List<SkyCloudLayer> layers, SkyCloudRendering rendering) {
     public static final SkyCloudSettings DEFAULT = new SkyCloudSettings(124, 2400, 900, 3000,
             .60f, 30000, 8, 3, Quality.BALANCED);
     public static final SkyCloudSettings SCATTERED = DEFAULT.withCoverage(.38f);
@@ -22,8 +22,14 @@ public record SkyCloudSettings(int seed, float cellSize, float baseHeight, float
                         new SkyCloudLayer(SkyCloudLayer.Type.CIRRUS, baseHeight + maxHeight * 1.5f, Math.max(32, maxHeight * .2f), 8000, -.12f)));
     }
 
+    public SkyCloudSettings(int seed, float cellSize, float baseHeight, float maxHeight, float coverage,
+                            float distance, float windX, float windZ, Quality quality, List<SkyCloudLayer> layers) {
+        this(seed, cellSize, baseHeight, maxHeight, coverage, distance, windX, windZ, quality, layers, SkyCloudRendering.DEFAULT);
+    }
+
     public SkyCloudSettings {
         Objects.requireNonNull(quality);
+        Objects.requireNonNull(rendering);
         layers = List.copyOf(layers);
         if (layers.isEmpty() || layers.size() > 4) throw new IllegalArgumentException("Cloud field needs 1..4 layers");
         for (float value : new float[]{cellSize, baseHeight, maxHeight, coverage, distance, windX, windZ})
@@ -34,19 +40,25 @@ public record SkyCloudSettings(int seed, float cellSize, float baseHeight, float
             throw new IllegalArgumentException("Cloud field settings outside supported range");
     }
     public SkyCloudSettings withCoverage(float value) {
-        return new SkyCloudSettings(seed, cellSize, baseHeight, maxHeight, value, distance, windX, windZ, quality, layers);
+        return new SkyCloudSettings(seed, cellSize, baseHeight, maxHeight, value, distance, windX, windZ, quality, layers, rendering);
     }
     public SkyCloudSettings withQuality(Quality value) {
-        return new SkyCloudSettings(seed, cellSize, baseHeight, maxHeight, coverage, distance, windX, windZ, value, layers);
+        return new SkyCloudSettings(seed, cellSize, baseHeight, maxHeight, coverage, distance, windX, windZ, value, layers, rendering);
     }
     public SkyCloudSettings withSeed(int value) {
-        return new SkyCloudSettings(value, cellSize, baseHeight, maxHeight, coverage, distance, windX, windZ, quality, layers);
+        return new SkyCloudSettings(value, cellSize, baseHeight, maxHeight, coverage, distance, windX, windZ, quality, layers, rendering);
     }
     public SkyCloudSettings withLayers(List<SkyCloudLayer> value) {
-        return new SkyCloudSettings(seed, cellSize, baseHeight, maxHeight, coverage, distance, windX, windZ, quality, value);
+        return new SkyCloudSettings(seed, cellSize, baseHeight, maxHeight, coverage, distance, windX, windZ, quality, value, rendering);
+    }
+    public SkyCloudSettings withRendering(SkyCloudRendering value) {
+        return new SkyCloudSettings(seed, cellSize, baseHeight, maxHeight, coverage, distance, windX, windZ, quality, layers, value);
+    }
+    public SkyCloudSettings withWind(float x, float z) {
+        return new SkyCloudSettings(seed, cellSize, baseHeight, maxHeight, coverage, distance, x, z, quality, layers, rendering);
     }
     public enum Quality {
-        FAST(3, 112, 1), BALANCED(2, 160, 2), HIGH(1, 256, 3);
+        FAST(3, 112, 2), BALANCED(2, 160, 4), HIGH(1, 256, 6);
         public final int resolutionDivisor, sampleBudget, lightSteps;
         Quality(int divisor, int budget, int lighting) {
             resolutionDivisor = divisor; sampleBudget = budget; lightSteps = lighting;

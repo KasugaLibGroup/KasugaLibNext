@@ -51,6 +51,8 @@
 
 ## 维护
 
+2026-11-09 Cobalt blue 当前工作树补充（尚未提交）：第 8 项可消费 `SceneOverlay` 的黑屏淡入与紧凑播放器、`WaterEffects` 的浅水模拟/折射/反射和 `SceneWarmup` 的区块数据与可见网格准备门禁；第 11/12 项可消费 `MinecraftStage`、`SceneControls`、`SceneProps` 的作用域生命周期；第 17 项已有 `SpatialAudio`/`SceneTrack` 位置音频门面。当前 macOS Sodium/Iris 隐藏真实客户端已验证抓取入槽、房间零水波、涉水碰撞和声源属性；耳机主观听感、其他平台与光影包仍需单独验收。
+
 - 改动某个能力本身（扩展/修改）后，回来更新这一行。
 - 新增能力（如"配置"从不存在变存在）后，加一行。
 - 每次线上 bug 归因到某个能力时，检查它的成熟度是否该下调。

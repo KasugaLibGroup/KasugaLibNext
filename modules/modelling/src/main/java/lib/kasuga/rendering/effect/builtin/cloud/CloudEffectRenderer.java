@@ -11,24 +11,29 @@ final class CloudEffectRenderer implements EffectRenderer<CumulonimbusCloud>, Au
     private CloudVolumeRenderer renderer;
     private CloudVolumeRenderer.Pass pass;
     private float partialTick;
+    private net.minecraft.client.multiplayer.ClientLevel historyLevel;
 
     @Override public void begin(WorldRenderPipelineContext context) {
         RenderSystem.assertOnRenderThread();
         if (!CloudEffects.isEnabled()) return;
         if (renderer == null) renderer = new CloudVolumeRenderer();
         if (!renderer.isReady()) return;
+        if (historyLevel != context.level()) { renderer.clearHistory(); historyLevel = context.level(); }
         partialTick = context.partialTick().getGameTimeDeltaPartialTick(false);
         float angle = context.level().getSunAngle(partialTick);
         // Match vanilla's sky transform: Y(-90 degrees), then X(sun angle).
         var sun = new Vector3f(-(float) Math.sin(angle), (float) Math.cos(angle), 0);
         float daylight = Math.max(0, sun.y);
-        float sunlight = daylight * (1 - context.level().getRainLevel(partialTick) * .65f);
+        float twilight = Math.clamp((sun.y + .06f) / .18f, 0, 1);
+        float sunlight = twilight * twilight * (3 - 2 * twilight) * (1 - context.level().getRainLevel(partialTick) * .65f);
+        float warm = Math.clamp(sun.y / .28f, 0, 1);
+        var sunColor = new Vector3f(.98f, .42f, .19f).lerp(new Vector3f(.90f, .84f, .74f), warm).mul(sunlight);
         var cloudColor = context.level().getCloudColor(partialTick);
         var ambient = new Vector3f((float) cloudColor.x, (float) cloudColor.y, (float) cloudColor.z).mul(.32f);
         var camera = context.camera().getPosition();
         pass = renderer.begin(context.modelViewMatrix(), context.projectionMatrix(), new Vector3d(camera.x, camera.y, camera.z),
-                sun, new Vector3f(.90f, .84f, .74f).mul(sunlight),
-                ambient);
+                sun, sunColor,
+                ambient, context.viewId());
         var skyColor = context.level().getSkyColor(camera, partialTick);
         pass.atmosphereColor(new Vector3f((float) skyColor.x, (float) skyColor.y, (float) skyColor.z));
     }
@@ -55,6 +60,7 @@ final class CloudEffectRenderer implements EffectRenderer<CumulonimbusCloud>, Au
     @Override public void close() {
         if (!RenderSystem.isOnRenderThread()) { RenderSystem.recordRenderCall(this::close); return; }
         if (pass != null) { pass.close(); pass = null; }
-        if (renderer != null) renderer.close();
+        if (renderer != null) { renderer.close(); renderer = null; }
+        historyLevel = null;
     }
 }

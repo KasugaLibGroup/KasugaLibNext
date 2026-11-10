@@ -70,7 +70,7 @@ The atlas identity is decided jointly by "source texture + final PBR parameters"
 - The content hash of the same source image and profile is reused within a single load.
 - `BufferedImage` is converted to `NativeImage` directly, instead of being encoded to an in-memory PNG and decoded again.
 - The CPU fallback runs at most two bakes at a time, so it does not occupy all resource load threads.
-- In-world resource reload uses generation-based publishing: new models are built in the background first, and are atomically swapped on the game thread only after the atlas and the sprite mappings are all ready; Kasuga model drawing is paused during the reload, and the old backend instances of the replaced models are cleaned up.
+- In-world resource reload uses generation-based publishing: new models are built in the background first, and the cross-pipeline model generation is atomically swapped on the game thread only after the atlas and sprite mappings are ready; Kasuga model drawing is paused during reload, and old backend instances are cleaned up. Texture atlases and loader auxiliary indexes are outside the model-generation transaction and are not rolled back if publication fails.
 
 ## 3. Observability
 

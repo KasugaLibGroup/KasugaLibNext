@@ -56,6 +56,12 @@ public final class GlslProgram {
     }
 
     public static int link(String vertex, String fragment, Map<String, Integer> attributes, String[] feedback) {
+        return link(vertex, fragment, attributes, feedback, Map.of());
+    }
+
+    /** Explicit MRT bindings for GLSL 1.50, which predates layout(location=...). */
+    public static int link(String vertex, String fragment, Map<String, Integer> attributes, String[] feedback,
+                           Map<String, Integer> outputs) {
         int vs = 0, fs = 0, program = 0;
         try {
             vs = compile(GL20.GL_VERTEX_SHADER, vertex);
@@ -66,6 +72,7 @@ public final class GlslProgram {
             for (var attribute : attributes.entrySet()) {
                 GL20.glBindAttribLocation(program, attribute.getValue(), attribute.getKey());
             }
+            for (var output : outputs.entrySet()) GL30.glBindFragDataLocation(program, output.getValue(), output.getKey());
             if (feedback.length > 0) GL30.glTransformFeedbackVaryings(program, feedback, GL30.GL_INTERLEAVED_ATTRIBS);
             GL20.glLinkProgram(program);
             if (GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
