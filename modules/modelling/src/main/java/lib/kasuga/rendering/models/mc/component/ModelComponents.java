@@ -229,7 +229,21 @@ public final class ModelComponents {
                     skeleton.getBindingAbsolute(bones.get(id)).getPosition(),new Vector3f(),new Vector3f(),new Vector3f(),
                     min,max,new Vector3f(),vector(joint, "rotation_spring", new Vector3f())));
         }
-        skeleton.setDynamics(new SkeletonDynamics(new SkeletonDynamics.Physics(bodies,joints,new Vector3f(1),false,true,1,Set.of()),chains,List.of()));
+        List<SkeletonDynamics.DiamondConstraint> diamonds = new ArrayList<>();
+        Set<String> diamondIds = new HashSet<>(), usedBranches = new HashSet<>();
+        Set<String> chainIds = new HashSet<>();
+        chains.forEach(chain -> chainIds.add(chain.name()));
+        if (source.has("diamonds")) for (JsonElement value : array(source, "diamonds")) {
+            JsonObject diamond = value.getAsJsonObject();
+            String id = string(diamond, "id", ""), first = string(diamond, "first", ""), second = string(diamond, "second", "");
+            if (id.isBlank() || !diamondIds.add(id) || first.equals(second)
+                    || !chainIds.contains(first) || !chainIds.contains(second)
+                    || !usedBranches.add(first) || !usedBranches.add(second))
+                throw error("diamonds: invalid id or shared/missing branch");
+            diamonds.add(new SkeletonDynamics.DiamondConstraint(id, first, second,
+                    integer(diamond, "iterations", 64), number(diamond, "tolerance", 0.01f, 0.000001f, 16)/16));
+        }
+        skeleton.setDynamics(new SkeletonDynamics(new SkeletonDynamics.Physics(bodies,joints,new Vector3f(1),false,true,1,Set.of()),chains,diamonds));
     }
     private JsonObject definition(String id) { JsonObject b=definitions.get(id);if(b==null)throw error("missing bone id: "+id);return b; }
     private void installEmitterAnchors(Skeleton skeleton, Map<String, Bone> bones) {

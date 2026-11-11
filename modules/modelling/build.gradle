@@ -199,6 +199,8 @@ neoForge {
         // applies to all the run configs above
         configureEach {
             systemProperty 'forge.logging.markers', 'REGISTRIES'
+            if (providers.gradleProperty('kasugaQjDemo').getOrElse('false').toBoolean())
+                systemProperty 'kasuga.qjDemo', 'true'
             if (providers.gradleProperty('kasugaTestModelEmitters').isPresent())
                 systemProperty 'kasuga.testModelEmitters', providers.gradleProperty('kasugaTestModelEmitters').get()
             if (providers.gradleProperty('kasugaTestModelLiveSync').isPresent())

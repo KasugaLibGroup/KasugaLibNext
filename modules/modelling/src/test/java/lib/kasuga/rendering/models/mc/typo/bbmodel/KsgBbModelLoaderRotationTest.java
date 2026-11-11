@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Element/group rotation semantics of {@link KsgBbModelLoader}.
  *
- * <p>Blockbench composes euler angles as intrinsic Z → Y → X (matrix {@code Rz·Ry·Rx}, three.js
+ * <p>Blockbench cubes and groups compose euler angles as intrinsic Z → Y → X (matrix {@code Rz·Ry·Rx}, three.js
  * {@code Euler.order = "ZYX"} and Minecraft's {@code ModelPart} {@code ZP}/{@code YP}/{@code XP} order).
  * Rotations are relative: each element rotates around its own {@code origin}, inside its parent group's
  * already-rotated frame. Angles are used exactly as stored — Blockbench's Bedrock export writes the
@@ -85,6 +85,22 @@ class KsgBbModelLoaderRotationTest {
             expected.add(world.transformPosition(corner).mul(1f / 16f));
         }
         assertCornerInstances(model, expected, 3);
+    }
+
+    @Test
+    void meshUsesNativeXyzRotationInsideZyxGroup() {
+        Model model=cubeModel("""
+          {"uuid":"mesh","type":"mesh","origin":[8,4,12],"rotation":[30,60,20],
+           "vertices":{"a":[16,0,0],"b":[0,16,0],"c":[0,0,16]},
+           "faces":{"face":{"vertices":["a","b","c"],"uv":{"a":[0,0],"b":[16,0],"c":[0,16]},"texture":0}}}
+          """, """
+          [{"name":"group","origin":[4,8,0],"rotation":[15,25,35],"children":["mesh"]}]
+          """);
+        Matrix4f transform=pivot(4,8,0,15,25,35).translate(8,4,12)
+                .rotate(new Quaternionf().rotationXYZ(rad(30),rad(60),rad(20)));
+        List<Vector3f> expected=List.of(new Vector3f(16,0,0),new Vector3f(0,16,0),new Vector3f(0,0,16))
+                .stream().map(p->transform.transformPosition(p).mul(1f/16)).toList();
+        assertCornerInstances(model,expected,1);
     }
 
     //region helpers

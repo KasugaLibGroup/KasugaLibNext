@@ -25,6 +25,12 @@
       "items": {
         "$ref": "#/$defs/emitter"
       }
+    },
+    "diamonds": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diamond"
+      }
     }
   },
   "additionalProperties": true,
@@ -310,6 +316,35 @@
         },
         "gravity": {
           "$ref": "#/$defs/vec3"
+        }
+      },
+      "additionalProperties": true
+    },
+    "diamond": {
+      "type": "object",
+      "required": ["id", "first", "second"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "first": {
+          "type": "string",
+          "minLength": 1
+        },
+        "second": {
+          "type": "string",
+          "minLength": 1
+        },
+        "iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "tolerance": {
+          "type": "number",
+          "minimum": 1e-06,
+          "maximum": 16
         }
       },
       "additionalProperties": true

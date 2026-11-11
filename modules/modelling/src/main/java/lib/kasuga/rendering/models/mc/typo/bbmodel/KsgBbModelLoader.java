@@ -269,7 +269,12 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
                                BbModelDefinition definition, Map<Integer, Material> materials, Bone bindTarget,
                                List<Vertex> vertices, List<Mesh> meshes) {
         if (!parentVisible || !element.visible()) return;
-        BlockBenchTransform transform = parentTransform.child(element.origin(), element.rotation());
+        // Blockbench MeshPreviewController keeps THREE.Mesh's default XYZ order;
+        // cubes and groups explicitly select the format's ZYX order.
+        Quaternionf rotation = "mesh".equals(element.type())
+                ? QuaternionHelper.fromXYZDegrees(element.rotation())
+                : QuaternionHelper.fromZYXDegrees(element.rotation());
+        BlockBenchTransform transform = parentTransform.child(element.origin(), rotation);
         if ("mesh".equals(element.type())) {
             appendMeshElement(element, transform, definition, materials, bindTarget, vertices, meshes);
         } else {
@@ -397,11 +402,14 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
         );
 
         private BlockBenchTransform child(Vector3f pivot, Vector3f localRotation) {
+            return child(pivot, QuaternionHelper.fromZYXDegrees(localRotation));
+        }
+
+        private BlockBenchTransform child(Vector3f pivot, Quaternionf localRotation) {
             Vector3f scaledPivot = new Vector3f(pivot).mul(1.0f / 16.0f);
             Vector3f origin = scaledPivot.sub(parentPivot).rotate(rotation).add(absoluteOrigin);
-            // Blockbench composes Z→Y→X (see QuaternionHelper.fromZYXAngle): a group's or element's own
-            // rotation is applied in its parent's already-rotated frame, around its own origin.
-            Quaternionf combinedRotation = new Quaternionf(rotation).mul(QuaternionHelper.fromZYXDegrees(localRotation));
+            // Each node composes its own rotation inside the already-rotated parent frame.
+            Quaternionf combinedRotation = new Quaternionf(rotation).mul(localRotation);
             return new BlockBenchTransform(combinedRotation, origin, scaledPivot);
         }
 

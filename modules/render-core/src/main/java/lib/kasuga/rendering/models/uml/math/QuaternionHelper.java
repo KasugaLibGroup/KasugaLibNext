@@ -44,7 +44,8 @@ public class QuaternionHelper {
     /**
      * Blockbench/Minecraft euler order: intrinsic Z, then Y, then X — the matrix {@code Rz·Ry·Rx}.
      *
-     * <p>{@code .bbmodel} element, group and animation rotations are authored in this order. It is the
+     * <p>{@code .bbmodel} cube, group and animation rotations are authored in this order.
+     * Native Blockbench mesh elements use THREE.Mesh's default XYZ order instead. ZYX is the
      * composition Blockbench's own preview applies (three.js {@code Euler.order = "ZYX"}), the order
      * Minecraft's {@code ModelPart} multiplies its {@code ZP}/{@code YP}/{@code XP} rotations in, and the
      * order {@code RotHelper.rotation} composes Bedrock cube rotations in. {@link #fromXYZDegrees} is
