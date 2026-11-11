@@ -1,5 +1,6 @@
 package lib.kasuga.rendering.models.mc.proxies;
 
+import lib.kasuga.rendering.models.uml.dynamic.animation.FormulaTransformSampler;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.state.ParameterSpec;
 import lib.kasuga.rendering.models.uml.math.Transform;
@@ -7,6 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * One independently placed (and optionally animated) rigid model under a single {@link ProxyInstance}.
@@ -152,9 +154,70 @@ public record ModelPart(
         return new TransformMotion.Tick(source);
     }
 
+    /**
+     * Creates a tick-domain motion from one part in a compiled formula animation clip.
+     *
+     * <p>The input callback assigns current {@code query.*} values before sampling. The sampler
+     * caches unchanged inputs, so several parts may share one sampler and input source within the
+     * same logical step.
+     *
+     * @param sampler formula part sampler shared by the model group
+     * @param part    target part ID declared by the clip
+     * @param input   assigns current formula inputs
+     * @return complete tick-domain local motion
+     */
+    public static TransformMotion tickFormula(
+            FormulaTransformSampler sampler,
+            String part,
+            Consumer<FormulaTransformSampler> input
+    ) {
+        Objects.requireNonNull(sampler, "sampler");
+        if (part == null || part.isBlank()) {
+            throw new IllegalArgumentException("Formula part ID must not be blank");
+        }
+        Objects.requireNonNull(input, "input");
+        if (!sampler.parts().contains(part)) {
+            throw new IllegalArgumentException("Unknown formula part: " + part);
+        }
+        return tickTransform(ignored -> {
+            input.accept(sampler);
+            return sampler.samplePart(part);
+        });
+    }
+
     /** Defines complete motion sampled from the host's current render frame. */
     public static TransformMotion frameTransform(TransformMotion.FrameSource source) {
         return new TransformMotion.Frame(source);
+    }
+
+    /**
+     * Creates a frame-domain motion from one part in a compiled formula animation clip.
+     *
+     * <p>The input callback assigns current {@code query.*} values before sampling. This is
+     * appropriate when the host already supplies a frame-interpolated source value.
+     *
+     * @param sampler formula part sampler shared by the model group
+     * @param part    target part ID declared by the clip
+     * @param input   assigns current formula inputs
+     * @return complete frame-domain local motion
+     */
+    public static TransformMotion frameFormula(
+            FormulaTransformSampler sampler,
+            String part,
+            Consumer<FormulaTransformSampler> input
+    ) {
+        Objects.requireNonNull(sampler, "sampler");
+        if (part == null || part.isBlank()) {
+            throw new IllegalArgumentException("Formula part ID must not be blank");
+        }
+        Objects.requireNonNull(input, "input");
+        if (!sampler.parts().contains(part)) {
+            throw new IllegalArgumentException("Unknown formula part: " + part);
+        }
+        return frameTransform(() -> {
+            input.accept(sampler);
+            return sampler.samplePart(part);
+        });
     }
 
     /**

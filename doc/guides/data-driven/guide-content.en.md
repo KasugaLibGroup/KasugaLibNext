@@ -431,9 +431,15 @@ The relative order of the two entry points is **glob first, index second**, and 
     {
       "id": "mymod:fan_clip",
       "duration_seconds": 12.0,
-      "functions": [
-        { "bone": "fan", "channel": "rotate", "y": "11 * query.angle" },
-        { "bone": "cover", "channel": "rotate", "z": "sin(rad(2 * query.angle)) * 30" }
+      "formula_transforms": [
+        {
+          "target": { "bone": "fan" },
+          "transform": { "rotate": { "y": "11 * query.angle" } }
+        },
+        {
+          "target": { "bone": "cover" },
+          "transform": { "rotate": { "z": "sin(rad(2 * query.angle)) * 30" } }
+        }
       ]
     }
   ]
@@ -441,6 +447,38 @@ The relative order of the two entry points is **glob first, index second**, and 
 ```
 
 (from `animation_clips/fan_fsm_data_driven.json`.)
+
+The same `formula_transforms` list may also drive a rigid part or a bone inside a part:
+
+```json
+{
+  "animation_clips": [
+    {
+      "id": "mymod:mechanism",
+      "variables": [
+        { "name": "mechanism.angle", "expression": "rad(query.wheel_angle)" }
+      ],
+      "formula_transforms": [
+        {
+          "target": { "part": "part_06" },
+          "transform": {
+            "translate": { "z": "sin(mechanism.angle)" },
+            "rotate": { "x": "-query.wheel_angle", "y": "180" }
+          }
+        },
+        {
+          "target": { "part": "part_06", "bone": "pin" },
+          "transform": { "rotate": { "z": "query.pin_angle" } }
+        }
+      ]
+    }
+  ]
+}
+```
+
+`variables` are evaluated in declaration order. `target.part` drives an entire rigid part, while
+`target.bone` drives a bone inside that instance. A host uses `FormulaTransformSampler` to compile
+the expressions and bind the resulting `FormulaTransformPose` to model motion.
 
 `animation_clips/` has no directory glob, so clip files can only be read through the manifest's `on_reload` array
 (`AnimationClipLoader` class documentation, `:28-29`). Put a clip file under `data/<ns>/animation_clips/` and forget to list it in the manifest, and
@@ -562,6 +600,11 @@ Turning "silent errors" into a red light is the least-effort approach. Error buc
 
 KuaYue's 11 carriages (`22`/`25`/`25b`/`25g`/`25k`/`25t`/`25z`/`cr200j`/`freight`/`jy30`/`m1`) show what "split by feature, each feature carrying its own manifest fragment" looks like in a real project. Each carriage is an **independent resource-compilation module**, and its source directory top level holds `blockstates/`, `data/`, `lang/`, `loots/`, `models/`, `recipes/`, `tags/`, `textures/` and `module.toml` — **there is no `assets/`**; only after resource compilation does it merge into the `assets/`/`data/` layout in the output. Model assets, localization, loot tables, and data-driven content are delivered together inside the same carriage directory.
 
+`scripts/` is a generic passthrough category: `scripts/packages/...` inside a module is copied
+unchanged to the resource root at `scripts/packages/...`, without JSON merging or any other
+transformation. It is suitable for JavaScript packages delivered with a feature module; modules
+without scripts do not need this directory.
+
 For the data-driven part there are three files per carriage (exception: `jy30` has `module.toml` but no data-driven content at all, so it does not take part in data-driven):
 
 ```text
@@ -630,6 +673,7 @@ The blocks (`c22`, excerpt):
 The resource compiler only walks directories that **contain `module.toml`** (`ResourceCompilerMain.java:24-39`; `ResourceScanner.scanModule`, `:43-58`),
 so the content in these two directories (index and data-driven files included) **never makes it into the jar**, and the blocks in them are never registered.
 Transferring this to your own project: even with the manifest written correctly, confirm that the directory carrying it is really picked up by your resource compilation/packaging pipeline.
+`compileResources` clears its generated output before every run, so deleting or moving a source resource also removes its old jar entry.
 
 ---
 

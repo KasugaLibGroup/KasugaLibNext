@@ -151,6 +151,9 @@ dependencies {
 
     api project(':modules:render-core')
     api project(':modules:render-opengl')
+    api project(':modules:formula')
+    additionalRuntimeClasspath project(':modules:formula')
+    shadowLibrary project(':modules:formula')
     // useModProject embeds project classes; these parser dependencies need to
     // be embedded separately, as they are not provided by Minecraft.
     shadowLibrary 'de.javagl:jgltf-model:2.0.4'

@@ -27,7 +27,7 @@ class AnimationTimelineIntegrationTest {
                 .keyframe(X, 0, BASE.x(), null).keyframe(X, duration, BASE.x() + 10, null).build();
         return new AnimationClip(camera.id(), duration, List.of(new AnimationClip.BoneTrack("root", List.of(
                 new AnimationClip.Keyframe(0, transform(0), null),
-                new AnimationClip.Keyframe(duration, transform(10), null)))), List.of(), List.of(), List.of(),
+                new AnimationClip.Keyframe(duration, transform(10), null)))), List.of(), List.of(),
                 List.of(new AnimationClip.CameraTrack("shot", camera.tracks())));
     }
 

@@ -281,7 +281,8 @@ The element schema is decided by `AnimationClip.CODEC` (`AnimationClip.java:47-5
 | `bones` | array | No | `[]` | Bone keyframe tracks |
 | `morphs` | array | No | `[]` | morph value tracks |
 | `frames` | array | No | `[]` | Material frame tracks |
-| `functions` | array | No | `[]` | Formula tracks (evaluated once per logical step; render frames interpolate the resulting Poses) |
+| `variables` | array | No | `[]` | Reusable formula values evaluated in declaration order |
+| `formula_transforms` | array | No | `[]` | Unified formula tracks targeting rigid parts or bones |
 
 ### 6.2 `bones[]`
 
@@ -300,41 +301,105 @@ The element schema is decided by `AnimationClip.CODEC` (`AnimationClip.java:47-5
 
 `material` (string, required) + `keyframes` (required); a keyframe is `{ "time": float, "frame": int }` (`FrameKeyframe.CODEC`, `:111-114`). Material frame tracks round to the nearest keyframe and do not interpolate (`FrameTrack` Javadoc, `:100`).
 
-### 6.5 `functions[]`
+### 6.5 `formula_transforms[]`
 
-| Field | Type | Required | Default | Meaning |
-|------|------|------|------|------|
-| `bone` | string | **Yes** | — | Target bone |
-| `channel` | string | **Yes** | — | `rotate` / `translate` / `scale`; an unknown value falls back to `rotate` (`CHANNEL_CODEC`, `:133-145`) |
-| `x` / `y` / `z` | string | No | `""` | Per-axis formula expression; an empty string = that axis keeps its unit value (rotate 0 / translate 0 / scale 1) |
+Each unified track contains one target and one complete local transform:
 
-Source: `FunctionTrack.CODEC` (`AnimationClip.java:147-153`); the expressions are evaluated frame by frame at runtime in the `lib.kasuga.formula` namespace. The real fixture (`fan_fsm_data_driven.json`) has exactly these three formula tracks:
+| Field | Type | Required | Meaning |
+|------|------|------|------|
+| `target` | object | **Yes** | Rigid part or bone target |
+| `transform` | object | No | `translate` / `rotate` / `scale` expression groups |
+
+`target` fields:
+
+| Field | Type | Meaning |
+|------|------|------|
+| `part` | string | Model part or instance ID; by itself it targets the entire rigid part |
+| `bone` | string | Bone inside the instance; omitted for a whole-part target |
+
+Using only `bone` targets a bone in a single-model instance. Using both `part` and `bone`
+targets a bone inside that part instance. Each `(part, bone)` pair must be unique within the clip.
+
+Each of `transform.translate`, `transform.rotate` and `transform.scale` is
+`{ "x": string?, "y": string?, "z": string? }`. Blank axes use identity values: `0` for
+translation and rotation, `1` for scale. The final order is translate, rotate, scale.
 
 ```json
 {
   "animation_clips": [
     {
-      "id": "example:fan",
-      "duration_seconds": 12.0,
-      "functions": [
-        { "bone": "group", "channel": "rotate", "y": "query.angle" }
+      "id": "example:mechanism",
+      "variables": [
+        { "name": "mechanism.angle", "expression": "rad(query.wheel_angle)" }
+      ],
+      "formula_transforms": [
+        {
+          "target": { "part": "moon" },
+          "transform": {
+            "translate": {
+              "x": "6 * cos(mechanism.angle)",
+              "z": "6 * sin(mechanism.angle)"
+            },
+            "rotate": { "y": "-query.wheel_angle" }
+          }
+        },
+        {
+          "target": { "part": "moon", "bone": "panel" },
+          "transform": { "rotate": { "x": "query.panel_angle" } }
+        },
+        {
+          "target": { "bone": "root" },
+          "transform": { "rotate": { "y": "query.spin" } }
+        }
       ]
     }
   ]
 }
 ```
 
-> When encoding, fields whose value equals the default are omitted. In the real fixture `fan_fsm_data_driven.json`, the empty axes (`x` / `z`) of the three formula tracks are not written out, which is precisely the canonical encoded shape of `AnimationClip.CODEC`; `FanDataDrivenClipTest.clipFileIsInCanonicalEncodedShape` pins that the file is verbatim equal to the codec's encoding result.
+`ClipSampler` consumes bone tracks without `part` and produces a single-instance `Pose`.
+`FormulaTransformSampler` consumes every track and outputs rigid-part and bone transforms. The
+real fixture `fan_fsm_data_driven.json` uses three single-instance bone tracks;
+`FanDataDrivenClipTest` pins its canonical encoded shape.
 
-### 6.6 easing Names
+### 6.6 `variables[]`
+
+Each entry contains a `name` and an `expression`. Expressions are evaluated in declaration order
+before `formula_transforms[]`. A later expression may read any `query.*` input or a
+variable declared earlier. Variable names must be unique within the clip.
+
+```json
+{
+  "variables": [
+    { "name": "qj.angle", "expression": "rad(query.wheel_angle)" },
+    { "name": "qj.sine", "expression": "sin(qj.angle)" }
+  ]
+}
+```
+
+### 6.7 Formula Runtime
+
+A host assigns inputs through `FormulaTransformSampler.assignQuery(...)` and calls `sample()` once
+per logical step. The sampler evaluates `variables` in declaration order, then every
+`formula_transforms` entry, and caches the snapshot until an input changes.
+`FormulaTransformPose.part(...)` returns a rigid-part transform and `bone(...)` returns a bone
+transform.
+
+`ModelPart.tickFormula` / `frameFormula` connects part-root transforms to the multi-model motion
+pipeline. Single-instance bones can be consumed through `ClipSampler` or
+`FormulaTransformSampler`.
+
+### 6.8 easing Names
 
 `easing` maps a string to a built-in easing (`EASING_CODEC`, `AnimationClip.java:39-45`). **An unknown name does not error; it falls back to `linear`**. The available names are `Easing.NAMED` (`Easing.java:232-246`):
 
 `linear`, `ease_in_quad`, `ease_out_quad`, `ease_in_out_quad`, `ease_in_cubic`, `ease_out_cubic`, `ease_in_out_cubic`, `ease_in_sine`, `ease_out_sine`, `ease_in_out_sine`, `back`, `elastic`, `bounce`.
 
-### 6.7 Unknown Keys Inside an Element Are Ignored
+### 6.9 Unknown Keys Inside an Element Are Ignored
 
 Keys the `AnimationClip` record does **not name** are ignored by the codec, so an author can add comment-like fields without breaking loading (`AnimationClipLoader` class Javadoc `:24-26`; test `AnimationClipLoaderTest.ignoresKeysTheClipRecordDoesNotName`, `:132-144`).
+The removed `functions` and `formula_parts` keys are exceptions: the loader rejects them and points
+authors to `formula_transforms`.
 
 ## 7. Differences Between the Two Discovery Paths
 

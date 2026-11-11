@@ -281,7 +281,8 @@ reload 期（`/reload` 触发的资源重读）只有**一个编排者**：`Relo
 | `bones` | 数组 | 否 | `[]` | 骨骼关键帧轨道 |
 | `morphs` | 数组 | 否 | `[]` | morph 值轨道 |
 | `frames` | 数组 | 否 | `[]` | 材质帧轨道 |
-| `functions` | 数组 | 否 | `[]` | 公式轨道（每个逻辑步求值，渲染帧插值结果 Pose） |
+| `variables` | 数组 | 否 | `[]` | 按声明顺序求值的可复用公式变量 |
+| `formula_transforms` | 数组 | 否 | `[]` | 统一公式变换轨道，目标可为刚体 Part 或骨骼 |
 
 ### 6.2 `bones[]`
 
@@ -300,41 +301,101 @@ reload 期（`/reload` 触发的资源重读）只有**一个编排者**：`Relo
 
 `material`（string，必填）+ `keyframes`（必填）；关键帧为 `{ "time": float, "frame": int }`（`FrameKeyframe.CODEC`，`:111-114`）。材质帧轨道按最近关键帧取整，不做插值（`FrameTrack` Javadoc，`:100`）。
 
-### 6.5 `functions[]`
+### 6.5 `formula_transforms[]`
 
-| 字段 | 类型 | 必填 | 默认 | 含义 |
-|------|------|------|------|------|
-| `bone` | string | **是** | — | 目标骨骼 |
-| `channel` | string | **是** | — | `rotate` / `translate` / `scale`；未知值回落到 `rotate`（`CHANNEL_CODEC`，`:133-145`） |
-| `x` / `y` / `z` | string | 否 | `""` | 各轴公式表达式；空串 = 该轴保持单位值（rotate 0 / translate 0 / scale 1） |
+统一公式变换轨道。每条轨道由一个目标和一个完整局部变换组成：
 
-出处：`FunctionTrack.CODEC`（`AnimationClip.java:147-153`）；表达式在运行期按 `lib.kasuga.formula` 命名空间逐帧求值。真实夹具（`fan_fsm_data_driven.json`）就是这样三条公式轨道：
+| 字段 | 类型 | 必填 | 含义 |
+|------|------|------|------|
+| `target` | object | **是** | 刚体 Part 或骨骼目标 |
+| `transform` | object | 否 | `translate` / `rotate` / `scale` 三组表达式 |
+
+`target` 字段：
+
+| 字段 | 类型 | 含义 |
+|------|------|------|
+| `part` | string | 模型 Part/实例 ID；只写它表示驱动整个刚体 |
+| `bone` | string | 实例内骨骼 ID；省略时目标为整个 Part |
+
+只写 `bone` 表示目标为单实例模型中的骨骼。`part` 和 `bone` 同时存在时，目标为指定
+Part 实例内的骨骼。每个 `(part, bone)` 组合在剪辑内唯一。
+
+`transform.translate`、`transform.rotate`、`transform.scale` 都是
+`{ "x": string?, "y": string?, "z": string? }`。空轴使用单位值：平移和旋转为 `0`，
+缩放为 `1`。最终顺序为平移、旋转、缩放。
 
 ```json
 {
   "animation_clips": [
     {
-      "id": "example:fan",
-      "duration_seconds": 12.0,
-      "functions": [
-        { "bone": "group", "channel": "rotate", "y": "query.angle" }
+      "id": "example:mechanism",
+      "variables": [
+        { "name": "mechanism.angle", "expression": "rad(query.wheel_angle)" }
+      ],
+      "formula_transforms": [
+        {
+          "target": { "part": "moon" },
+          "transform": {
+            "translate": {
+              "x": "6 * cos(mechanism.angle)",
+              "z": "6 * sin(mechanism.angle)"
+            },
+            "rotate": { "y": "-query.wheel_angle" }
+          }
+        },
+        {
+          "target": { "part": "moon", "bone": "panel" },
+          "transform": { "rotate": { "x": "query.panel_angle" } }
+        },
+        {
+          "target": { "bone": "root" },
+          "transform": { "rotate": { "y": "query.spin" } }
+        }
       ]
     }
   ]
 }
 ```
 
-> 编码时，取值等于默认值的字段会被省略。真实夹具 `fan_fsm_data_driven.json` 里三条公式轨道的空轴（`x` / `z`）不写出来，正是 `AnimationClip.CODEC` 的规范编码形态；`FanDataDrivenClipTest.clipFileIsInCanonicalEncodedShape` 锁定该文件逐字等于 codec 的编码结果。
+`ClipSampler` 消费没有 `part` 的骨骼轨道并生成单实例 `Pose`。
+`FormulaTransformSampler` 消费全部轨道，输出刚体 Part 变换和骨骼变换。真实夹具
+`fan_fsm_data_driven.json` 使用三条单实例骨骼轨道；`FanDataDrivenClipTest` 锁定其
+规范编码形状。
 
-### 6.6 easing 名称
+### 6.6 `variables[]`
+
+每项包含 `name` 和 `expression`。表达式在 `formula_transforms[]` 之前按声明顺序求值，
+后续表达式可以读取任意 `query.*` 输入或此前声明的变量。剪辑内变量名必须唯一。
+
+```json
+{
+  "variables": [
+    { "name": "qj.angle", "expression": "rad(query.wheel_angle)" },
+    { "name": "qj.sine", "expression": "sin(qj.angle)" }
+  ]
+}
+```
+
+### 6.7 公式运行方式
+
+宿主每个逻辑步通过 `FormulaTransformSampler.assignQuery(...)` 写入输入，再调用 `sample()`。
+采样器按声明顺序计算 `variables`，然后计算全部 `formula_transforms`，并缓存到输入发生变化为止。
+`FormulaTransformPose.part(...)` 取得刚体变换，`bone(...)` 取得骨骼变换。
+
+`ModelPart.tickFormula` / `frameFormula` 可以把刚体变换直接接入多模型运动管线。
+单实例骨骼仍可由 `ClipSampler` 或 `FormulaTransformSampler` 输出。
+
+### 6.8 easing 名称
 
 `easing` 由字符串映射到内置缓动（`EASING_CODEC`，`AnimationClip.java:39-45`）。**未知名称不报错，回落到 `linear`**。可用名称是 `Easing.NAMED`（`Easing.java:232-246`）：
 
 `linear`、`ease_in_quad`、`ease_out_quad`、`ease_in_out_quad`、`ease_in_cubic`、`ease_out_cubic`、`ease_in_out_cubic`、`ease_in_sine`、`ease_out_sine`、`ease_in_out_sine`、`back`、`elastic`、`bounce`。
 
-### 6.7 元素内未知键被忽略
+### 6.9 元素内未知键被忽略
 
 `AnimationClip` 记录**没有命名**的键被 codec 忽略，作者可以加注释类字段而不破坏加载（`AnimationClipLoader` 类 Javadoc `:24-26`；测试 `AnimationClipLoaderTest.ignoresKeysTheClipRecordDoesNotName`，`:132-144`）。
+例外是已删除的 `functions` 和 `formula_parts`：loader 会明确报错并提示改用
+`formula_transforms`。
 
 ## 7. 两条发现路径的差异
 
