@@ -1,5 +1,7 @@
 # Minecraft 模型附加组件 v1
 
+Blockbench 编辑与预览插件由独立仓库 [KasugaLib-BlockBenchPlugin](https://github.com/KasugaLibGroup/KasugaLib-BlockBenchPlugin) 维护；本文描述的数据格式和游戏端加载行为仍由 KasugaLibNext 维护。
+
 在既有模型 JSON 中增加 `kasuga_lib` 对象。该对象不取代原模型结构：原生几何、纹理、层级、显示变换、动画等仍由原 codec 原样输出。删除 `kasuga_lib` 后，得到同一份基础模型；普通读取器不需要理解附加组件即可读取静态几何。具体工具若使用拒绝未知字段的严格校验器，需要单独验证接受情况。
 
 | 模型 | 字段位置 | 骨骼来源 |
