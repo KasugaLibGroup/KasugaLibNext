@@ -10,10 +10,20 @@ plugins {
 version = mod_version
 group = mod_group_id
 
+// Opt-in sources for integration against an installed official Sable distribution. The optional
+// production adapter itself only compiles against Companion and does not load Sable by default.
+def sableSmokeJar = providers.gradleProperty('kasugaSableSmokeJar')
+
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
     maven { url = "https://maven.createmod.net" } // Create, Ponder, Flywheel
     maven { url = "https://maven.ithundxr.dev/snapshots" } // Registrate
+    maven {
+        url = 'https://maven.ryanhcode.dev/releases'
+        content { includeGroup 'dev.ryanhcode.sable-companion' }
+        // This optional API is self-contained; Minecraft supplies JOML and annotations.
+        metadataSources { artifact() }
+    }
     maven {
         url "https://maven.squiddev.cc"
         content {
@@ -41,6 +51,7 @@ sourceSets {
     contentTesting {
         java {
             srcDir 'src/contentTesting/java'
+            if (sableSmokeJar.isPresent()) srcDir 'src/sableTesting/java'
         }
         resources {
             srcDir 'src/contentTesting/resources'
@@ -141,6 +152,9 @@ neoForge {
             if (providers.gradleProperty('kasugaTestCreateGallery').getOrElse('false').toBoolean()) {
                 systemProperty 'kasuga.testCreateGallery', 'true'
             }
+            systemProperty 'kasuga.createMountDemo', providers.gradleProperty('kasugaCreateMountDemo').getOrElse('false')
+            systemProperty 'kasuga.testCreateMounts', providers.gradleProperty('kasugaTestCreateMounts').getOrElse('false')
+            systemProperty 'kasuga.testSableScene', providers.gradleProperty('kasugaTestSableScene').getOrElse('false')
             def previewSchematic = providers.gradleProperty('kasugaPreviewSchematic')
             if (previewSchematic.isPresent()) systemProperty 'kasuga.minecraftPreview.schematic', file(previewSchematic.get()).absolutePath
             def previewOutput = providers.gradleProperty('kasugaMinecraftPreviewOutput')
@@ -183,6 +197,9 @@ configurations {
 }
 
 dependencies {
+    compileOnly('dev.ryanhcode.sable-companion:sable-companion-common-1.21.1:1.6.0') { transitive = false }
+    testImplementation('dev.ryanhcode.sable-companion:sable-companion-common-1.21.1:1.6.0') { transitive = false }
+    if (sableSmokeJar.isPresent()) contentTestingCompileOnly files(sableSmokeJar.get())
     implementation ("io.micronaut:micronaut-inject:4.9.10") {
         exclude group : 'org.slf4j', module: 'slf4j-api'
     }

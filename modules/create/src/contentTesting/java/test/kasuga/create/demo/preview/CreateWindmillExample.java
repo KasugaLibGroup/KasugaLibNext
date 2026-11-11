@@ -47,13 +47,25 @@ final class CreateWindmillExample implements AutoCloseable {
     static CreateWindmillExample install(MinecraftStage stage) { return new CreateWindmillExample(stage); }
     void tick() {
         if (closed || assembled || failure != null || stage.level().getGameTime() - installed < 6) return;
+        // Stage entry streams neighbouring chunks asynchronously. Create's structure search visits
+        // adjacent air too, so installing the blocks alone does not prove the whole search is loaded.
+        if (!stage.level().isLoaded(BEARING.offset(-12, 0, -2))
+                || !stage.level().isLoaded(BEARING.offset(12, 0, -2))
+                || !stage.level().isLoaded(BEARING.offset(-12, 0, 3))
+                || !stage.level().isLoaded(BEARING.offset(12, 0, 3))) return;
+        // Newly entered dimensions may have block data before their entity sections are queryable.
+        // Use the exact glue query Create's assembly uses, rather than assuming six ticks is enough.
+        if (!SuperGlueEntity.isGlued(stage.level(), BEARING.south(), Direction.EAST, new java.util.HashSet<>())) return;
         try {
             var bearing = (WindmillBearingBlockEntity) stage.level().getBlockEntity(BEARING);
             if (bearing == null) throw new IllegalStateException("Native windmill bearing is missing");
             bearing.assemble();
             ControlledContraptionEntity rotor = bearing.getMovedContraption();
             if (rotor == null || rotor.getContraption().getBlocks().size() < 60)
-                throw new IllegalStateException("Create failed to assemble the native windmill");
+                throw new IllegalStateException("Create failed to assemble the native windmill: blocks="
+                        + (rotor == null ? 0 : rotor.getContraption().getBlocks().size())
+                        + ", cause=" + (bearing.getLastAssemblyException() == null ? "none"
+                                : bearing.getLastAssemblyException().component.getString()));
             if (rotor.getContraption().entity != rotor) throw new IllegalStateException("Create entity backlink disagrees");
             entityId = rotor.getId(); assembled = true;
             com.mojang.logging.LogUtils.getLogger().info("CREATE_WINDMILL_ENTITY_READY entity={} blocks={}", entityId, rotor.getContraption().getBlocks().size());

@@ -2,6 +2,7 @@
 
 Package: `lib.kasuga.rendering.models.mc.backend.ui`. Call these APIs on the Minecraft client thread.
 For coordinate transforms and input ownership, see the [design](../explanation/world-ui-input.en.md).
+For Create attachments, see [Scenes and UI on moving structures](moving-scene-hosts.en.md).
 [中文](world-ui-input.md).
 
 ## Integrating an Existing Screen
@@ -74,7 +75,7 @@ one extra unit beyond each GUI depth endpoint.
 | `removeRenderable(Renderable)` | Stops rendering and releases that target's captured mouse buttons and keys |
 | `openPointer()` | Opens the input Screen; throws `IllegalStateException` without a player/world or while another Screen is active |
 | `getInputRouter().setMaxDistance(float)` | Maximum hit distance from the rendered near plane, default 5 blocks; requires a finite positive value |
-| `worldChanged()` | Clears input and releases temporary GPU canvases while retaining panel registrations; the global backend uses the existing world-change hook |
+| `worldChanged()` | Clears input and GPU canvases, removes moving-host panels and retains static registrations; the global backend uses the existing world-change hook |
 | `close()` | Clears input, canvases, and registrations; custom backend owners must call it on destruction |
 | `resetInput()` | Clears hover, keyboard focus, and captures, balancing held mouse buttons and keys with release events |
 | `isKeyboardCaptured()` | Whether normal-view text keyboard capture is active |

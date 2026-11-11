@@ -9,6 +9,9 @@ import lib.kasuga.rendering.models.mc.Constants;
 import lib.kasuga.rendering.output.mc.MinecraftFrameOutputs;
 import lib.kasuga.rendering.output.mc.MinecraftWorldViews;
 import lib.kasuga.structure.Pair;
+import lib.kasuga.scene.SceneHost;
+import lib.kasuga.scene.ScenePlacement;
+import lib.kasuga.scene.ScenePose;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
@@ -43,7 +46,8 @@ public class UIBackend implements AutoCloseable {
     @Getter private final Map<GuiEventListener, UIInstanceData> interactData = new HashMap<>();
     @Getter private final WorldUiInputRouter inputRouter = new WorldUiInputRouter();
     private final WorldUiKeyboardCapture keyboardCapture = new WorldUiKeyboardCapture(inputRouter, KeyMapping::releaseAll);
-    private final Map<Renderable, Matrix4f> transforms = new LinkedHashMap<>();
+    private final Map<Renderable, ScenePose> transforms = new LinkedHashMap<>();
+    private final Map<Renderable, ScenePlacement> hosts = new LinkedHashMap<>();
     private final Map<Renderable, WorldUiCanvas> canvases = new HashMap<>();
     protected UIInstanceData currentCallbackData;
     private Object lastLevel;
@@ -54,6 +58,9 @@ public class UIBackend implements AutoCloseable {
         UIBackend backend = Constants.UI_BACKEND;
         if (backend == null) return;
         if (backend.lastLevel != mc.level) backend.worldChanged();
+        for (var entry : Map.copyOf(backend.hosts).entrySet()) {
+            if (!entry.getValue().isAlive()) backend.removeRenderable(entry.getKey());
+        }
         if (!mc.isWindowActive() || mc.player == null
                 || mc.screen != null && !(mc.screen instanceof WorldUiInputScreen screen && screen.backend() == backend)) {
             backend.resetInput();
@@ -137,15 +144,33 @@ public class UIBackend implements AutoCloseable {
     }
 
     public void setTransform(Renderable renderable, Matrix4fc localToWorld) {
-        if (!localToWorld.isFinite() || !localToWorld.isAffine() || localToWorld.determinant() == 0) {
-            throw new IllegalArgumentException("UI transform must be finite, affine and invertible");
-        }
-        transforms.put(renderable, new Matrix4f(localToWorld));
+        setPlacement(renderable, new ScenePose(Vec3.ZERO, localToWorld));
+    }
+
+    /** Double-precision placement, shared with SceneModels. Replaces any moving-host binding. */
+    public void setPlacement(Renderable renderable, ScenePose pose) {
+        java.util.Objects.requireNonNull(pose);
+        hosts.remove(renderable);
+        transforms.put(renderable, pose);
+    }
+
+    public void addRenderable(Renderable renderable, ScenePose pose) {
+        setPlacement(renderable, pose);
+        addRenderable(renderable);
+    }
+
+    /** Borrows the host. The matrix maps UI pixels into host-local blocks (+Y is down in the UI). */
+    public void addRenderable(Renderable renderable, SceneHost host, Matrix4fc localToHost) {
+        var binding = new ScenePlacement(Vec3.ZERO).transform(localToHost).follow(host);
+        hosts.put(renderable, binding);
+        transforms.remove(renderable);
+        addRenderable(renderable);
     }
 
     public void removeRenderable(Renderable renderable) {
         renderables.remove(renderable);
         transforms.remove(renderable);
+        hosts.remove(renderable);
         WorldUiCanvas canvas = canvases.remove(renderable);
         if (canvas != null) canvas.close();
         if (renderable instanceof GuiEventListener listener) {
@@ -196,6 +221,16 @@ public class UIBackend implements AutoCloseable {
 
     public void renderAllUis(GuiGraphics gui, float partialTicks) {
         if (!MinecraftFrameOutputs.MAIN_VIEW.equals(MinecraftWorldViews.currentViewId())) return;
+        for (var entry : Map.copyOf(hosts).entrySet()) {
+            try {
+                var pose = entry.getValue().capture(partialTicks);
+                if (pose == null) removeRenderable(entry.getKey());
+                else transforms.put(entry.getKey(), pose);
+            } catch (RuntimeException failure) {
+                removeRenderable(entry.getKey());
+                com.mojang.logging.LogUtils.getLogger().error("World UI host failed and was detached", failure);
+            }
+        }
         Minecraft mc = Minecraft.getInstance();
         boolean enabled = mc.player != null && mc.isWindowActive()
                 && (mc.screen == null || mc.screen instanceof WorldUiInputScreen screen && screen.backend() == this);
@@ -234,10 +269,10 @@ public class UIBackend implements AutoCloseable {
         Vector2f mouse = null;
         try {
             Vec3 camera = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
-            pose.translate(-camera.x, -camera.y, -camera.z);
-            Matrix4f transform = transforms.get(renderable);
-            if (transform != null) pose.mulPose(transform);
+            ScenePose transform = transforms.get(renderable);
+            if (transform != null) pose.mulPose(transform.relativeTo(camera));
             else {
+                pose.translate(-camera.x, -camera.y, -camera.z);
                 pose.scale(1f / gui.guiHeight(), -1f / gui.guiHeight(), 1);
                 if (size != null) {
                     int left = renderable instanceof LayoutElement element ? element.getX() : 0;
@@ -281,9 +316,10 @@ public class UIBackend implements AutoCloseable {
         currentCallbackData = null;
     }
 
-    /** Drop GPU canvases at a world boundary; callers retain ownership of panel registrations. */
+    /** Drop canvases and moving-host registrations; callers retain static panel registrations. */
     public void worldChanged() {
         resetInput();
+        for (var panel : List.copyOf(hosts.keySet())) removeRenderable(panel);
         for (WorldUiCanvas canvas : List.copyOf(canvases.values())) canvas.close();
         canvases.clear();
     }
@@ -293,6 +329,7 @@ public class UIBackend implements AutoCloseable {
         renderables.clear();
         interactData.clear();
         transforms.clear();
+        hosts.clear();
     }
 
     // Compatibility entry points. Mouse coordinates here are GUI pixels, never world-UI-local pixels.
