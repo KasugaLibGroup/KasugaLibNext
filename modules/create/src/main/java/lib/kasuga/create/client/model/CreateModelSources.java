@@ -9,9 +9,7 @@ import com.simibubi.create.content.contraptions.Contraption;
 import com.simibubi.create.content.contraptions.StructureTransform;
 import com.simibubi.create.content.contraptions.behaviour.MovementContext;
 import com.simibubi.create.content.contraptions.render.ContraptionMatrices;
-import com.simibubi.create.content.contraptions.render.ContraptionRenderInfo;
 import com.simibubi.create.content.schematics.SchematicItem;
-import com.simibubi.create.content.schematics.client.SchematicRenderer;
 import com.simibubi.create.foundation.virtualWorld.VirtualRenderWorld;
 import lib.kasuga.rendering.models.mc.scene.*;
 import net.createmod.catnip.levelWrappers.SchematicLevel;
@@ -40,7 +38,15 @@ public final class CreateModelSources {
     /** Borrows the client entity. Geometry, block entities and actors use Create's own renderers. */
     public static MinecraftModelSource contraption(AbstractContraptionEntity entity) {
         if (!entity.level().isClientSide()) throw new IllegalArgumentException("Contraption preview requires a client entity");
-        return new ContraptionSource(Objects.requireNonNull(entity));
+        return new ContraptionSource(Objects.requireNonNull(entity), true);
+    }
+    /** Source-local geometry for mounting with CreateSceneHosts.contraption(entity).
+     * Unlike the independent preview, the source does not apply the host rotation a second time.
+     */
+    public static MinecraftModelSource contraptionLocal(AbstractContraptionEntity entity) {
+        Objects.requireNonNull(entity);
+        if (!entity.level().isClientSide()) throw new IllegalArgumentException("Contraption source requires a client entity");
+        return new ContraptionSource(entity, false);
     }
     /** Uses Create's own Contraption -> entity backlink; no parallel entity registry is needed. */
     public static MinecraftModelSource contraption(Contraption contraption) {
@@ -79,13 +85,16 @@ public final class CreateModelSources {
 
     private static final class ContraptionSource extends LayeredModelSource {
         private AbstractContraptionEntity entity;
+        private final boolean includeHostTransform;
         private Contraption contraption;
         private BlockModelSource blocks;
         private long sampledTick = Long.MIN_VALUE;
         private long generation = -1;
         private List<Actor> actors = List.of();
         private VirtualRenderWorld actorWorld;
-        private ContraptionSource(AbstractContraptionEntity entity) { this.entity = entity; }
+        private ContraptionSource(AbstractContraptionEntity entity, boolean includeHostTransform) {
+            this.entity = entity; this.includeHostTransform = includeHostTransform;
+        }
 
         @Override protected void prepare(float partialTick) {
             if (entity == null || entity.isRemoved() || entity.getContraption() == null) { release(); return; }
@@ -97,7 +106,7 @@ public final class CreateModelSources {
             List<StructureBlockInfo> infos = new ArrayList<>();
             if (current.getBlocks().size() > MinecraftModelSources.MAX_BLOCKS) throw new IllegalArgumentException("Contraption exceeds preview limit");
             for (var info : current.getBlocks().values()) {
-                var live = current.presentBlockEntities.get(info.pos());
+                var live = CreateContraptionBuffers.blockEntity(current, info.pos());
                 infos.add(new StructureBlockInfo(info.pos(), info.state(), live == null ? info.nbt()
                         : live.saveWithFullMetadata(entity.level().registryAccess())));
             }
@@ -107,10 +116,8 @@ public final class CreateModelSources {
                     return movement == null || !movement.disableBlockEntityRendering();
                 }
             };
-            VirtualRenderWorld nextWorld = new VirtualRenderWorld(next.previewLevel(), next.previewLevel().getMinBuildHeight(),
-                    next.previewLevel().getHeight(), BlockPos.ZERO) {
-                @Override public boolean supportsVisualization() { return false; }
-            };
+            VirtualRenderWorld nextWorld = CreatePreviewFactories.world(next.previewLevel(), next.previewLevel().getMinBuildHeight(),
+                    next.previewLevel().getHeight(), BlockPos.ZERO);
             for (var info : infos) nextWorld.setBlock(info.pos(), info.state(), 0);
             nextWorld.setBlockEntities(infos.stream().map(info -> next.blockEntity(info.pos())).filter(Objects::nonNull).toList());
             nextWorld.setExternalLight(net.minecraft.client.renderer.LightTexture.FULL_BRIGHT);
@@ -136,15 +143,14 @@ public final class CreateModelSources {
         @Override protected List<Element> elements() { return blocks == null ? List.of() : blocks.geometryElements(); }
         @Override protected Matrix4f localTransform(float partialTick) {
             var pose = new PoseStack();
-            if (entity != null) entity.applyLocalTransforms(pose, partialTick);
+            if (includeHostTransform && entity != null) entity.applyLocalTransforms(pose, partialTick);
             return new Matrix4f(pose.last().pose());
         }
         @Override protected void renderAssembled(Context context) {
             // This is the structure buffer used by ContraptionEntityRenderer itself. Explicitly drawing
             // its native path also works while the world entity uses Flywheel instancing.
-            var info = ContraptionRenderInfo.get(contraption);
             for (RenderType type : RenderType.chunkBufferLayers()) {
-                SuperByteBuffer buffer = info.getBuffer(type);
+                SuperByteBuffer buffer = CreateContraptionBuffers.get(contraption, actorWorld, type);
                 if (!buffer.isEmpty()) buffer.light(context.packedLight()).renderInto(context.pose(), context.buffers().getBuffer(type));
             }
             Slice all = new Slice(LayerLayout.Axis.Y, 0, blocks.geometryElements(), false);
@@ -187,7 +193,7 @@ public final class CreateModelSources {
     }
 
     private static final class SchematicSource extends BlockModelSource {
-        private final OwnedSchematicRenderer renderer;
+        private final CreatePreviewFactories.SchematicView renderer;
         private long generation = -1;
         private SchematicSource(Level host, StructureTemplate template,
                 net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings settings) {
@@ -195,8 +201,7 @@ public final class CreateModelSources {
         }
         private SchematicSource(Level host, SchematicLevel level) {
             super(host, data(level, host));
-            renderer = new OwnedSchematicRenderer();
-            renderer.display(level);
+            renderer = CreatePreviewFactories.schematic(level);
         }
         @Override protected void renderAssembled(Context context) {
             if (generation != ModelPreviewResources.generation()) {
@@ -245,15 +250,5 @@ public final class CreateModelSources {
             var entity = level.getBlockEntity(entry.getKey());
             return new StructureBlockInfo(entry.getKey(), entry.getValue(), entity == null ? null : entity.saveWithFullMetadata(host.registryAccess()));
         }).toList();
-    }
-    private static final class OwnedSchematicRenderer extends SchematicRenderer implements AutoCloseable {
-        private final List<SuperByteBuffer> owned = new ArrayList<>();
-        @Override protected SuperByteBuffer drawLayer(RenderType type) {
-            try {
-                SuperByteBuffer result = super.drawLayer(type); owned.add(result); return result;
-            } finally { net.minecraft.client.renderer.block.ModelBlockRenderer.clearCache(); schematic.renderMode = false; }
-        }
-        @Override protected void redraw() { close(); super.redraw(); }
-        @Override public void close() { for (SuperByteBuffer buffer : owned) buffer.delete(); owned.clear(); }
     }
 }

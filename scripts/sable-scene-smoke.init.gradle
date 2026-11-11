@@ -1,0 +1,10 @@
+// Isolated Sable 2.0.6 development profile. Pass this file with -I; normal builds retain their
+// existing NeoForge/Create versions. The newer Create release renamed Ponder's artifact.
+allprojects {
+    configurations.configureEach {
+        resolutionStrategy.dependencySubstitution {
+            substitute(module('net.createmod.ponder:Ponder-NeoForge-1.21.1'))
+                    .using(module('net.createmod.ponder:ponder-neoforge:1.0.82+mc1.21.1'))
+        }
+    }
+}

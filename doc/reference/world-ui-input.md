@@ -4,6 +4,7 @@
 
 包：`lib.kasuga.rendering.models.mc.backend.ui`。所有方法在 Minecraft 客户端线程调用。
 设计、坐标变换和输入所有权见 [原理](../explanation/world-ui-input.md)。
+Create 结构上的附着面板见[移动结构上的场景与 UI](moving-scene-hosts.md)。
 
 ## 接入现有 Screen
 
@@ -69,7 +70,7 @@ backend.openPointer();
 | `removeRenderable(Renderable)` | 停止渲染，并为该目标补发捕获中的松键事件 |
 | `openPointer()` | 打开自由光标输入 Screen；无玩家、无世界或已有 Screen 时抛 `IllegalStateException` |
 | `getInputRouter().setMaxDistance(float)` | 最大命中距离，默认 5 格，从渲染近裁剪面起算；必须为有限正数 |
-| `worldChanged()` | 清理输入并释放临时 GPU 画布，保留面板注册；全局 backend 已接入世界切换钩子 |
+| `worldChanged()` | 清理输入并释放临时 GPU 画布，移除移动宿主面板，保留静态面板注册；全局 backend 已接入世界切换钩子 |
 | `close()` | 清理输入、画布与全部注册；自有 backend 的所有者应在销毁时调用 |
 | `resetInput()` | 清理 hover、键盘焦点和输入捕获；为已按下的键/鼠标补发 release |
 | `isKeyboardCaptured()` | 是否正在正常视角的文本键盘接管模式中 |
