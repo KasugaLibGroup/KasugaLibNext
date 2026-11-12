@@ -44,11 +44,12 @@ public class QuaternionHelper {
     /**
      * Blockbench/Minecraft euler order: intrinsic Z, then Y, then X — the matrix {@code Rz·Ry·Rx}.
      *
-     * <p>{@code .bbmodel} element, group and animation rotations are authored in this order. It is the
-     * composition Blockbench's own preview applies (three.js {@code Euler.order = "ZYX"}), the order
-     * Minecraft's {@code ModelPart} multiplies its {@code ZP}/{@code YP}/{@code XP} rotations in, and the
-     * order {@code RotHelper.rotation} composes Bedrock cube rotations in. {@link #fromXYZDegrees} is
-     * JOML's {@code rotationXYZ} — the reverse composition — and silently mis-places every rotation that
+     * <p>{@code .bbmodel} groups, cubes and animation channels use this order. It is the composition
+     * Blockbench applies to those nodes through three.js {@code Euler.order = "ZYX"}, the order Minecraft's
+     * {@code ModelPart} multiplies its {@code ZP}/{@code YP}/{@code XP} rotations in, and the order
+     * {@code RotHelper.rotation} composes Bedrock cube rotations in. Native {@code mesh} elements are the
+     * exception: Blockbench 5.2.2 leaves their preview objects at three.js' default {@code XYZ} order.
+     * {@link #fromXYZDegrees} is JOML's {@code rotationXYZ} and silently mis-places a ZYX rotation that
      * spans more than one axis. Single-axis rotations are unaffected by the order.
      */
     public static Quaternionf fromZYXAngle(float x, float y, float z, boolean degrees) {

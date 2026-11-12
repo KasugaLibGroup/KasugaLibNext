@@ -37,13 +37,28 @@ class ClipSamplerFormulaTest {
                 Id.fromNamespaceAndPath("kasuga_lib", "fan_fsm"),
                 12f,
                 List.of(), List.of(), List.of(),
+                List.of(),
+                List.of(),
                 List.of(
-                        new AnimationClip.FunctionTrack("group", AnimationClip.FunctionChannel.ROTATE,
-                                "", "query.angle", ""),
-                        new AnimationClip.FunctionTrack("fan", AnimationClip.FunctionChannel.ROTATE,
-                                "", "11 * query.angle", ""),
-                        new AnimationClip.FunctionTrack("cover", AnimationClip.FunctionChannel.ROTATE,
-                                "", "", "sin(rad(2 * query.angle)) * 30")
+                        boneRotate("group", "", "query.angle", ""),
+                        boneRotate("fan", "", "11 * query.angle", ""),
+                        boneRotate("cover", "", "", "sin(rad(2 * query.angle)) * 30")
+                )
+        );
+    }
+
+    private static AnimationClip.FormulaTransformTrack boneRotate(
+            String bone,
+            String x,
+            String y,
+            String z
+    ) {
+        return AnimationClip.FormulaTransformTrack.bone(
+                bone,
+                new AnimationClip.FormulaTransform(
+                        AnimationClip.FormulaVector.EMPTY,
+                        new AnimationClip.FormulaVector(x, y, z),
+                        AnimationClip.FormulaVector.EMPTY
                 )
         );
     }
@@ -130,8 +145,16 @@ class ClipSamplerFormulaTest {
                 Id.fromNamespaceAndPath("kasuga_lib", "scale_fsm"),
                 1f,
                 List.of(), List.of(), List.of(),
-                List.of(new AnimationClip.FunctionTrack("piston", AnimationClip.FunctionChannel.SCALE,
-                        "", "query.scale", ""))
+                List.of(),
+                List.of(),
+                List.of(AnimationClip.FormulaTransformTrack.bone(
+                        "piston",
+                        new AnimationClip.FormulaTransform(
+                                AnimationClip.FormulaVector.EMPTY,
+                                AnimationClip.FormulaVector.EMPTY,
+                                new AnimationClip.FormulaVector("", "query.scale", "")
+                        )
+                ))
         );
     }
 
@@ -178,5 +201,35 @@ class ClipSamplerFormulaTest {
             assertTrue(transform.normal().isFinite(), "formula scale " + value);
             assertEquals(value, transform.transform().m11(), 1e-5);
         }
+    }
+
+    @Test
+    void derivedVariablesAreAvailableToBoneFormulaTracks() {
+        AnimationClip clip = new AnimationClip(
+                Id.fromNamespaceAndPath("kasuga_lib", "derived"),
+                1f,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(
+                        new AnimationClip.FormulaVariable(
+                                "derived.rotation",
+                                "query.wheel_angle * 2"
+                        )
+                ),
+                List.of(boneRotate("wheel", "", "derived.rotation", ""))
+        );
+        Namespace namespace = new Namespace(Code.ROOT_NAMESPACE);
+        ClipSampler.INSTANCE.sample(clip, 0f, namespace);
+        namespace.assign("query.wheel_angle", 45f);
+
+        Pose pose = ClipSampler.INSTANCE.sample(clip, 0f, namespace);
+
+        assertRotationEquals(
+                QuaternionHelper.fromXYZDegrees(0f, 90f, 0f),
+                rotation(pose, "wheel"),
+                "derived variable"
+        );
     }
 }

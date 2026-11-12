@@ -68,13 +68,28 @@ class FanDataDrivenClipTest {
                 CLIP_ID,
                 12f,
                 List.of(), List.of(), List.of(),
+                List.of(),
+                List.of(),
                 List.of(
-                        new AnimationClip.FunctionTrack("group", AnimationClip.FunctionChannel.ROTATE,
-                                "", "query.angle", ""),
-                        new AnimationClip.FunctionTrack("fan", AnimationClip.FunctionChannel.ROTATE,
-                                "", "11 * query.angle", ""),
-                        new AnimationClip.FunctionTrack("cover", AnimationClip.FunctionChannel.ROTATE,
-                                "", "", "sin(rad(2 * query.angle)) * 30")
+                        boneRotate("group", "", "query.angle", ""),
+                        boneRotate("fan", "", "11 * query.angle", ""),
+                        boneRotate("cover", "", "", "sin(rad(2 * query.angle)) * 30")
+                )
+        );
+    }
+
+    private static AnimationClip.FormulaTransformTrack boneRotate(
+            String bone,
+            String x,
+            String y,
+            String z
+    ) {
+        return AnimationClip.FormulaTransformTrack.bone(
+                bone,
+                new AnimationClip.FormulaTransform(
+                        AnimationClip.FormulaVector.EMPTY,
+                        new AnimationClip.FormulaVector(x, y, z),
+                        AnimationClip.FormulaVector.EMPTY
                 )
         );
     }

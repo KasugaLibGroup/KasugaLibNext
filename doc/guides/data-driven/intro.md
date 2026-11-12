@@ -235,10 +235,19 @@ src/main/resources/data/mymod/kasuga_lib_content/blocks.json        ← 内容�
     {
       "id": "kasuga_lib:fan_fsm_data_driven",
       "duration_seconds": 12.0,
-      "functions": [
-        { "bone": "group", "channel": "rotate", "y": "query.angle" },
-        { "bone": "fan", "channel": "rotate", "y": "11 * query.angle" },
-        { "bone": "cover", "channel": "rotate", "z": "sin(rad(2 * query.angle)) * 30" }
+      "formula_transforms": [
+        {
+          "target": { "bone": "group" },
+          "transform": { "rotate": { "y": "query.angle" } }
+        },
+        {
+          "target": { "bone": "fan" },
+          "transform": { "rotate": { "y": "11 * query.angle" } }
+        },
+        {
+          "target": { "bone": "cover" },
+          "transform": { "rotate": { "z": "sin(rad(2 * query.angle)) * 30" } }
+        }
       ]
     }
   ]

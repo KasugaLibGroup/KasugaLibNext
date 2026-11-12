@@ -122,10 +122,9 @@ class CodeFunctionRegistrationTest {
     }
 
     @Test
-    @Disabled("TODO(engine bug): static vars (pi/e) are never promoted to instance vars at decode time, "
-            + "so decodeFormula(\"pi\") yields 0 instead of Math.PI")
     void constantPiResolvesInsideFormulaString() {
         assertEquals((float) Math.PI, eval("pi", Code.ROOT_NAMESPACE), 1e-4f);
+        assertEquals((float) Math.E, eval("e", Code.ROOT_NAMESPACE), 1e-4f);
     }
 
     @Test

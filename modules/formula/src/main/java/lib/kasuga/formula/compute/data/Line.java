@@ -203,9 +203,11 @@ public class Line implements Formula, Assignable, Pretreatable {
                 int index = inners.size();
                 int[] pos = Utils.positionBrackets(string);
                 for(String funcCodec : namespace.functions().keySet()) {
-                    int index2 = string.indexOf(funcCodec);
-                    if(index2 == -1) continue;
-                    if(index2 == pos[0] - funcCodec.length()) {
+                    int functionStart = pos[0] - funcCodec.length();
+                    if (functionStart >= 0
+                            && string.regionMatches(functionStart, funcCodec, 0, funcCodec.length())
+                            && (functionStart == 0
+                            || !isIdentifierCharacter(string.charAt(functionStart - 1)))) {
                         pos[0] -= funcCodec.length();
                         break;
                     }
@@ -256,7 +258,9 @@ public class Line implements Formula, Assignable, Pretreatable {
                         var = findLongVar(cache, str, 0);
                         skip = var.split("\\.").length - 1;
                     }
-                    if (namespace.containsInstance(var))
+                    if (namespace.getStaticVar(var) != null)
+                        formula = namespace.getStaticVar(var);
+                    else if (namespace.containsInstance(var))
                         formula = (Variable) namespace.getInstance(var);
                     else {
                         formula = new Variable(var, namespace, 0);
@@ -295,6 +299,10 @@ public class Line implements Formula, Assignable, Pretreatable {
             this.elements.add(formulaGroup.get(idx));
             preTreatment();
         }
+    }
+
+    private static boolean isIdentifierCharacter(char character) {
+        return Character.isLetterOrDigit(character) || character == '_';
     }
 
     /**

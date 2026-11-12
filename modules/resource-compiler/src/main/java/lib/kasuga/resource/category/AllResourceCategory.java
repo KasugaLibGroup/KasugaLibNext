@@ -36,11 +36,13 @@ public class AllResourceCategory {
         register(map, new SimpleResourceCategory("loots",
                 (ns, p) -> Path.of("data", ns, "loot_tables").resolve(p)));
 
-        // generic passthrough categories (namespace already embedded in path)
+        // generic passthrough categories
         register(map, new SimpleResourceCategory("data",
                 (ns, p) -> Path.of("data").resolve(p), jsonMerge));
         register(map, new SimpleResourceCategory("assets",
                 (ns, p) -> Path.of("assets").resolve(p), jsonMerge));
+        register(map, new SimpleResourceCategory("scripts",
+                (ns, p) -> Path.of("scripts").resolve(p)));
 
         CATEGORIES = Collections.unmodifiableMap(map);
     }

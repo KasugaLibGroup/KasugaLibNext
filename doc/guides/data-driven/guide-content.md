@@ -434,9 +434,15 @@ reload 域有两类内容，顶层字段名就是它们各自唯一的合法键�
     {
       "id": "mymod:fan_clip",
       "duration_seconds": 12.0,
-      "functions": [
-        { "bone": "fan", "channel": "rotate", "y": "11 * query.angle" },
-        { "bone": "cover", "channel": "rotate", "z": "sin(rad(2 * query.angle)) * 30" }
+      "formula_transforms": [
+        {
+          "target": { "bone": "fan" },
+          "transform": { "rotate": { "y": "11 * query.angle" } }
+        },
+        {
+          "target": { "bone": "cover" },
+          "transform": { "rotate": { "z": "sin(rad(2 * query.angle)) * 30" } }
+        }
       ]
     }
   ]
@@ -444,6 +450,37 @@ reload 域有两类内容，顶层字段名就是它们各自唯一的合法键�
 ```
 
 （来自 `animation_clips/fan_fsm_data_driven.json`。）
+
+同一个 `formula_transforms` 也可以驱动刚体 Part 或 Part 内的骨骼：
+
+```json
+{
+  "animation_clips": [
+    {
+      "id": "mymod:mechanism",
+      "variables": [
+        { "name": "mechanism.angle", "expression": "rad(query.wheel_angle)" }
+      ],
+      "formula_transforms": [
+        {
+          "target": { "part": "part_06" },
+          "transform": {
+            "translate": { "z": "sin(mechanism.angle)" },
+            "rotate": { "x": "-query.wheel_angle", "y": "180" }
+          }
+        },
+        {
+          "target": { "part": "part_06", "bone": "pin" },
+          "transform": { "rotate": { "z": "query.pin_angle" } }
+        }
+      ]
+    }
+  ]
+}
+```
+
+`variables` 按声明顺序求值；`target.part` 驱动整个刚体，`target.bone` 驱动实例内骨骼。
+宿主用 `FormulaTransformSampler` 预编译表达式，再把 `FormulaTransformPose` 接入模型运动。
 
 `animation_clips/` 没有目录 glob，剪辑文件只能通过清单的 `on_reload` 数组读到
 （`AnimationClipLoader` 类文档，`:28-29`）。把剪辑文件放进 `data/<ns>/animation_clips/` 却忘了在清单里列，
@@ -565,6 +602,10 @@ JsonTreeBuilder.getLoadingErrorsByMod()     // 按 mod 分桶
 
 KuaYue 的 11 节车厢（`22`/`25`/`25b`/`25g`/`25k`/`25t`/`25z`/`cr200j`/`freight`/`jy30`/`m1`）展示了「按功能切、每功能自带清单片段」在真实项目里的样子。每节车厢是一个**独立的资源编译模块**，源目录顶层是 `blockstates/`、`data/`、`lang/`、`loots/`、`models/`、`recipes/`、`tags/`、`textures/` 与 `module.toml` —— **没有 `assets/`**；要经资源编译才并入产物里的 `assets/`/`data/` 布局。模型资源、本地化、战利品表和数据驱动内容放在同一个车厢目录里一起交付。
 
+`scripts/` 是通用 passthrough 类别：模块内的 `scripts/packages/...` 会原样输出到资源根的
+`scripts/packages/...`，不进行 JSON 合并或其他转换。它适合随功能模块交付的 JavaScript
+脚本包；没有脚本的模块不需要创建该目录。
+
 数据驱动部分每节车厢三份文件（例外：`jy30` 有 `module.toml`，但没有任何 data-driven 内容，未参与数据驱动）：
 
 ```text
@@ -633,6 +674,7 @@ carriages/22/
 资源编译器只 walk **含 `module.toml`** 的目录（`ResourceCompilerMain.java:24-39`；`ResourceScanner.scanModule`，`:43-58`），
 所以这两个目录里的内容（包括索引与数据驱动文件）**不会进 jar**，里面的方块也就永远不会注册。
 换到你自己项目时：清单写对了，还要确认承载它的目录真的被你的资源编译/打包流程收进去了。
+`compileResources` 每次运行前会清空生成目录，因此删除或移动源资源后，旧 jar 条目不会残留。
 
 ---
 

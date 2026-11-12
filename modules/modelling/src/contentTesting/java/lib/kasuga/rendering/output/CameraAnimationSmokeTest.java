@@ -82,7 +82,7 @@ public final class CameraAnimationSmokeTest {
                 var clip = new AnimationClip(cameraClip.id(), 2, List.of(new AnimationClip.BoneTrack("root", List.of(
                         new AnimationClip.Keyframe(0, new TransformDefinition(new Vector3f(), new Vector3f(), new Vector3f(1)), Easing.easeInOutSine()),
                         new AnimationClip.Keyframe(2, new TransformDefinition(new Vector3f(2, 0, 0), new Vector3f(), new Vector3f(1)), null)))),
-                        List.of(), List.of(), List.of(), List.of(new AnimationClip.CameraTrack("shot", cameraClip.tracks())));
+                        List.of(), List.of(), List.of(new AnimationClip.CameraTrack("shot", cameraClip.tracks())));
                 timeline = new AnimationTimeline();
                 model = new AnimationPlayer<>(testModel());
                 lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding.install(model.model(), model);

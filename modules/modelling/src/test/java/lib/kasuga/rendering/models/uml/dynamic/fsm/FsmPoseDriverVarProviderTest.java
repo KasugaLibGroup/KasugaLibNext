@@ -57,8 +57,16 @@ class FsmPoseDriverVarProviderTest {
                 Id.fromNamespaceAndPath("kasuga_lib", "var_provider_speed"),
                 12f,
                 List.of(), List.of(), List.of(),
-                List.of(new AnimationClip.FunctionTrack("b", AnimationClip.FunctionChannel.ROTATE,
-                        "", "query.speed / 60", ""))
+                List.of(),
+                List.of(),
+                List.of(AnimationClip.FormulaTransformTrack.bone(
+                        "b",
+                        new AnimationClip.FormulaTransform(
+                                AnimationClip.FormulaVector.EMPTY,
+                                new AnimationClip.FormulaVector("", "query.speed / 60", ""),
+                                AnimationClip.FormulaVector.EMPTY
+                        )
+                ))
         );
     }
 

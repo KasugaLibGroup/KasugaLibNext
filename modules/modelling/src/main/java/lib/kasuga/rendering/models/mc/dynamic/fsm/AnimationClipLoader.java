@@ -24,7 +24,9 @@ import java.util.List;
  * {@code id} field, spelled with the same {@link lib.kasuga.rendering.models.uml.dynamic.fsm.Id} the
  * {@code states[].clip} reference uses), so no separate id key is extracted and an element is exactly
  * a clip. Keys the {@code AnimationClip} record does not name are ignored by the codec, so an author
- * may annotate an element without breaking the decode.
+ * may annotate an element without breaking the decode. The removed legacy formula keys
+ * {@code functions} and {@code formula_parts} are rejected explicitly and point authors to
+ * {@code formula_transforms}.
  *
  * <p>The file is only ever reached through an index manifest's {@code on_reload} array — there is no
  * directory glob for {@code animation_clips/}, unlike {@code state_machines/}.
@@ -93,6 +95,18 @@ public final class AnimationClipLoader {
         }
         List<AnimationClip> decoded = new ArrayList<>();
         for (ContentStructure.Element element : field.elements()) {
+            if (element.body().isJsonObject()) {
+                JsonObject clip = element.body().getAsJsonObject();
+                String legacyKey = clip.has("functions")
+                        ? "functions"
+                        : clip.has("formula_parts") ? "formula_parts" : null;
+                if (legacyKey != null) {
+                    errors.add(FIELD_ANIMATION_CLIPS + "[" + element.fileIndex()
+                            + "] uses removed key '" + legacyKey
+                            + "'; replace it with 'formula_transforms'; element skipped");
+                    continue;
+                }
+            }
             AnimationClip.CODEC.parse(JsonOps.INSTANCE, element.body())
                     .resultOrPartial(error -> errors.add(FIELD_ANIMATION_CLIPS + "[" + element.fileIndex()
                             + "] failed to decode: " + error + "; element skipped"))
