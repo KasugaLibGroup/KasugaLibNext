@@ -20,12 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Element/group rotation semantics of {@link KsgBbModelLoader}.
  *
- * <p>Blockbench composes euler angles as intrinsic Z → Y → X (matrix {@code Rz·Ry·Rx}, three.js
- * {@code Euler.order = "ZYX"} and Minecraft's {@code ModelPart} {@code ZP}/{@code YP}/{@code XP} order).
- * Rotations are relative: each element rotates around its own {@code origin}, inside its parent group's
- * already-rotated frame. Angles are used exactly as stored — Blockbench's Bedrock export writes the
- * negated X/Y values ({@code test_fan_be.bbmodel} {@code [0,45,0]} ↔ {@code test_fan_be.geo.json}
- * {@code [0,-45,0]}), so the bbmodel loader must not negate anything itself.
+ * <p>Blockbench 5.2.2 gives groups and cubes {@code ZYX} euler order ({@code Rz·Ry·Rx}), while native
+ * meshes retain three.js' default {@code XYZ} order ({@code Rx·Ry·Rz}). Rotations are relative: each
+ * element rotates inside its parent's already-rotated frame. Angles are used exactly as stored —
+ * Blockbench's Bedrock export writes the negated X/Y values ({@code test_fan_be.bbmodel} {@code [0,45,0]}
+ * ↔ {@code test_fan_be.geo.json} {@code [0,-45,0]}), so the bbmodel loader must not negate anything itself.
  */
 class KsgBbModelLoaderRotationTest {
 
@@ -87,18 +86,109 @@ class KsgBbModelLoaderRotationTest {
         assertCornerInstances(model, expected, 3);
     }
 
+    @Test
+    void composesMultiAxisMeshRotationInBlockbenchXyzOrder() {
+        String element = """
+                {
+                  "uuid": "wheel", "type": "mesh", "origin": [0, 17.5, 0], "rotation": [22.5, 0, -90],
+                  "vertices": {
+                    "a": [0, -13.5, 0],
+                    "b": [0, 13.5, 0],
+                    "c": [1.8, 13.5, 0]
+                  },
+                  "faces": {
+                    "face": {
+                      "vertices": ["a", "b", "c"],
+                      "uv": {"a": [0, 0], "b": [0, 16], "c": [16, 8]},
+                      "texture": 0
+                    }
+                  }
+                }
+                """;
+        Model model = meshModel(element, """
+                ["wheel"]
+                """);
+        // Blockbench 5.2.2 assigns Format.euler_order (ZYX) to cubes and groups, but its Mesh preview
+        // controller leaves three.js' default XYZ order in place. The QJ wheel is a Mesh, so using ZYX
+        // here rotates its cylinder around the wrong axis.
+        Quaternionf rotation = xyz(22.5f, 0f, -90f);
+        Vector3f origin = new Vector3f(0f, 17.5f / 16f, 0f);
+        List<Vector3f> expected = List.of(
+                new Vector3f(0f, -13.5f / 16f, 0f).rotate(rotation).add(origin),
+                new Vector3f(0f, 13.5f / 16f, 0f).rotate(rotation).add(origin),
+                new Vector3f(1.8f / 16f, 13.5f / 16f, 0f).rotate(rotation).add(origin)
+        );
+
+        assertEquals(expected.size(), model.getVertices().length);
+        for (Vector3f candidate : expected) {
+            assertEquals(1, countMatches(model, List.of(candidate)),
+                    "mesh vertex must use Blockbench's XYZ order around its authored origin");
+        }
+        assertEquals(1, countMatches(model,
+                List.of(new Vector3f(-13.5f / 16f, 17.5f / 16f, 0f))),
+                "QJ wheel vertex must land on the same axis Blockbench displays");
+    }
+
+    @Test
+    void composesNestedGroupAndMeshWithBlockbenchPerNodeRotationOrder() {
+        String element = """
+                {
+                  "uuid": "wheel", "type": "mesh",
+                  "origin": [11.796666666666669, 19.599999999999994, 27.69918379866288],
+                  "rotation": [-15.25, 0, -90],
+                  "vertices": {
+                    "a": [7.25635171951022, 1.1, -0.2998882181445952],
+                    "b": [7.25635171951022, 14.1, -0.2998882181445952],
+                    "c": [9.05635171951022, 14.1, -0.2998882181445952]
+                  },
+                  "faces": {
+                    "face": {
+                      "vertices": ["a", "b", "c"],
+                      "uv": {"a": [0, 0], "b": [0, 16], "c": [16, 8]},
+                      "texture": 0
+                    }
+                  }
+                }
+                """;
+        String outliner = """
+                [{
+                  "name": "wheel_group2",
+                  "origin": [-2.295708493709585e-31, 17.5, 25.6],
+                  "children": [{
+                    "name": "wheelx2",
+                    "origin": [12.491109596715447, 17.507772998778037, 27.69958574185825],
+                    "rotation": [-90, 0, 0],
+                    "children": ["wheel"]
+                  }]
+                }]
+                """;
+        Model model = meshModel(element, outliner);
+        Vector3f blockbenchWorld = new Vector3f(
+                12.896666666666668f, 19.126689709468135f, 32.687074859083374f).mul(1f / 16f);
+
+        assertEquals(1, countMatches(model, List.of(blockbenchWorld)),
+                "group ZYX and mesh XYZ must compose exactly as Blockbench 5.2.2 renders the nested QJ wheel");
+    }
+
     //region helpers
 
     private static float rad(float degrees) {
         return (float) Math.toRadians(degrees);
     }
 
-    /** The reference composition: intrinsic Z, then Y, then X (JOML's own axis rotations, post-multiplied). */
+    /** The reference matrix composition {@code Rz * Ry * Rx}, built with JOML post-multiplied axis rotations. */
     private static Quaternionf zyx(float x, float y, float z) {
         return new Quaternionf()
                 .mul(new Quaternionf().rotationZ(rad(z)))
                 .mul(new Quaternionf().rotationY(rad(y)))
                 .mul(new Quaternionf().rotationX(rad(x)));
+    }
+
+    /** The three.js default XYZ composition {@code Rx * Ry * Rz}, used by Blockbench Mesh previews. */
+    private static Quaternionf xyz(float x, float y, float z) {
+        return new Quaternionf().rotationX(rad(x))
+                .mul(new Quaternionf().rotationY(rad(y)))
+                .mul(new Quaternionf().rotationZ(rad(z)));
     }
 
     private static Matrix4f pivot(float ox, float oy, float oz, float x, float y, float z) {
@@ -173,6 +263,19 @@ class KsgBbModelLoaderRotationTest {
                  "textures": [{"id": "t", "name": "t.png", "source": "test:t.png"}],
                  "elements": [%s]%s}
                 """.formatted(element, outliner == null ? "" : ", \"outliner\": " + outliner));
+        Texture texture = new Texture("t", 64f, 64f, null);
+        Material material = new Material(new Texture[]{texture}, null);
+        return KsgBbModelLoader.buildSkeletonAndGeometry(definition, Map.of(0, material),
+                new MaterialSet(texture, material));
+    }
+
+    private static Model meshModel(String element, String outliner) {
+        BbModelDefinition definition = BbModelDefinition.parse("""
+                {"resolution": {"width": 64, "height": 64},
+                 "textures": [{"id": "t", "name": "t.png", "source": "test:t.png"}],
+                 "elements": [%s],
+                 "outliner": %s}
+                """.formatted(element, outliner));
         Texture texture = new Texture("t", 64f, 64f, null);
         Material material = new Material(new Texture[]{texture}, null);
         return KsgBbModelLoader.buildSkeletonAndGeometry(definition, Map.of(0, material),
