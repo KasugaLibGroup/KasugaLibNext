@@ -48,6 +48,12 @@ public class JavetScriptEngine implements ScriptEngine {
     private final Map<String, ScriptModule> scriptModules = new HashMap<>();
     private Map<EngineFeatureType<?>, EngineFeature> features = Map.of();
     private int gcTicks = 0;
+    private PackageRegistry scopedPackages;
+
+    @Override public void usePackageRegistry(PackageRegistry packages) {
+        if (runtime != null) throw new IllegalStateException("Package scope must be installed before engine initialization");
+        scopedPackages = java.util.Objects.requireNonNull(packages);
+    }
 
     public JavetScriptEngine() {}
 
@@ -136,7 +142,7 @@ public class JavetScriptEngine implements ScriptEngine {
      */
     private PackageAwareRequireResolver buildPackageAwareResolver() {
         try {
-            PackageRegistry packageRegistry = lib.kasuga.KasugaLib.getBean(PackageRegistry.class);
+            PackageRegistry packageRegistry = scopedPackages != null ? scopedPackages : lib.kasuga.KasugaLib.getBean(PackageRegistry.class);
             if (packageRegistry == null) {
                 return null;
             }

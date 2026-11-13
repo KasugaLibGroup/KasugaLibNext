@@ -1,0 +1,5 @@
+name = "resource-platform-example"
+engine = "javascript"
+
+[entry]
+server = ["index"]

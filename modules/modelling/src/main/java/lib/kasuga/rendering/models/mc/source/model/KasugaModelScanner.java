@@ -29,15 +29,11 @@ public class KasugaModelScanner implements ModelScanner {
     public List<ResourceLocation> scan(ResourceManager resourceManager) {
         List<ResourceLocation> resources = new ArrayList<>();
 
-        // Only scan when proxy json exists
-        if (proxyConfig == null) {
-            return resources;
-        }
-        
         Map<ResourceLocation, Resource> allResources =
                 resourceManager.listResources(
                         "models",
-                        proxyConfig::matches
+                        id -> id.getNamespace().equals("kasuga_generated") && id.getPath().startsWith("models/v1/")
+                                || proxyConfig != null && proxyConfig.matches(id)
                 );
         resources.addAll(allResources.keySet());
         

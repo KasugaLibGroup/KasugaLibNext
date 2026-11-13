@@ -19,7 +19,7 @@ import java.util.Iterator;
 import java.util.List;
 
 public class ScopedResourceManager implements ResourceManagerReloadListener {
-    private ResourceManager resourceManager;
+    private volatile ResourceManager resourceManager;
     private List<ScopedPackResources> packResources = new ArrayList<>();
     private List<ScopedResourcePackListener> listeners = new ArrayList<>();
 
@@ -42,6 +42,10 @@ public class ScopedResourceManager implements ResourceManagerReloadListener {
     /** The vanilla resource manager this scoped manager wraps. */
     public ResourceManager getResourceManager() {
         return resourceManager;
+    }
+
+    public lib.kasuga.core.resource.pack.McManagedResourceView managedView(net.minecraft.server.packs.PackType type) {
+        return new lib.kasuga.core.resource.pack.McManagedResourceView(() -> resourceManager, type);
     }
 
     @Override

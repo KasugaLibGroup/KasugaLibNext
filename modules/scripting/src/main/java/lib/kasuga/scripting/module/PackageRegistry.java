@@ -10,7 +10,7 @@ public class PackageRegistry {
 
     private final Map<String, ResolvedPackage> packages = new HashMap<>();
 
-    public void register(ResolvedPackage pkg) {
+    public synchronized void register(ResolvedPackage pkg) {
         String name = pkg.info().name();
         if (packages.containsKey(name)) {
             throw new DuplicatePackageException(name, packages.get(name).packResources().getName());
@@ -18,15 +18,15 @@ public class PackageRegistry {
         packages.put(name, pkg);
     }
 
-    public ResolvedPackage lookup(String packageName) {
+    public synchronized ResolvedPackage lookup(String packageName) {
         return packages.get(packageName);
     }
 
-    public Map<String, ResolvedPackage> all() {
+    public synchronized Map<String, ResolvedPackage> all() {
         return Map.copyOf(packages);
     }
 
-    public void clear() {
+    public synchronized void clear() {
         packages.clear();
     }
 }

@@ -44,9 +44,9 @@ public class PackageSystem {
 
 
     public void init() {
-        loadingErrors.clear();
+        synchronized (loadingErrors) { loadingErrors.clear(); }
         engineErrors.clear();
-        engineMissing.clear();
+        synchronized (engineMissing) { engineMissing.clear(); }
     }
 
     public boolean hasLoadingErrors() {
@@ -72,8 +72,10 @@ public class PackageSystem {
         if (!spr.exists(packRelativeRoot, "package.toml"))
             return null;
         CommentedConfig config;
-        try {
-            config = scriptInfoParser.parse(new InputStreamReader(spr.open(packRelativeRoot, "package.toml")));
+        try (var input = spr.open(packRelativeRoot, "package.toml");
+             var reader = new InputStreamReader(input, java.nio.charset.StandardCharsets.UTF_8)) {
+            // Managed resource generations can prepare independently from the legacy runtime scan.
+            config = new TomlParser().parse(reader);
         } catch (IOException e) {
             throw new PackageLoadingError(e);
         }
