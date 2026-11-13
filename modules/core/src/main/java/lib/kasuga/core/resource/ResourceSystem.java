@@ -4,6 +4,7 @@ import io.micronaut.context.annotation.Context;
 import jakarta.annotation.PostConstruct;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
+import lib.kasuga.core.vfs.backend.MountTableVfs;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -18,11 +19,18 @@ import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Context()
 public class ResourceSystem {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ResourceSystem.class);
+
     ScopedResourceManager client = null;
     HashMap<MinecraftServer, ScopedResourceManager> managers = new HashMap<>();
+    private final CopyOnWriteArrayList<AutoCloseable> managedCloseables = new CopyOnWriteArrayList<>();
+    private final MountTableVfs unifiedVfs = new MountTableVfs("kasuga_unified");
 
     public void onServerReloading(MinecraftServer server) {
         ScopedResourceManager scopedResourceManager = managers.get(server);
@@ -74,10 +82,40 @@ public class ResourceSystem {
     }
 
     private void onServerStopping(ServerStoppingEvent event) {
-        managers.remove(event.getServer());
+        ScopedResourceManager removed = managers.remove(event.getServer());
         for (ScopedResourceManagerConsumer consumer : this.consumers) {
-            consumer.onResourceManagerRemoved(event.getServer(), managers.get(event.getServer()));
+            consumer.onResourceManagerRemoved(event.getServer(), removed);
         }
+        closeManagedResources();
+    }
+
+    public MountTableVfs getUnifiedVfs() {
+        return unifiedVfs;
+    }
+
+    /**
+     * Registers a VFS mount or {@link lib.kasuga.core.vfs.VfsWatchService} to be closed cleanly
+     * when the server shuts down.
+     */
+    public void registerManagedCloseable(AutoCloseable closeable) {
+        if (closeable != null) {
+            managedCloseables.addIfAbsent(closeable);
+        }
+    }
+
+    public void unregisterManagedCloseable(AutoCloseable closeable) {
+        managedCloseables.remove(closeable);
+    }
+
+    public void closeManagedResources() {
+        for (AutoCloseable closeable : managedCloseables) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                LOGGER.warn("Error closing managed VFS resource during shutdown", e);
+            }
+        }
+        managedCloseables.clear();
     }
 
     public ScopedResourceManager getServerManager(MinecraftServer server) {
