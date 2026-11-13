@@ -47,6 +47,7 @@
 | --- | --- |
 | [数据驱动注册](data-driven/README.md) | 内容 schema、工厂与属性扩展、诊断与 reload；入门与教程在 [data-driven/](../guides/data-driven/intro.md)（四篇参考 + 三篇指南） |
 | [Formula](formula/README.md) | 表达式、Namespace、函数/变量、运算符和错误 |
+| [统一资源平台与 Script Ticket](resource-platform.md) | 来源/URI、magic number、目录路由、MC 首次发现、scope/generation、脚本注册与异步 Ticket |
 | [构建与验证入口](../guides/verification.md) | Gradle 任务、独立 GL、客户端验收与证据边界 |
 
 ## 文档维护

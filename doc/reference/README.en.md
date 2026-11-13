@@ -47,6 +47,7 @@ References are organized against the current source; historical performance/clie
 | --- | --- |
 | [Data-driven registration](data-driven/README.md) | Content schema, factory and property extension, diagnostics, and reload; getting started and tutorials are in [data-driven/](../guides/data-driven/intro.md) (four reference pages + three guides) |
 | [Formula](formula/README.md) | Expressions, Namespace, functions/variables, operators, and errors |
+| [Resource platform and Script Ticket](resource-platform.md) | Source identity, content signatures, routing, initial MC discovery, generations, and asynchronous script blocks |
 | [Build and verification entry](../guides/verification.md) | Gradle tasks, standalone GL, client acceptance, and evidence boundaries |
 
 ## Documentation Maintenance

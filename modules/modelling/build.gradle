@@ -50,7 +50,11 @@ tasks.register('modelUnitTest', Test) {
     classpath = (sourceSets.test.runtimeClasspath + sourceSets.contentTesting.output).filter {
         !it.name.startsWith('junit-fml-')
     }
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // This new pack-discovery test decodes vanilla metadata codecs and needs real FML registries.
+        // It remains enabled in `test`, alongside its pure capture/identity test in this task.
+        excludeTags 'minecraft-resource-integration'
+    }
 }
 
 sourceSets {
@@ -283,6 +287,8 @@ neoForge {
             if (windowSmoke.isPresent()) systemProperty 'kasuga.testFrameWindows', windowSmoke.get()
             def headlessSmoke = providers.gradleProperty('kasugaTestHeadless')
             if (headlessSmoke.isPresent()) systemProperty 'kasuga.testHeadless', headlessSmoke.get()
+            def resourceSmoke = providers.gradleProperty('kasugaTestResources')
+            if (resourceSmoke.isPresent()) systemProperty 'kasuga.testResources', resourceSmoke.get()
             def skeletonRelaxationSmoke = providers.gradleProperty('kasugaTestSkeletonRelaxation')
             if (skeletonRelaxationSmoke.isPresent()) systemProperty 'kasuga.smokeSkeletonRelaxation', skeletonRelaxationSmoke.get()
             def graalShaderSmoke = providers.gradleProperty('kasugaTestGraalShader')

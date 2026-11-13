@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "bindings": [
+    {"id": "root", "source_id": "example", "schema_id": "minecraft_resource_schema"},
+    {
+      "id": "scripts", "source_id": "example", "source_prefix": "scripts",
+      "outputs": [{"id": "blocks", "entry_point_id": "kasuga:script_blocks", "when": "resource_reload", "side": "server", "target_prefix": "scripts"}]
+    }
+  ]
+}

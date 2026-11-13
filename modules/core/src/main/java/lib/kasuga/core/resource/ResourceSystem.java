@@ -18,6 +18,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.neoforged.neoforge.event.GameShuttingDownEvent;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -29,7 +30,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Context()
-public class ResourceSystem {
+public class ResourceSystem implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ResourceSystem.class);
 
     ScopedResourceManager client = null;
@@ -38,6 +39,9 @@ public class ResourceSystem {
     private final ConcurrentHashMap<MinecraftServer, CopyOnWriteArrayList<AutoCloseable>> serverManagedCloseables = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<AutoCloseable> clientManagedCloseables = new CopyOnWriteArrayList<>();
     private final MountTableVfs unifiedVfs = new MountTableVfs("kasuga_unified");
+    private final lib.kasuga.core.resource.pack.ApprovedResourcePacks approvedPacks = new lib.kasuga.core.resource.pack.ApprovedResourcePacks();
+    private final ConcurrentHashMap<String, lib.kasuga.core.resource.lifecycle.ResourceCoordinator> resourceScopes = new ConcurrentHashMap<>();
+    private boolean closed;
 
     public void onServerReloading(MinecraftServer server) {
         ScopedResourceManager scopedResourceManager = managers.get(server);
@@ -57,6 +61,8 @@ public class ResourceSystem {
         eventBus.addListener(this::onServerStarting);
         eventBus.addListener(this::onServerStopping);
         modEventBus.addListener(this::onClientSetup);
+        modEventBus.addListener(approvedPacks::onAddPackFinders);
+        eventBus.addListener((GameShuttingDownEvent event) -> close());
     }
 
     private void onClientSetup(FMLClientSetupEvent event) {
@@ -90,14 +96,41 @@ public class ResourceSystem {
 
     private void onServerStopping(ServerStoppingEvent event) {
         ScopedResourceManager removed = managers.remove(event.getServer());
-        for (ScopedResourceManagerConsumer consumer : this.consumers) {
-            consumer.onResourceManagerRemoved(event.getServer(), removed);
-        }
-        closeManagedResources(event.getServer());
+        try {
+            if (removed != null) notifyRemoved(event.getServer(), removed);
+        } finally { closeManagedResources(event.getServer()); }
     }
 
     public MountTableVfs getUnifiedVfs() {
         return unifiedVfs;
+    }
+
+    public lib.kasuga.core.resource.pack.ApprovedResourcePacks getApprovedPacks() { return approvedPacks; }
+
+    public lib.kasuga.core.resource.lifecycle.ResourceCoordinator createServerResourceScope(MinecraftServer server, String id) {
+        java.util.Objects.requireNonNull(server, "server");
+        return createResourceScope(id, closeable -> registerManagedCloseable(server, closeable));
+    }
+
+    public lib.kasuga.core.resource.lifecycle.ResourceCoordinator createClientResourceScope(String id) {
+        return createResourceScope(id, this::registerClientManagedCloseable);
+    }
+
+    public lib.kasuga.core.resource.lifecycle.ResourceCoordinator createProcessResourceScope(String id) {
+        return createResourceScope(id, this::registerManagedCloseable);
+    }
+
+    private synchronized lib.kasuga.core.resource.lifecycle.ResourceCoordinator createResourceScope(String id, java.util.function.Consumer<AutoCloseable> owner) {
+        if (closed) throw new IllegalStateException("Resource system closed");
+        if (id == null || id.isBlank()) throw new IllegalArgumentException("scope ID required");
+        var coordinator = new lib.kasuga.core.resource.lifecycle.ResourceCoordinator(id);
+        coordinator.register(new lib.kasuga.core.resource.pack.MinecraftResourceEntryPoint());
+        resourceScopes.compute(id, (key, previous) -> {
+            if (previous != null && !previous.isClosed()) throw new IllegalArgumentException("Duplicate resource scope: " + id);
+            return coordinator;
+        });
+        owner.accept(() -> { try { coordinator.close(); } finally { resourceScopes.remove(id, coordinator); } });
+        return coordinator;
     }
 
     /**
@@ -186,14 +219,38 @@ public class ResourceSystem {
     public void closeManagedResources(@Nullable MinecraftServer server) {
         if (server != null) {
             closeAndClear(serverManagedCloseables.remove(server));
+        } else {
+            closeAndClear(managedCloseables);
         }
-        closeAndClear(managedCloseables);
     }
 
     public void closeManagedResources() {
-        closeAndClear(managedCloseables);
-        for (MinecraftServer key : new ArrayList<>(serverManagedCloseables.keySet())) {
-            closeAndClear(serverManagedCloseables.remove(key));
+        try { approvedPacks.close(); }
+        finally {
+            closeAndClear(managedCloseables);
+            for (MinecraftServer key : new ArrayList<>(serverManagedCloseables.keySet())) {
+                closeAndClear(serverManagedCloseables.remove(key));
+            }
+        }
+    }
+
+    /** Called by GameShuttingDownEvent while the client GL context is still valid. Never joins script threads. */
+    @Override public void close() {
+        synchronized (this) { if (closed) return; closed = true; }
+        if (client != null) { notifyRemoved(null, client); client = null; }
+        for (var entry : new ArrayList<>(managers.entrySet())) notifyRemoved(entry.getKey(), entry.getValue());
+        managers.clear();
+        try { closeClientManagedResources(); }
+        finally {
+            try { closeManagedResources(); }
+            finally { try { unifiedVfs.close(); } catch (java.io.IOException e) { LOGGER.warn("Unified VFS shutdown failed", e); } }
+        }
+    }
+
+    private void notifyRemoved(@Nullable MinecraftServer server, ScopedResourceManager manager) {
+        for (ScopedResourceManagerConsumer consumer : this.consumers) {
+            try { consumer.onResourceManagerRemoved(server, manager); }
+            catch (RuntimeException e) { LOGGER.warn("Resource consumer shutdown failed", e); }
         }
     }
 
