@@ -217,6 +217,9 @@ void b3RecW_PLANERESULT( b3RecBuffer* buf, b3PlaneResult v )
 	b3RecW_VEC3( buf, v.plane.normal );
 	b3RecW_F32( buf, v.plane.offset );
 	b3RecW_VEC3( buf, v.point );
+	b3RecW_I32( buf, v.triangleIndex );
+	b3RecW_I32( buf, v.childIndex );
+	b3RecW_I32( buf, v.materialIndex );
 }
 
 void b3RecW_WORLDID( b3RecBuffer* buf, b3WorldId v )
@@ -317,7 +320,7 @@ static void b3RecW_STR( b3RecBuffer* buf, const char* s )
 // single-precision and double-precision sizes (equal for most), so either build configuration passes.
 _Static_assert( sizeof( void* ) != 8 || sizeof( b3ExplosionDef ) == 32 || sizeof( b3ExplosionDef ) == 48,
 				"b3ExplosionDef changed: update b3RecW_EXPLOSIONDEF and b3RecR_EXPLOSIONDEF together" );
-_Static_assert( sizeof( void* ) != 8 || sizeof( b3BodyDef ) == 104 || sizeof( b3BodyDef ) == 120,
+_Static_assert( sizeof( void* ) != 8 || sizeof( b3BodyDef ) == 112 || sizeof( b3BodyDef ) == 128,
 				"b3BodyDef changed: update b3RecW_BODYDEF and b3RecR_BODYDEF together" );
 _Static_assert( sizeof( void* ) != 8 || sizeof( b3ShapeDef ) == 120,
 				"b3ShapeDef changed: update b3RecW_SHAPEDEF and b3RecR_SHAPEDEF together" );
@@ -339,6 +342,10 @@ _Static_assert( sizeof( void* ) != 8 || sizeof( b3WeldJointDef ) == 128,
 				"b3WeldJointDef changed: update b3RecW_WELDJOINTDEF and its reader together" );
 _Static_assert( sizeof( void* ) != 8 || sizeof( b3WheelJointDef ) == 184,
 				"b3WheelJointDef changed: update b3RecW_WHEELJOINTDEF and its reader together" );
+_Static_assert( sizeof( void* ) != 8 || sizeof( b3MoverJointDef ) == 128,
+				"b3MoverJointDef changed: update b3RecW_MOVERJOINTDEF and its reader together" );
+_Static_assert( sizeof( void* ) != 8 || sizeof( b3PogoJointDef ) == 152,
+				"b3PogoJointDef changed: update b3RecW_POGOJOINTDEF and its reader together" );
 
 void b3RecW_EXPLOSIONDEF( b3RecBuffer* buf, b3ExplosionDef v )
 {
@@ -360,6 +367,7 @@ void b3RecW_BODYDEF( b3RecBuffer* buf, b3BodyDef v )
 	b3RecW_F32( buf, v.angularDamping );
 	b3RecW_F32( buf, v.gravityScale );
 	b3RecW_F32( buf, v.sleepThreshold );
+	b3RecW_F32( buf, v.safetyFactor );
 	b3RecW_STR( buf, v.name );
 	// userData: not preserved
 	b3RecW_U64( buf, 0u );
@@ -542,6 +550,26 @@ void b3RecW_WHEELJOINTDEF( b3RecBuffer* buf, b3WheelJointDef v )
 	b3RecW_BOOL( buf, v.enableSteeringLimit );
 	b3RecW_F32( buf, v.lowerSteeringLimit );
 	b3RecW_F32( buf, v.upperSteeringLimit );
+}
+
+void b3RecW_MOVERJOINTDEF( b3RecBuffer* buf, b3MoverJointDef v )
+{
+	b3RecW_JointBase( buf, &v.base );
+	b3RecW_VEC3( buf, v.linearVelocity );
+	b3RecW_F32( buf, v.maxForce );
+}
+
+void b3RecW_POGOJOINTDEF( b3RecBuffer* buf, b3PogoJointDef v )
+{
+	b3RecW_JointBase( buf, &v.base );
+	b3RecW_VEC3( buf, v.normal );
+	b3RecW_F32( buf, v.hertz );
+	b3RecW_F32( buf, v.dampingRatio );
+	b3RecW_F32( buf, v.restLength );
+	b3RecW_F32( buf, v.maxTensionForce );
+	b3RecW_F32( buf, v.maxCompressionForce );
+	b3RecW_F32( buf, v.impulse );
+	b3RecW_F32( buf, v.velocity );
 }
 
 // Query recording. A query collects a variable number of hits through a user callback, so the count
@@ -758,16 +786,19 @@ void b3RecEndRecord( b3Recording* rec )
 
 // Append a fresh entry and splice it onto the front of its hash chain. The map value is the chain head.
 static uint32_t b3RegistryPush( b3GeometryRegistry* reg, b3GeometryHashMap* map, b3GeometryHashMap_itr itr, bool hashPresent,
-								b3GeometryKind kind, uint64_t contentHash, uint8_t* bytes, int byteCount )
+								b3GeometryKind kind, uint64_t contentHash, const uint8_t* bytes, int byteCount )
 {
+	B3_ASSERT( byteCount > 0 );
+	uint8_t* copy = b3Alloc( (size_t)byteCount );
+	memcpy( copy, bytes, (size_t)byteCount );
+
 	uint32_t id = (uint32_t)reg->entries.count;
 	b3GeometryEntry* entry = b3Array_Emplace( reg->entries );
 	entry->contentHash = contentHash;
 	entry->id = id;
 	entry->kind = kind;
 	entry->byteCount = byteCount;
-	// Take ownership.
-	entry->bytes = bytes;
+	entry->bytes = copy;
 	entry->hashNext = hashPresent ? (int)itr.data->val : B3_NULL_INDEX;
 
 	if ( hashPresent )
@@ -792,7 +823,7 @@ static b3GeometryHashMap* b3RegistryMap( b3GeometryRegistry* reg )
 	return reg->dedupMap;
 }
 
-uint32_t b3InternGeometry( b3GeometryRegistry* reg, b3GeometryKind kind, uint64_t contentHash, uint8_t* bytes, int byteCount )
+uint32_t b3InternGeometry( b3GeometryRegistry* reg, b3GeometryKind kind, uint64_t contentHash, const uint8_t* bytes, int byteCount )
 {
 	b3GeometryHashMap* map = b3RegistryMap( reg );
 
@@ -806,8 +837,6 @@ uint32_t b3InternGeometry( b3GeometryRegistry* reg, b3GeometryKind kind, uint64_
 			b3GeometryEntry* e = reg->entries.data + index;
 			if ( e->byteCount == byteCount && memcmp( e->bytes, bytes, (size_t)byteCount ) == 0 )
 			{
-				// Duplicate. Free bytes because the caller transferred ownership. Return existing id.
-				b3Free( bytes, (size_t)byteCount );
 				return e->id;
 			}
 		}
@@ -816,7 +845,7 @@ uint32_t b3InternGeometry( b3GeometryRegistry* reg, b3GeometryKind kind, uint64_
 	return b3RegistryPush( reg, map, itr, hashPresent, kind, contentHash, bytes, byteCount );
 }
 
-uint32_t b3AppendGeometry( b3GeometryRegistry* reg, b3GeometryKind kind, uint64_t contentHash, uint8_t* bytes, int byteCount )
+uint32_t b3AppendGeometry( b3GeometryRegistry* reg, b3GeometryKind kind, uint64_t contentHash, const uint8_t* bytes, int byteCount )
 {
 	b3GeometryHashMap* map = b3RegistryMap( reg );
 	b3GeometryHashMap_itr itr = b3GeometryHashMap_get( map, contentHash );
@@ -1142,43 +1171,31 @@ b3Recording* b3LoadRecordingFromFile( const char* path )
 
 // Geometry interning helpers
 
+static uint32_t b3RecInternBlob( b3Recording* rec, b3GeometryKind kind, const void* blob, int byteCount )
+{
+	const uint8_t* bytes = (const uint8_t*)blob;
+	uint64_t h = b3Hash64NonZero( bytes, byteCount );
+	return b3InternGeometry( &rec->registry, kind, h, bytes, byteCount );
+}
+
 uint32_t b3RecInternHull( b3Recording* rec, const b3HullData* hull )
 {
-	int byteCount = hull->byteCount;
-	uint8_t* bytes = b3Alloc( (size_t)byteCount );
-	memcpy( bytes, hull, (size_t)byteCount );
-	uint64_t h = b3Hash64NonZero( bytes, byteCount );
-	return b3InternGeometry( &rec->registry, b3_geometryHull, h, bytes, byteCount );
+	return b3RecInternBlob( rec, b3_geometryHull, hull, hull->byteCount );
 }
 
 uint32_t b3RecInternMesh( b3Recording* rec, const b3MeshData* mesh )
 {
-	int byteCount = mesh->byteCount;
-	uint8_t* bytes = b3Alloc( (size_t)byteCount );
-	memcpy( bytes, mesh, (size_t)byteCount );
-	uint64_t h = b3Hash64NonZero( bytes, byteCount );
-	return b3InternGeometry( &rec->registry, b3_geometryMesh, h, bytes, byteCount );
+	return b3RecInternBlob( rec, b3_geometryMesh, mesh, mesh->byteCount );
 }
 
 uint32_t b3RecInternHeightField( b3Recording* rec, const b3HeightFieldData* hf )
 {
-	int byteCount = hf->byteCount;
-	uint8_t* bytes = b3Alloc( (size_t)byteCount );
-	memcpy( bytes, hf, (size_t)byteCount );
-	uint64_t h = b3Hash64NonZero( bytes, byteCount );
-	return b3InternGeometry( &rec->registry, b3_geometryHeightField, h, bytes, byteCount );
+	return b3RecInternBlob( rec, b3_geometryHeightField, hf, hf->byteCount );
 }
 
 uint32_t b3RecInternCompound( b3Recording* rec, const b3CompoundData* compound )
 {
-	int byteCount = compound->byteCount;
-	uint8_t* bytes = b3Alloc( (size_t)byteCount );
-	memcpy( bytes, compound, (size_t)byteCount );
-	// Null the tree node pointer in the copy so the canonical bytes are pointer-free.
-	// b3ConvertBytesToCompound fixes it back on load via nodeOffset.
-	( (b3CompoundData*)bytes )->tree.nodes = NULL;
-	uint64_t h = b3Hash64NonZero( bytes, byteCount );
-	return b3InternGeometry( &rec->registry, b3_geometryCompound, h, bytes, byteCount );
+	return b3RecInternBlob( rec, b3_geometryCompound, compound, compound->byteCount );
 }
 
 uint64_t b3HashWorldState( b3World* world )

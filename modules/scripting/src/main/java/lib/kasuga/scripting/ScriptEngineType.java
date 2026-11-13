@@ -58,17 +58,27 @@ public class ScriptEngineType<T extends ScriptEngine> {
     }
 
     public T create(ScriptConsole console) throws ScriptException {
+        return create(console, null);
+    }
+
+    public T create(ScriptConsole console, lib.kasuga.scripting.module.PackageRegistry packages) throws ScriptException {
         T engine = engineSupplier.get();
-        Map<EngineFeatureType<?>, EngineFeature> features = new HashMap<>();
-        for (EngineFeatureType<?> featureType : featureTypes) {
-            features.put(featureType, featureType.build());
+        try {
+            if (packages != null) engine.usePackageRegistry(packages);
+            Map<EngineFeatureType<?>, EngineFeature> features = new HashMap<>();
+            for (EngineFeatureType<?> featureType : featureTypes) {
+                features.put(featureType, featureType.build());
+            }
+            engine.setFeatures(features);
+            engine.init(console);
+            for (GlobalApiEntry entry : globalApis) {
+                engine.registerGlobal(entry.name(), entry.supplier().apply(engine));
+            }
+            return engine;
+        } catch (ScriptException | RuntimeException failure) {
+            try { engine.close(); } catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); }
+            throw failure;
         }
-        engine.setFeatures(features);
-        engine.init(console);
-        for (GlobalApiEntry entry : globalApis) {
-            engine.registerGlobal(entry.name(), entry.supplier().apply(engine));
-        }
-        return engine;
     }
 
     public static class Builder<T extends ScriptEngine> {

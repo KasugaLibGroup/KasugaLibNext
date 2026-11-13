@@ -5,6 +5,8 @@ import lib.kasuga.utils.json.JsonFieldPolicy.NonNullFields;
 import lib.kasuga.rendering.models.mc.util.ModelJson;
 import lib.kasuga.utils.json.JsonFieldPolicy.DefaultOnMismatch;
 import lib.kasuga.rendering.models.uml.structure.data.ModelData;
+import lib.kasuga.rendering.models.mc.component.ModelComponents;
+import lib.kasuga.rendering.models.mc.component.ModelComponentsHolder;
 import lombok.Getter;
 import lombok.Setter;
 import net.minecraft.resources.ResourceLocation;
@@ -14,13 +16,15 @@ import java.util.*;
 
 @Setter
 @Getter
-public class JEModelData implements ModelData {
+public class JEModelData implements ModelData, ModelComponentsHolder {
     
     @Nullable
     private JEModelData parent;
 
     private ResourceLocation identifier;
     private final List<JEElement> elements = new ArrayList<>();
+    private JsonObject components;
+    private ModelComponents kasugaComponents;
     private final Map<String, String> textures = new HashMap<>();
     private boolean ambientOcclusion = true;
     private String guiLight = "side";
@@ -48,6 +52,7 @@ public class JEModelData implements ModelData {
 
         if (elements.isEmpty()) {
             elements.addAll(parent.elements);
+            if (components == null && parent.components != null) components = parent.components.deepCopy();
         }
 
         Map<String, String> mergedTextures = new HashMap<>(parent.textures);
@@ -79,8 +84,12 @@ public class JEModelData implements ModelData {
         input.display.forEach((name, display) -> data.display.put(name, display.build()));
         data.ambientOcclusion = input.ambientocclusion;
         data.guiLight = input.guiLight;
+        data.components = json.has("kasuga_lib") ? json.getAsJsonObject("kasuga_lib").deepCopy() : null;
         return data;
     }
+
+    @Override
+    public ModelComponents components() { return kasugaComponents; }
 
     @NonNullFields
     private static final class Input {

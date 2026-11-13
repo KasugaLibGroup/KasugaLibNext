@@ -847,6 +847,10 @@ b3DistanceOutput b3ShapeDistance( const b3DistanceInput* input, b3SimplexCache* 
 			b3ComputeWitnessPoints( &simplex, &localPointA, &localPointB );
 			distanceOutput.pointA = localPointA;
 			distanceOutput.pointB = localPointB;
+			distanceOutput.normal = b3Vec3_zero;
+			distanceOutput.distance = 0.0f;
+			distanceOutput.iterations = iteration;
+			distanceOutput.simplexCount = simplexIndex;
 			return distanceOutput;
 		}
 
@@ -943,6 +947,10 @@ b3DistanceOutput b3ShapeDistance( const b3DistanceInput* input, b3SimplexCache* 
 			b3ComputeWitnessPoints( &simplex, &localPointA, &localPointB );
 			distanceOutput.pointA = localPointA;
 			distanceOutput.pointB = localPointB;
+			distanceOutput.normal = b3Vec3_zero;
+			distanceOutput.distance = 0.0f;
+			distanceOutput.iterations = iteration;
+			distanceOutput.simplexCount = simplexIndex;
 			B3_VALIDATE( b3Distance( localPointA, localPointB ) < FLT_EPSILON );
 			return distanceOutput;
 		}
@@ -984,25 +992,27 @@ b3DistanceOutput b3ShapeDistance( const b3DistanceInput* input, b3SimplexCache* 
 		simplex.count += 1;
 	}
 
+	// Build witness points.
+	b3Vec3 localPointA, localPointB;
+	b3ComputeWitnessPoints( &simplex, &localPointA, &localPointB );
+
+	distanceOutput.pointA = localPointA;
+	distanceOutput.pointB = localPointB;
+	distanceOutput.iterations = iteration;
+	distanceOutput.simplexCount = simplexIndex;
+
 	normal = b3Normalize( normal );
 	if ( b3IsNormalized( normal ) == false )
 	{
 		// Treat as overlap
+		distanceOutput.distance = 0.0f;
+		distanceOutput.normal = b3Vec3_zero;
 		return distanceOutput;
 	}
 
-	// Build witness points and safe cache
-	b3Vec3 localPointA, localPointB;
-	b3ComputeWitnessPoints( &simplex, &localPointA, &localPointB );
-	b3WriteCache( cache, &simplex );
-
 	// Results stay in frame A
-	distanceOutput.pointA = localPointA;
-	distanceOutput.pointB = localPointB;
 	distanceOutput.distance = b3Distance( localPointA, localPointB );
 	distanceOutput.normal = normal;
-	distanceOutput.iterations = iteration;
-	distanceOutput.simplexCount = simplexIndex;
 
 	// Apply radii if requested
 	if ( input->useRadii )
@@ -1016,9 +1026,11 @@ b3DistanceOutput b3ShapeDistance( const b3DistanceInput* input, b3SimplexCache* 
 		distanceOutput.pointB = b3Sub( distanceOutput.pointB, b3MulSV( rB, normal ) );
 	}
 
+	// Simplex is useful, cache it.
+	b3WriteCache( cache, &simplex );
+
 	return distanceOutput;
 }
-
 
 // Separation function:
 // f(t) = (c2 + t * dp2 - c1 - t * dp1 ) * n
@@ -1074,6 +1086,36 @@ b3CastOutput b3ShapeCast( const b3ShapeCastPairInput* input )
 				if ( input->canEncroach && distanceOutput.distance > 2.0f * linearSlop )
 				{
 					target = distanceOutput.distance - linearSlop;
+				}
+				else if ( input->canEncroach && distanceOutput.distance > 0.0f )
+				{
+					// This is for box movers and can't normally be reached by capsule
+					// movers or regular shape casts.
+
+					// Near-target start without overlap: advance by first order while
+					// retaining a rest separation. Sweeps that cannot consume the free
+					// gap (receding, tangential, grazing) miss.
+					float retained = 0.5f * linearSlop;
+					float needed = distanceOutput.distance - retained;
+					float approach = -b3Dot( delta2, distanceOutput.normal );
+					if ( approach <= b3MaxFloat( needed, 0.0f ) )
+					{
+						// Moving away, no hit.
+						return output;
+					}
+
+					float fraction = needed > 0.0f ? needed / approach : 0.0f;
+					if ( fraction >= input->maxFraction )
+					{
+						// Still no hit because the max fraction is small.
+						return output;
+					}
+
+					output.fraction = fraction;
+					output.point = b3MulAdd( distanceOutput.pointA, input->proxyA.radius, distanceOutput.normal );
+					output.normal = distanceOutput.normal;
+					output.hit = true;
+					return output;
 				}
 				else
 				{
@@ -1703,6 +1745,14 @@ b3TOIOutput b3TimeOfImpact( const b3TOIInput* input )
 		{
 			output.state = b3_toiStateOverlapped;
 			output.fraction = 0.0f;
+
+			// Averaged hit point
+			b3Vec3 pA = b3MulAdd( worldPointA, proxyA.radius, worldNormal );
+			b3Vec3 pB = b3MulAdd( worldPointB, -proxyB.radius, worldNormal );
+			output.point = b3Lerp( pA, pB, 0.5f );
+			output.point = b3Add( output.point, origin );
+			output.normal = worldNormal;
+
 			break;
 		}
 

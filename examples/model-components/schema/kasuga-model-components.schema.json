@@ -1,0 +1,353 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Kasuga model components",
+  "description": "Incremental extension stored in a kasuga_lib JSON property.",
+  "type": "object",
+  "required": ["version", "bones", "bindings", "emitters"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "bones": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/bone"
+      }
+    },
+    "bindings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/binding"
+      }
+    },
+    "emitters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/emitter"
+      }
+    },
+    "diamonds": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diamond"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "vec3": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "items": false,
+      "minItems": 3
+    },
+    "bone": {
+      "type": "object",
+      "required": ["id", "name", "parent", "pivot", "components"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent": {
+          "type": ["string", "null"]
+        },
+        "pivot": {
+          "$ref": "#/$defs/vec3"
+        },
+        "components": {
+          "$ref": "#/$defs/components"
+        }
+      },
+      "additionalProperties": true
+    },
+    "components": {
+      "type": "object",
+      "properties": {
+        "ik": {
+          "$ref": "#/$defs/ik"
+        },
+        "physics": {
+          "$ref": "#/$defs/physics"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ik": {
+      "type": "object",
+      "required": ["target", "links"],
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "links": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ik_link"
+          }
+        },
+        "iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256,
+          "default": 32
+        },
+        "tolerance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 0.01
+        },
+        "max_step": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 180,
+          "default": 45
+        }
+      },
+      "additionalProperties": true
+    },
+    "ik_link": {
+      "type": "object",
+      "required": ["bone"],
+      "properties": {
+        "bone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "min": {
+          "$ref": "#/$defs/vec3"
+        },
+        "max": {
+          "$ref": "#/$defs/vec3"
+        }
+      },
+      "additionalProperties": true
+    },
+    "physics": {
+      "type": "object",
+      "properties": {
+        "shape": {
+          "enum": ["sphere", "box", "capsule"],
+          "default": "capsule"
+        },
+        "mode": {
+          "enum": ["kinematic", "dynamic", "rotation"],
+          "default": "rotation"
+        },
+        "size": {
+          "$ref": "#/$defs/vec3"
+        },
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3"
+        },
+        "mass": {
+          "type": "number",
+          "minimum": 0
+        },
+        "linear_damping": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "angular_damping": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "stiffness": {
+          "type": "number",
+          "minimum": 0
+        },
+        "friction": {
+          "type": "number",
+          "minimum": 0
+        },
+        "restitution": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "collision_group": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 63
+        },
+        "non_collision_mask": {
+          "type": "integer"
+        },
+        "parent_body": {
+          "type": "string"
+        },
+        "gravity": {
+          "$ref": "#/$defs/vec3"
+        },
+        "joint": {
+          "$ref": "#/$defs/joint"
+        }
+      },
+      "additionalProperties": true
+    },
+    "joint": {
+      "type": "object",
+      "properties": {
+        "rotation_min": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation_max": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation_spring": {
+          "$ref": "#/$defs/vec3"
+        }
+      },
+      "additionalProperties": true
+    },
+    "binding": {
+      "type": "object",
+      "required": ["element", "bone"],
+      "properties": {
+        "element": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bone": {
+          "type": ["string", "null"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "emitter": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "bone",
+        "position",
+        "rotation",
+        "rate",
+        "max_particles",
+        "space",
+        "particle"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bone": {
+          "type": ["string", "null"]
+        },
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "rate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_particles": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "space": {
+          "enum": ["local", "world"]
+        },
+        "particle": {
+          "$ref": "#/$defs/particle"
+        }
+      },
+      "additionalProperties": true
+    },
+    "particle": {
+      "type": "object",
+      "properties": {
+        "texture": {
+          "type": "string"
+        },
+        "lifetime": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0
+        },
+        "spread": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 180
+        },
+        "size": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "gravity": {
+          "$ref": "#/$defs/vec3"
+        }
+      },
+      "additionalProperties": true
+    },
+    "diamond": {
+      "type": "object",
+      "required": ["id", "first", "second"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "first": {
+          "type": "string",
+          "minLength": 1
+        },
+        "second": {
+          "type": "string",
+          "minLength": 1
+        },
+        "iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "tolerance": {
+          "type": "number",
+          "minimum": 1e-06,
+          "maximum": 16
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

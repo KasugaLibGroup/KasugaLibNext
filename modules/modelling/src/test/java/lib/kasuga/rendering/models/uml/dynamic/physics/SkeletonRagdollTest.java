@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -1088,6 +1089,51 @@ class SkeletonRagdollTest {
 
         assertTrue(ragdoll.joints().getFirst().angularLimitViolation() < initialViolation,
                 "Box3D cone/twist limit must reduce the authored violation");
+    }
+
+    @ParameterizedTest
+    @ValueSource(floats = {0.5f, 1f, 2f})
+    void relaxedProfileDoesNotPullAValidJointBackToBindPose(float segmentLength) {
+        Bone root = bone("root", -1, new Vector3f());
+        Bone childBone = bone("child", 0, new Vector3f(0f, segmentLength, 0f));
+        root.setChildren(new Bone[]{childBone});
+        childBone.setParent(root);
+        Bone[] bones = {root, childBone};
+        Skeleton skeleton = new Skeleton(bones, root, new Anchor[0], null, new Transform());
+        PmxTail tail = new PmxTail(List.of(), List.of(), List.of(
+                body("root", 0, 1), body("child", 1, 1, new Vector3f(0f, segmentLength, 0f))),
+                List.of(), List.of());
+        Model model = new Model(new lib.kasuga.rendering.models.uml.structure.basic.Vertex[0],
+                new lib.kasuga.rendering.models.uml.structure.basic.Mesh[0], bones, skeleton,
+                new MaterialSet(List.of(), List.of()), MeshMode.TRIANGLES,
+                new MmdModelData(header(), tail, new Vector3f(1f)), null);
+        var limit = new SkeletonRagdoll.SwingTwistLimit(0.8f, -0.4f, 0.4f, 0.84f);
+        var profile = SkeletonRagdoll.Profile.of(
+                new SkeletonRagdoll.Registration(0, SkeletonRagdoll.BodyRole.PELVIS),
+                new SkeletonRagdoll.Registration(1, 0, SkeletonRagdoll.BodyRole.SPINE, limit));
+        try (ModelInstance instance = new ModelInstance(model, null, null, null, null, null)) {
+            SkeletonRagdoll ragdoll = instance.getSkeletonInstance().relax(profile);
+            ragdoll.setGravity(new Vector3f());
+            ragdoll.setCollisionsEnabled(false);
+            ragdoll.setSleepingEnabled(false);
+            var child = ragdoll.bodies().get(1);
+            Vector3f pivot = new Vector3f(0f, segmentLength, 0f);
+            Quaternionf rotation = new Quaternionf().rotationX(0.35f);
+            Vector3f position = rotation.transform(child.position().sub(pivot)).add(pivot);
+            child.teleport(position, rotation);
+            var joint = ragdoll.joints().getFirst();
+            assertEquals(0f, joint.angularLimitViolation(), 1e-5f,
+                    "the initial bend is inside the authored cone/twist limits");
+            Vector3f initialRotation = joint.relativeRotation();
+            float maximumDrift = 0f;
+            for (int i = 0; i < 120; i++) {
+                ragdoll.step(1f / 120f);
+                maximumDrift = Math.max(maximumDrift, joint.relativeRotation().distance(initialRotation));
+            }
+            assertTrue(maximumDrift < 1e-3f,
+                    "a relaxed, force-free joint must retain a legal bend instead of tracking bind pose: drift="
+                            + maximumDrift + " length=" + segmentLength);
+        }
     }
 
     @Test

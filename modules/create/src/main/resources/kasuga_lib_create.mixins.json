@@ -1,6 +1,7 @@
 {
   "required": true,
   "package": "lib.kasuga.create.mixins",
+  "plugin": "lib.kasuga.create.compat.CreateMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "EdgeDataMixin",
@@ -17,6 +18,8 @@
     "requireAnnotations": true
   },
   "client": [
-    "client.BezierConnectionMixin"
+    "client.BezierConnectionMixin",
+    "client.ModernBezierSegmentsMixin",
+    "client.ModernBezierGirdersMixin"
   ]
 }

@@ -111,6 +111,8 @@ scene.add(source, new Vec3(10, 70, 10))
 ```
 
 `SceneModels` draws before shared world post-processing. Use a separate source for another owner.
+To follow a Create contraption, use `scene.add(source, CreateSceneHosts.contraption(entity))`;
+see [Scenes and UI on moving structures](moving-scene-hosts.en.md) for shared model/UI placement.
 Positions are world coordinates: the model stays fixed as players walk around it. `Entry.position`
 moves it, `transform` sets local rotation/scale, and `visible(false)` hides it. Use the render thread.
 Development examples live in `test.kasuga.modelling.demo.preview` and `test.kasuga.create.demo.preview`.

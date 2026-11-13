@@ -1,0 +1,6 @@
+{
+  "package": "ksg://example/roots/main/scripts/package.toml",
+  "block": "increment",
+  "side": "server",
+  "contract": {"arguments": ["number"], "result": "number"}
+}

@@ -11,11 +11,12 @@ Source, checksum and acquisition details are recorded in `modules/render-core/li
 ## Box3D
 
 The modelling module vendors and links the Box3D rigid-body engine at commit
-`30c67b5e6d0a3a66f0f506c69ce9e9e0587e3b7c`:
+`336263320469e5e9febfe18697ab562488f7e97a`:
 
 - Upstream: https://github.com/erincatto/box3d
 - Vendored sources: `src/main/native/box3d`
 - Local JNI bridge: `src/main/native/kasuga_box3d_jni.c`
+- Vendored source is immutable; see `src/main/native/README.md` for source verification.
 
 Copyright (c) 2026 Erin Catto
 

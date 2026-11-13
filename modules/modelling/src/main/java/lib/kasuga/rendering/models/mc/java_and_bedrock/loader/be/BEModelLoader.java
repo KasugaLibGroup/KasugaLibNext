@@ -105,6 +105,8 @@ public class BEModelLoader extends Loader<JsonObject, ResourceLocation, String> 
                 anchorBindingFunc,
                 vertexBindingFunc
         );
+        var components = (lib.kasuga.rendering.models.mc.component.ModelComponents) getContext().getData("model_components");
+        if (components != null) components.apply(skeleton);
         Model model = new Model(
                             getVertices().toArray(new Vertex[0]),
                             getMeshes().toArray(new Mesh[0]),

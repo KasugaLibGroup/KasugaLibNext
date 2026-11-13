@@ -1114,9 +1114,13 @@ public final class SkeletonRagdoll implements AutoCloseable {
                     mass, 0f, 0f,
                     authored.restitution(), authored.friction(), 1);
             Frames.Pose bodyPose = new Frames.Pose(center, rotation);
+            // A generated profile describes passive joint limits. Pulling every
+            // joint toward its bind rotation adds an active torque in RELAXED
+            // mode and can hold a loaded chain outside its soft limits. Pose
+            // tracking belongs to the explicit skeleton drive/controller.
             Body body = new Body(dynamic, bone, bodyPose,
                     Frames.relative(bonePose, bodyPose), BoneWriteback.FULL_POSE,
-                    new Vector3f(radius, length, 0f), true, true);
+                    new Vector3f(radius, length, 0f), true);
             registeredBodies.add(body);
             bodyByDefinition.put(registration.rigidBodyIndex, body);
             registrationByBody.put(body, registration);

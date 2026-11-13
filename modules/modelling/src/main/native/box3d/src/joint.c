@@ -62,6 +62,21 @@ b3MotorJointDef b3DefaultMotorJointDef( void )
 	return def;
 }
 
+b3MoverJointDef b3DefaultMoverJointDef( void )
+{
+	b3MoverJointDef def = { 0 };
+	def.base = b3DefaultJointDef();
+	return def;
+}
+
+b3PogoJointDef b3DefaultPogoJointDef( void )
+{
+	b3PogoJointDef def = { 0 };
+	def.base = b3DefaultJointDef();
+	def.normal = b3Vec3_axisY;
+	return def;
+}
+
 b3FilterJointDef b3DefaultFilterJointDef( void )
 {
 	b3FilterJointDef def = { 0 };
@@ -120,7 +135,7 @@ b3ExplosionDef b3DefaultExplosionDef( void )
 b3Joint* b3GetJointFullId( b3World* world, b3JointId jointId )
 {
 	int id = jointId.index1 - 1;
-	b3Joint* joint = b3Array_Get( world->joints, id  );
+	b3Joint* joint = b3Array_Get( world->joints, id );
 	B3_ASSERT( joint->jointId == id && joint->generation == jointId.generation );
 	return joint;
 }
@@ -131,11 +146,11 @@ b3JointSim* b3GetJointSim( b3World* world, b3Joint* joint )
 	{
 		B3_ASSERT( 0 <= joint->colorIndex && joint->colorIndex < B3_GRAPH_COLOR_COUNT );
 		b3GraphColor* color = world->constraintGraph.colors + joint->colorIndex;
-		return b3Array_Get( color->jointSims, joint->localIndex  );
+		return b3Array_Get( color->jointSims, joint->localIndex );
 	}
 
-	b3SolverSet* set = b3Array_Get( world->solverSets, joint->setIndex  );
-	return b3Array_Get( set->jointSims, joint->localIndex  );
+	b3SolverSet* set = b3Array_Get( world->solverSets, joint->setIndex );
+	return b3Array_Get( set->jointSims, joint->localIndex );
 }
 
 b3JointSim* b3GetJointSimCheckType( b3JointId jointId, b3JointType type )
@@ -149,6 +164,46 @@ b3JointSim* b3GetJointSimCheckType( b3JointId jointId, b3JointType type )
 	return jointSim;
 }
 
+static void b3DestroyContactsBetweenBodies( b3World* world, b3Body* bodyA, b3Body* bodyB )
+{
+	int contactKey;
+	int otherBodyId;
+
+	// use the smaller of the two contact lists
+	if ( bodyA->contactCount < bodyB->contactCount )
+	{
+		contactKey = bodyA->headContactKey;
+		otherBodyId = bodyB->id;
+	}
+	else
+	{
+		contactKey = bodyB->headContactKey;
+		otherBodyId = bodyA->id;
+	}
+
+	// no need to wake bodies when a joint removes collision between them
+	bool wakeBodies = false;
+
+	// destroy the contacts
+	while ( contactKey != B3_NULL_INDEX )
+	{
+		int contactId = contactKey >> 1;
+		int edgeIndex = contactKey & 1;
+
+		b3Contact* contact = b3Array_Get( world->contacts, contactId );
+		contactKey = contact->edges[edgeIndex].nextKey;
+
+		int otherEdgeIndex = edgeIndex ^ 1;
+		if ( contact->edges[otherEdgeIndex].bodyId == otherBodyId )
+		{
+			// Careful, this removes the contact from the current doubly linked list
+			b3DestroyContact( world, contact, wakeBodies );
+		}
+	}
+
+	b3ValidateSolverSets( world );
+}
+
 typedef struct b3JointPair
 {
 	b3Joint* joint;
@@ -159,9 +214,19 @@ static b3JointPair b3CreateJoint( b3World* world, const b3JointDef* def, b3Joint
 {
 	B3_ASSERT( b3IsValidTransform( def->localFrameA ) );
 	B3_ASSERT( b3IsValidTransform( def->localFrameB ) );
+	B3_ASSERT( world->worldId == def->bodyIdA.world0 );
+	B3_ASSERT( world->worldId == def->bodyIdB.world0 );
+	B3_ASSERT( B3_ID_EQUALS( def->bodyIdA, def->bodyIdB ) == false );
 
 	b3Body* bodyA = b3GetBodyFullId( world, def->bodyIdA );
 	b3Body* bodyB = b3GetBodyFullId( world, def->bodyIdB );
+
+	// If the joint prevents collisions, then destroy all contacts between attached bodies.
+	// Do this first so world arrays are not disturbed in the following code.
+	if ( def->collideConnected == false )
+	{
+		b3DestroyContactsBetweenBodies( world, bodyA, bodyB );
+	}
 
 	int bodyIdA = bodyA->id;
 	int bodyIdB = bodyB->id;
@@ -171,10 +236,10 @@ static b3JointPair b3CreateJoint( b3World* world, const b3JointDef* def, b3Joint
 	int jointId = b3AllocId( &world->jointIdPool );
 	if ( jointId == world->joints.count )
 	{
-		b3Array_Push( world->joints, (b3Joint){ 0 }  );
+		b3Array_Push( world->joints, (b3Joint){ 0 } );
 	}
 
-	b3Joint* joint = b3Array_Get( world->joints, jointId  );
+	b3Joint* joint = b3Array_Get( world->joints, jointId );
 	joint->jointId = jointId;
 	joint->userData = def->userData;
 	joint->generation += 1;
@@ -195,7 +260,7 @@ static b3JointPair b3CreateJoint( b3World* world, const b3JointDef* def, b3Joint
 	int keyA = ( jointId << 1 ) | 0;
 	if ( bodyA->headJointKey != B3_NULL_INDEX )
 	{
-		b3Joint* jointA = b3Array_Get( world->joints, bodyA->headJointKey >> 1  );
+		b3Joint* jointA = b3Array_Get( world->joints, bodyA->headJointKey >> 1 );
 		b3JointEdge* edgeA = jointA->edges + ( bodyA->headJointKey & 1 );
 		edgeA->prevKey = keyA;
 	}
@@ -210,7 +275,7 @@ static b3JointPair b3CreateJoint( b3World* world, const b3JointDef* def, b3Joint
 	int keyB = ( jointId << 1 ) | 1;
 	if ( bodyB->headJointKey != B3_NULL_INDEX )
 	{
-		b3Joint* jointB = b3Array_Get( world->joints, bodyB->headJointKey >> 1  );
+		b3Joint* jointB = b3Array_Get( world->joints, bodyB->headJointKey >> 1 );
 		b3JointEdge* edgeB = jointB->edges + ( bodyB->headJointKey & 1 );
 		edgeB->prevKey = keyB;
 	}
@@ -222,7 +287,7 @@ static b3JointPair b3CreateJoint( b3World* world, const b3JointDef* def, b3Joint
 	if ( bodyA->setIndex == b3_disabledSet || bodyB->setIndex == b3_disabledSet )
 	{
 		// if either body is disabled, create in disabled set
-		b3SolverSet* set = b3Array_Get( world->solverSets, b3_disabledSet  );
+		b3SolverSet* set = b3Array_Get( world->solverSets, b3_disabledSet );
 		joint->setIndex = b3_disabledSet;
 		joint->localIndex = set->jointSims.count;
 
@@ -236,7 +301,7 @@ static b3JointPair b3CreateJoint( b3World* world, const b3JointDef* def, b3Joint
 	else if ( bodyA->type != b3_dynamicBody && bodyB->type != b3_dynamicBody )
 	{
 		// joint is not attached to a dynamic body
-		b3SolverSet* set = b3Array_Get( world->solverSets, b3_staticSet  );
+		b3SolverSet* set = b3Array_Get( world->solverSets, b3_staticSet );
 		joint->setIndex = b3_staticSet;
 		joint->localIndex = set->jointSims.count;
 
@@ -265,13 +330,14 @@ static b3JointPair b3CreateJoint( b3World* world, const b3JointDef* def, b3Joint
 	else
 	{
 		// joint connected between sleeping and/or static bodies
-		B3_ASSERT( bodyA->setIndex >= b3_firstSleepingSet || bodyB->setIndex >= b3_firstSleepingSet );
+		B3_ASSERT( bodyA->setIndex >= b3_firstSleepingSet ||
+				   bodyB->setIndex >= b3_firstSleepingSet );
 		B3_ASSERT( bodyA->setIndex != b3_staticSet || bodyB->setIndex != b3_staticSet );
 
 		// joint should go into the sleeping set (not static set)
 		int setIndex = maxSetIndex;
 
-		b3SolverSet* set = b3Array_Get( world->solverSets, setIndex  );
+		b3SolverSet* set = b3Array_Get( world->solverSets, setIndex );
 		joint->setIndex = setIndex;
 		joint->localIndex = set->jointSims.count;
 
@@ -292,10 +358,10 @@ static b3JointPair b3CreateJoint( b3World* world, const b3JointDef* def, b3Joint
 			// fix potentially invalid set index
 			setIndex = bodyA->setIndex;
 
-			b3SolverSet* mergedSet = b3Array_Get( world->solverSets, setIndex  );
+			b3SolverSet* mergedSet = b3Array_Get( world->solverSets, setIndex );
 
 			// Careful! The joint sim pointer was orphaned by the set merge.
-			jointSim = b3Array_Get( mergedSet->jointSims, joint->localIndex  );
+			jointSim = b3Array_Get( mergedSet->jointSims, joint->localIndex );
 		}
 
 		B3_ASSERT( joint->setIndex == setIndex );
@@ -331,46 +397,6 @@ static b3JointPair b3CreateJoint( b3World* world, const b3JointDef* def, b3Joint
 	b3ValidateSolverSets( world );
 
 	return (b3JointPair){ joint, jointSim };
-}
-
-static void b3DestroyContactsBetweenBodies( b3World* world, b3Body* bodyA, b3Body* bodyB )
-{
-	int contactKey;
-	int otherBodyId;
-
-	// use the smaller of the two contact lists
-	if ( bodyA->contactCount < bodyB->contactCount )
-	{
-		contactKey = bodyA->headContactKey;
-		otherBodyId = bodyB->id;
-	}
-	else
-	{
-		contactKey = bodyB->headContactKey;
-		otherBodyId = bodyA->id;
-	}
-
-	// no need to wake bodies when a joint removes collision between them
-	bool wakeBodies = false;
-
-	// destroy the contacts
-	while ( contactKey != B3_NULL_INDEX )
-	{
-		int contactId = contactKey >> 1;
-		int edgeIndex = contactKey & 1;
-
-		b3Contact* contact = b3Array_Get( world->contacts, contactId  );
-		contactKey = contact->edges[edgeIndex].nextKey;
-
-		int otherEdgeIndex = edgeIndex ^ 1;
-		if ( contact->edges[otherEdgeIndex].bodyId == otherBodyId )
-		{
-			// Careful, this removes the contact from the current doubly linked list
-			b3DestroyContact( world, contact, wakeBodies );
-		}
-	}
-
-	b3ValidateSolverSets( world );
 }
 
 void b3Joint_SetConstraintTuning( b3JointId jointId, float hertz, float dampingRatio )
@@ -437,7 +463,7 @@ b3JointId b3CreateDistanceJoint( b3WorldId worldId, const b3DistanceJointDef* de
 {
 	B3_CHECK_JOINT_DEF( def );
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
-	if (world == NULL)
+	if ( world == NULL )
 	{
 		return (b3JointId){ 0 };
 	}
@@ -501,11 +527,71 @@ b3JointId b3CreateMotorJoint( b3WorldId worldId, const b3MotorJointDef* def )
 	return jointId;
 }
 
+b3JointId b3CreateMoverJoint( b3WorldId worldId, const b3MoverJointDef* def )
+{
+	B3_CHECK_JOINT_DEF( def );
+	B3_ASSERT( b3IsValidVec3( def->linearVelocity ) );
+	B3_ASSERT( b3IsValidFloat( def->maxForce ) && def->maxForce >= 0.0f );
+
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return (b3JointId){ 0 };
+	}
+
+	b3JointPair pair = b3CreateJoint( world, &def->base, b3_moverJoint );
+	b3JointSim* joint = pair.jointSim;
+
+	joint->moverJoint = (b3MoverJoint){ 0 };
+	joint->moverJoint.linearVelocity = def->linearVelocity;
+	joint->moverJoint.maxForce = def->maxForce;
+
+	b3JointId jointId = { joint->jointId + 1, world->worldId, pair.joint->generation };
+	B3_REC_CREATE( world, CreateMoverJoint, jointId, worldId, *def );
+	return jointId;
+}
+
+b3JointId b3CreatePogoJoint( b3WorldId worldId, const b3PogoJointDef* def )
+{
+	B3_CHECK_JOINT_DEF( def );
+	B3_ASSERT( b3IsValidVec3( def->normal ) && b3IsNormalized( def->normal ) );
+	B3_ASSERT( b3IsValidFloat( def->restLength ) && def->restLength >= 0.0f );
+	B3_ASSERT( b3IsValidFloat( def->hertz ) && def->hertz >= 0.0f );
+	B3_ASSERT( b3IsValidFloat( def->dampingRatio ) && def->dampingRatio >= 0.0f );
+	B3_ASSERT( b3IsValidFloat( def->maxTensionForce ) && def->maxTensionForce >= 0.0f );
+	B3_ASSERT( b3IsValidFloat( def->maxCompressionForce ) && def->maxCompressionForce >= 0.0f );
+	B3_ASSERT( b3IsValidFloat( def->impulse ) );
+	B3_ASSERT( b3IsValidFloat( def->velocity ) );
+
+	b3World* world = b3GetUnlockedWorldFromId( worldId );
+	if ( world == NULL )
+	{
+		return (b3JointId){ 0 };
+	}
+
+	b3JointPair pair = b3CreateJoint( world, &def->base, b3_pogoJoint );
+	b3JointSim* joint = pair.jointSim;
+
+	joint->pogoJoint = (b3PogoJoint){ 0 };
+	joint->pogoJoint.normal = def->normal;
+	joint->pogoJoint.restLength = def->restLength;
+	joint->pogoJoint.hertz = def->hertz;
+	joint->pogoJoint.dampingRatio = def->dampingRatio;
+	joint->pogoJoint.maxTensionForce = def->maxTensionForce;
+	joint->pogoJoint.maxCompressionForce = def->maxCompressionForce;
+	joint->pogoJoint.impulse = def->impulse;
+	joint->pogoJoint.velocity = def->velocity;
+
+	b3JointId jointId = { joint->jointId + 1, world->worldId, pair.joint->generation };
+	B3_REC_CREATE( world, CreatePogoJoint, jointId, worldId, *def );
+	return jointId;
+}
+
 b3JointId b3CreateFilterJoint( b3WorldId worldId, const b3FilterJointDef* def )
 {
 	B3_CHECK_JOINT_DEF( def );
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
-	if (world == NULL)
+	if ( world == NULL )
 	{
 		return (b3JointId){ 0 };
 	}
@@ -523,7 +609,7 @@ b3JointId b3CreateParallelJoint( b3WorldId worldId, const b3ParallelJointDef* de
 {
 	B3_CHECK_JOINT_DEF( def );
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
-	if (world == NULL)
+	if ( world == NULL )
 	{
 		return (b3JointId){ 0 };
 	}
@@ -552,7 +638,7 @@ b3JointId b3CreatePrismaticJoint( b3WorldId worldId, const b3PrismaticJointDef* 
 	B3_ASSERT( def->lowerTranslation <= def->upperTranslation );
 
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
-	if (world == NULL)
+	if ( world == NULL )
 	{
 		return (b3JointId){ 0 };
 	}
@@ -583,7 +669,7 @@ b3JointId b3CreateRevoluteJoint( b3WorldId worldId, const b3RevoluteJointDef* de
 	B3_CHECK_JOINT_DEF( def );
 
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
-	if (world == NULL)
+	if ( world == NULL )
 	{
 		return (b3JointId){ 0 };
 	}
@@ -620,7 +706,7 @@ b3JointId b3CreateSphericalJoint( b3WorldId worldId, const b3SphericalJointDef* 
 	B3_ASSERT( b3IsValidQuat( def->targetRotation ) );
 
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
-	if (world == NULL)
+	if ( world == NULL )
 	{
 		return (b3JointId){ 0 };
 	}
@@ -637,8 +723,10 @@ b3JointId b3CreateSphericalJoint( b3WorldId worldId, const b3SphericalJointDef* 
 
 	float lowerAngle = b3MinFloat( def->lowerTwistAngle, def->upperTwistAngle );
 	float upperAngle = b3MaxFloat( def->lowerTwistAngle, def->upperTwistAngle );
-	joint->sphericalJoint.lowerTwistAngle = b3ClampFloat( lowerAngle, -0.99f * B3_PI, 0.99f * B3_PI );
-	joint->sphericalJoint.upperTwistAngle = b3ClampFloat( upperAngle, -0.99f * B3_PI, 0.99f * B3_PI );
+	joint->sphericalJoint.lowerTwistAngle =
+		b3ClampFloat( lowerAngle, -0.99f * B3_PI, 0.99f * B3_PI );
+	joint->sphericalJoint.upperTwistAngle =
+		b3ClampFloat( upperAngle, -0.99f * B3_PI, 0.99f * B3_PI );
 
 	joint->sphericalJoint.maxMotorTorque = def->maxMotorTorque;
 	joint->sphericalJoint.motorVelocity = def->motorVelocity;
@@ -661,7 +749,7 @@ b3JointId b3CreateWeldJoint( b3WorldId worldId, const b3WeldJointDef* def )
 	B3_ASSERT( 0.0f <= def->linearDampingRatio );
 
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
-	if (world == NULL)
+	if ( world == NULL )
 	{
 		return (b3JointId){ 0 };
 	}
@@ -687,7 +775,7 @@ b3JointId b3CreateWheelJoint( b3WorldId worldId, const b3WheelJointDef* def )
 	B3_ASSERT( def->lowerSuspensionLimit <= def->upperSuspensionLimit );
 
 	b3World* world = b3GetUnlockedWorldFromId( worldId );
-	if (world == NULL)
+	if ( world == NULL )
 	{
 		return (b3JointId){ 0 };
 	}
@@ -730,20 +818,20 @@ void b3DestroyJointInternal( b3World* world, b3Joint* joint, bool wakeBodies )
 
 	int idA = edgeA->bodyId;
 	int idB = edgeB->bodyId;
-	b3Body* bodyA = b3Array_Get( world->bodies, idA  );
-	b3Body* bodyB = b3Array_Get( world->bodies, idB  );
+	b3Body* bodyA = b3Array_Get( world->bodies, idA );
+	b3Body* bodyB = b3Array_Get( world->bodies, idB );
 
 	// Remove from body A
 	if ( edgeA->prevKey != B3_NULL_INDEX )
 	{
-		b3Joint* prevJoint = b3Array_Get( world->joints, edgeA->prevKey >> 1  );
+		b3Joint* prevJoint = b3Array_Get( world->joints, edgeA->prevKey >> 1 );
 		b3JointEdge* prevEdge = prevJoint->edges + ( edgeA->prevKey & 1 );
 		prevEdge->nextKey = edgeA->nextKey;
 	}
 
 	if ( edgeA->nextKey != B3_NULL_INDEX )
 	{
-		b3Joint* nextJoint = b3Array_Get( world->joints, edgeA->nextKey >> 1  );
+		b3Joint* nextJoint = b3Array_Get( world->joints, edgeA->nextKey >> 1 );
 		b3JointEdge* nextEdge = nextJoint->edges + ( edgeA->nextKey & 1 );
 		nextEdge->prevKey = edgeA->prevKey;
 	}
@@ -759,14 +847,14 @@ void b3DestroyJointInternal( b3World* world, b3Joint* joint, bool wakeBodies )
 	// Remove from body B
 	if ( edgeB->prevKey != B3_NULL_INDEX )
 	{
-		b3Joint* prevJoint = b3Array_Get( world->joints, edgeB->prevKey >> 1  );
+		b3Joint* prevJoint = b3Array_Get( world->joints, edgeB->prevKey >> 1 );
 		b3JointEdge* prevEdge = prevJoint->edges + ( edgeB->prevKey & 1 );
 		prevEdge->nextKey = edgeB->nextKey;
 	}
 
 	if ( edgeB->nextKey != B3_NULL_INDEX )
 	{
-		b3Joint* nextJoint = b3Array_Get( world->joints, edgeB->nextKey >> 1  );
+		b3Joint* nextJoint = b3Array_Get( world->joints, edgeB->nextKey >> 1 );
 		b3JointEdge* nextEdge = nextJoint->edges + ( edgeB->nextKey & 1 );
 		nextEdge->prevKey = edgeB->prevKey;
 	}
@@ -795,18 +883,19 @@ void b3DestroyJointInternal( b3World* world, b3Joint* joint, bool wakeBodies )
 
 	if ( setIndex == b3_awakeSet )
 	{
-		b3RemoveJointFromGraph( world, joint->edges[0].bodyId, joint->edges[1].bodyId, joint->colorIndex, localIndex );
+		b3RemoveJointFromGraph( world, joint->edges[0].bodyId, joint->edges[1].bodyId,
+								joint->colorIndex, localIndex );
 	}
 	else
 	{
-		b3SolverSet* set = b3Array_Get( world->solverSets, setIndex  );
-		int movedIndex = b3Array_RemoveSwap( set->jointSims, localIndex  );
+		b3SolverSet* set = b3Array_Get( world->solverSets, setIndex );
+		int movedIndex = b3Array_RemoveSwap( set->jointSims, localIndex );
 		if ( movedIndex != B3_NULL_INDEX )
 		{
 			// Fix moved joint
 			b3JointSim* movedJointSim = set->jointSims.data + localIndex;
 			int movedId = movedJointSim->jointId;
-			b3Joint* movedJoint = b3Array_Get( world->joints, movedId  );
+			b3Joint* movedJoint = b3Array_Get( world->joints, movedId );
 			B3_ASSERT( movedJoint->localIndex == movedIndex );
 			movedJoint->localIndex = localIndex;
 		}
@@ -926,8 +1015,8 @@ void b3Joint_SetCollideConnected( b3JointId jointId, bool shouldCollide )
 
 	joint->collideConnected = shouldCollide;
 
-	b3Body* bodyA = b3Array_Get( world->bodies, joint->edges[0].bodyId  );
-	b3Body* bodyB = b3Array_Get( world->bodies, joint->edges[1].bodyId  );
+	b3Body* bodyA = b3Array_Get( world->bodies, joint->edges[0].bodyId );
+	b3Body* bodyB = b3Array_Get( world->bodies, joint->edges[1].bodyId );
 
 	if ( shouldCollide )
 	{
@@ -939,11 +1028,11 @@ void b3Joint_SetCollideConnected( b3JointId jointId, bool shouldCollide )
 		int shapeId = shapeCountA < shapeCountB ? bodyA->headShapeId : bodyB->headShapeId;
 		while ( shapeId != B3_NULL_INDEX )
 		{
-			b3Shape* shape = b3Array_Get( world->shapes, shapeId  );
+			b3Shape* shape = b3Array_Get( world->shapes, shapeId );
 
 			if ( shape->proxyKey != B3_NULL_INDEX )
 			{
-				b3BufferMove( &world->broadPhase, shape->proxyKey );
+				b3BroadPhase_MarkProxyMovedSerial( &world->broadPhase, shape->proxyKey );
 			}
 
 			shapeId = shape->nextShapeId;
@@ -989,8 +1078,8 @@ void b3Joint_WakeBodies( b3JointId jointId )
 	world->locked = true;
 
 	b3Joint* joint = b3GetJointFullId( world, jointId );
-	b3Body* bodyA = b3Array_Get( world->bodies, joint->edges[0].bodyId  );
-	b3Body* bodyB = b3Array_Get( world->bodies, joint->edges[1].bodyId  );
+	b3Body* bodyA = b3Array_Get( world->bodies, joint->edges[0].bodyId );
+	b3Body* bodyB = b3Array_Get( world->bodies, joint->edges[1].bodyId );
 
 	b3WakeBody( world, bodyA );
 	b3WakeBody( world, bodyB );
@@ -998,7 +1087,17 @@ void b3Joint_WakeBodies( b3JointId jointId )
 	world->locked = false;
 }
 
-void b3GetJointReaction( b3World* world, b3JointSim* sim, float invTimeStep, float* force, float* torque )
+bool b3Joint_IsAwake( b3JointId jointId )
+{
+	b3World* world = b3GetWorld( jointId.world0 );
+	b3Joint* joint = b3GetJointFullId( world, jointId );
+
+	// Cheaper than checking if the bodies are awake.
+	return joint->setIndex == b3_awakeSet;
+}
+
+void b3GetJointReaction( b3World* world, b3JointSim* sim, float invTimeStep, float* force,
+						 float* torque )
 {
 	float linearImpulse = 0.0f;
 	float angularImpulse = 0.0f;
@@ -1020,15 +1119,18 @@ void b3GetJointReaction( b3World* world, b3JointSim* sim, float invTimeStep, flo
 		case b3_distanceJoint:
 		{
 			b3DistanceJoint* joint = &sim->distanceJoint;
-			linearImpulse = b3AbsFloat( joint->impulse + joint->lowerImpulse - joint->upperImpulse + joint->motorImpulse );
+			linearImpulse = b3AbsFloat( joint->impulse + joint->lowerImpulse - joint->upperImpulse +
+										joint->motorImpulse );
 		}
 		break;
 
 		case b3_motorJoint:
 		{
 			b3MotorJoint* joint = &sim->motorJoint;
-			linearImpulse = b3Length( b3Add( joint->linearVelocityImpulse, joint->linearSpringImpulse ) );
-			angularImpulse = b3Length( b3Add( joint->angularVelocityImpulse, joint->angularSpringImpulse ) );
+			linearImpulse =
+				b3Length( b3Add( joint->linearVelocityImpulse, joint->linearSpringImpulse ) );
+			angularImpulse =
+				b3Length( b3Add( joint->angularVelocityImpulse, joint->angularSpringImpulse ) );
 		}
 		break;
 
@@ -1075,7 +1177,8 @@ void b3GetJointReaction( b3World* world, b3JointSim* sim, float invTimeStep, flo
 			b3Vec3 swingAxis = b3Normalize( b3Cross( coneAxis, twistAxis ) );
 
 			b3Vec3 impulse = b3Add( joint->springImpulse, joint->motorImpulse );
-			impulse = b3MulAdd( impulse, joint->lowerTwistImpulse - joint->upperTwistImpulse, twistAxis );
+			impulse =
+				b3MulAdd( impulse, joint->lowerTwistImpulse - joint->upperTwistImpulse, twistAxis );
 			impulse = b3MulAdd( impulse, joint->swingImpulse, swingAxis );
 
 			angularImpulse = b3Length( impulse );
@@ -1095,9 +1198,25 @@ void b3GetJointReaction( b3World* world, b3JointSim* sim, float invTimeStep, flo
 			// todo probably wrong
 			b3WheelJoint* joint = &sim->wheelJoint;
 			b3Vec2 perpImpulse = joint->linearImpulse;
-			float axialImpulse = joint->suspensionSpringImpulse + joint->lowerSuspensionImpulse - joint->upperSuspensionImpulse;
-			linearImpulse = sqrtf( perpImpulse.x * perpImpulse.x + perpImpulse.y * perpImpulse.y + axialImpulse * axialImpulse );
+			float axialImpulse = joint->suspensionSpringImpulse + joint->lowerSuspensionImpulse -
+								 joint->upperSuspensionImpulse;
+			linearImpulse = sqrtf( perpImpulse.x * perpImpulse.x + perpImpulse.y * perpImpulse.y +
+								   axialImpulse * axialImpulse );
 			angularImpulse = b3AbsFloat( joint->spinImpulse );
+		}
+		break;
+
+		case b3_moverJoint:
+		{
+			b3MoverJoint* joint = &sim->moverJoint;
+			linearImpulse = b3Length2( joint->impulse );
+		}
+		break;
+
+		case b3_pogoJoint:
+		{
+			b3PogoJoint* joint = &sim->pogoJoint;
+			linearImpulse = b3AbsFloat( joint->impulse );
 		}
 		break;
 
@@ -1142,6 +1261,12 @@ static b3Vec3 b3GetJointConstraintForce( b3World* world, b3Joint* joint )
 		case b3_wheelJoint:
 			return b3GetWheelJointForce( world, base );
 
+		case b3_moverJoint:
+			return b3GetMoverJointForce( world, base );
+
+		case b3_pogoJoint:
+			return b3GetPogoJointForce( world, base );
+
 		default:
 			B3_ASSERT( false );
 			return b3Vec3_zero;
@@ -1180,6 +1305,10 @@ static b3Vec3 b3GetJointConstraintTorque( b3World* world, b3Joint* joint )
 
 		case b3_wheelJoint:
 			return b3GetWheelJointTorque( world, base );
+
+		case b3_moverJoint:
+		case b3_pogoJoint:
+			return b3Vec3_zero;
 
 		default:
 			B3_ASSERT( false );
@@ -1249,6 +1378,12 @@ float b3Joint_GetLinearSeparation( b3JointId jointId )
 		case b3_motorJoint:
 			return 0.0f;
 
+		case b3_moverJoint:
+			return 0.0f;
+
+		case b3_pogoJoint:
+			return 0.0f;
+
 		case b3_filterJoint:
 			return 0.0f;
 
@@ -1274,7 +1409,8 @@ float b3Joint_GetLinearSeparation( b3JointId jointId )
 				}
 			}
 
-			return sqrtf( perpendicularSeparation * perpendicularSeparation + limitSeparation * limitSeparation );
+			return sqrtf( perpendicularSeparation * perpendicularSeparation +
+						  limitSeparation * limitSeparation );
 		}
 
 		case b3_revoluteJoint:
@@ -1316,7 +1452,8 @@ float b3Joint_GetLinearSeparation( b3JointId jointId )
 				}
 			}
 
-			return sqrtf( perpendicularSeparation * perpendicularSeparation + limitSeparation * limitSeparation );
+			return sqrtf( perpendicularSeparation * perpendicularSeparation +
+						  limitSeparation * limitSeparation );
 		}
 
 		default:
@@ -1349,6 +1486,12 @@ float b3Joint_GetAngularSeparation( b3JointId jointId )
 			return 0.0f;
 
 		case b3_motorJoint:
+			return 0.0f;
+
+		case b3_moverJoint:
+			return 0.0f;
+
+		case b3_pogoJoint:
 			return 0.0f;
 
 		case b3_filterJoint:
@@ -1503,6 +1646,14 @@ void b3PrepareJoint( b3JointSim* joint, b3StepContext* context )
 			b3PrepareWheelJoint( joint, context );
 			break;
 
+		case b3_moverJoint:
+			b3PrepareMoverJoint( joint, context );
+			break;
+
+		case b3_pogoJoint:
+			b3PreparePogoJoint( joint, context );
+			break;
+
 		default:
 			B3_ASSERT( false );
 	}
@@ -1545,6 +1696,14 @@ void b3WarmStartJoint( b3JointSim* joint, b3StepContext* context )
 
 		case b3_wheelJoint:
 			b3WarmStartWheelJoint( joint, context );
+			break;
+
+		case b3_moverJoint:
+			b3WarmStartMoverJoint( joint, context );
+			break;
+
+		case b3_pogoJoint:
+			b3WarmStartPogoJoint( joint, context );
 			break;
 
 		default:
@@ -1591,6 +1750,14 @@ void b3SolveJoint( b3JointSim* joint, b3StepContext* context, bool useBias )
 
 		case b3_wheelJoint:
 			b3SolveWheelJoint( joint, context, useBias );
+			break;
+
+		case b3_moverJoint:
+			b3SolveMoverJoint( joint, context );
+			break;
+
+		case b3_pogoJoint:
+			b3SolvePogoJoint( joint, context, useBias );
 			break;
 
 		default:
@@ -1651,8 +1818,8 @@ void b3SolveJoints_Overflow( b3StepContext* context, bool useBias )
 
 void b3DrawJoint( b3DebugDraw* draw, b3World* world, b3Joint* joint )
 {
-	b3Body* bodyA = b3Array_Get( world->bodies, joint->edges[0].bodyId  );
-	b3Body* bodyB = b3Array_Get( world->bodies, joint->edges[1].bodyId  );
+	b3Body* bodyA = b3Array_Get( world->bodies, joint->edges[0].bodyId );
+	b3Body* bodyB = b3Array_Get( world->bodies, joint->edges[1].bodyId );
 	if ( bodyA->setIndex == b3_disabledSet || bodyB->setIndex == b3_disabledSet )
 	{
 		return;
@@ -1709,6 +1876,14 @@ void b3DrawJoint( b3DebugDraw* draw, b3World* world, b3Joint* joint )
 			b3DrawWheelJoint( draw, jointSim, transformA, transformB, scale );
 			break;
 
+		case b3_moverJoint:
+			b3DrawMoverJoint( draw, world, jointSim, transformA, transformB );
+			break;
+
+		case b3_pogoJoint:
+			b3DrawPogoJoint( draw, world, jointSim, transformA, transformB, scale );
+			break;
+
 		default:
 			draw->DrawSegmentFcn( transformA.p, pA, color, draw->context );
 			draw->DrawSegmentFcn( pA, pB, color, draw->context );
@@ -1719,10 +1894,12 @@ void b3DrawJoint( b3DebugDraw* draw, b3World* world, b3Joint* joint )
 	if ( draw->drawGraphColors )
 	{
 		b3HexColor graphColors[B3_GRAPH_COLOR_COUNT] = {
-			b3_colorRed,	b3_colorOrange, b3_colorYellow,	   b3_colorGreen,	  b3_colorCyan,		b3_colorBlue,
-			b3_colorViolet, b3_colorPink,	b3_colorChocolate, b3_colorGoldenRod, b3_colorCoral,	b3_colorRosyBrown,
-			b3_colorAqua,	b3_colorPeru,	b3_colorLime,	   b3_colorGold,	  b3_colorPlum,		b3_colorSnow,
-			b3_colorTeal,	b3_colorKhaki,	b3_colorSalmon,	   b3_colorPeachPuff, b3_colorHoneyDew, b3_colorBlack,
+			b3_colorRed,	   b3_colorOrange,	  b3_colorYellow,	b3_colorGreen,
+			b3_colorCyan,	   b3_colorBlue,	  b3_colorViolet,	b3_colorPink,
+			b3_colorChocolate, b3_colorGoldenRod, b3_colorCoral,	b3_colorRosyBrown,
+			b3_colorAqua,	   b3_colorPeru,	  b3_colorLime,		b3_colorGold,
+			b3_colorPlum,	   b3_colorSnow,	  b3_colorTeal,		b3_colorKhaki,
+			b3_colorSalmon,	   b3_colorPeachPuff, b3_colorHoneyDew, b3_colorBlack,
 		};
 
 		int colorIndex = joint->colorIndex;
@@ -1733,13 +1910,14 @@ void b3DrawJoint( b3DebugDraw* draw, b3World* world, b3Joint* joint )
 		}
 	}
 
-	if ( draw->drawJointExtras )
+	if ( draw->drawJointExtras && joint->type != b3_moverJoint && joint->type != b3_pogoJoint )
 	{
 		b3Vec3 force = b3GetJointConstraintForce( world, joint );
 		b3Vec3 torque = b3GetJointConstraintTorque( world, joint );
 		b3Pos p = b3LerpPosition( pA, pB, 0.5f );
 
-		draw->DrawSegmentFcn( p, b3OffsetPos( p, b3MulSV( 0.001f, force ) ), b3_colorAzure, draw->context );
+		draw->DrawSegmentFcn( p, b3OffsetPos( p, b3MulSV( draw->forceScale, force ) ),
+							  b3_colorAzure, draw->context );
 
 		char buffer[64];
 		snprintf( buffer, 64, "f = %g, t = %g", b3Length( force ), b3Length( torque ) );

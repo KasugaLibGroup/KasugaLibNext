@@ -1,6 +1,10 @@
 package lib.kasuga.test.scripting.discovery;
 
 import lib.kasuga.KasugaLib;
+import lib.kasuga.core.resource.pack.ScopedVanillaFileResourcePack;
+import lib.kasuga.core.resource.pack.VfsScopedPackResourcesAdapter;
+import lib.kasuga.core.vfs.VfsPath;
+import lib.kasuga.core.vfs.backend.InMemoryVfs;
 import lib.kasuga.scripting.ScriptEngineRegistry;
 import lib.kasuga.scripting.ScriptEngineType;
 import lib.kasuga.scripting.discovery.PackageSystem;
@@ -15,10 +19,18 @@ import net.neoforged.testframework.junit.EphemeralTestServerProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -114,5 +126,62 @@ public class PackageSystemTest {
         assertNotNull(beta);
         assertEquals("@scope/beta", beta.info().name());
         assertEquals("scripts/lib/whatever", beta.packRelativeRoot());
+    }
+
+    @Test
+    public void shouldScanDotRelativeWorkspacesFromZipAndVfsPacks(MinecraftServer server, @TempDir Path tempDir) throws IOException {
+        Path zipPath = tempDir.resolve("dot-workspace-pack.zip");
+        Map<String, String> files = Map.of(
+                "scripts/package.toml", """
+                        name = "dot_root"
+                        engine = "mock"
+                        version = "1.0.0"
+                        main = "index"
+                        workspaces = ["./packages/*"]
+
+                        [entry]
+                        common = ["index"]
+                        """,
+                "scripts/index.js", "export default 1;",
+                "scripts/packages/sub/package.toml", """
+                        name = "dot_sub"
+                        engine = "mock"
+                        version = "1.0.0"
+                        main = "index"
+
+                        [entry]
+                        common = ["index"]
+                        """,
+                "scripts/packages/sub/index.js", "export default 2;"
+        );
+        try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(zipPath))) {
+            for (var entry : files.entrySet()) {
+                out.putNextEntry(new ZipEntry(entry.getKey()));
+                out.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+        }
+
+        try (ZipFile zipFile = new ZipFile(zipPath.toFile());
+             InMemoryVfs memoryVfs = new InMemoryVfs("dot-workspace-mem")) {
+            for (var entry : files.entrySet()) {
+                memoryVfs.writeString(VfsPath.of(entry.getKey()), entry.getValue());
+            }
+
+            List<ResolvedPackage> zipPackages = packageSystem.scan(new ScopedVanillaFileResourcePack(zipFile));
+            assertEquals(2, zipPackages.size());
+            assertNotNull(packageRegistry.lookup("dot_root"));
+            assertEquals("scripts", packageRegistry.lookup("dot_root").packRelativeRoot());
+            assertNotNull(packageRegistry.lookup("dot_sub"));
+            assertEquals("scripts/packages/sub", packageRegistry.lookup("dot_sub").packRelativeRoot());
+
+            packageRegistry.clear();
+            List<ResolvedPackage> vfsPackages = packageSystem.scan(new VfsScopedPackResourcesAdapter(memoryVfs));
+            assertEquals(2, vfsPackages.size());
+            assertNotNull(packageRegistry.lookup("dot_root"));
+            assertEquals("scripts", packageRegistry.lookup("dot_root").packRelativeRoot());
+            assertNotNull(packageRegistry.lookup("dot_sub"));
+            assertEquals("scripts/packages/sub", packageRegistry.lookup("dot_sub").packRelativeRoot());
+        }
     }
 }

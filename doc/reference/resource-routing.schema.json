@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Kasuga resource routing v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version"],
+  "properties": {
+    "format_version": {"const": 1},
+    "bindings": {"type": "array", "items": {"$ref": "#/$defs/binding"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,160}$"},
+    "path": {"type": "string", "description": "Canonical relative path: no leading/trailing slash, empty/dot segments, backslash, controls, colon, query or fragment. Empty prefix is allowed."},
+    "output": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "entry_point_id", "when", "side"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "entry_point_id": {"$ref": "#/$defs/id"},
+        "when": {"enum": ["bootstrap", "client_startup", "server_startup", "resource_reload", "remote_connect"]},
+        "side": {"enum": ["client", "server", "both", "none"]},
+        "target_prefix": {"$ref": "#/$defs/path"}
+      }
+    },
+    "binding": {
+      "type": "object", "additionalProperties": false, "required": ["id", "source_id"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "source_id": {"type": "string", "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$"},
+        "source_prefix": {"$ref": "#/$defs/path"}, "schema_id": {"$ref": "#/$defs/id"},
+        "remove_outputs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "outputs": {"type": "array", "items": {"$ref": "#/$defs/output"}}
+      }
+    }
+  }
+}

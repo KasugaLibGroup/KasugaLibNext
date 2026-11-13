@@ -12,6 +12,12 @@ import java.io.InputStream;
 import java.util.Map;
 
 public interface ScriptEngine {
+    default void usePackageRegistry(lib.kasuga.scripting.module.PackageRegistry packages) {
+        throw new UnsupportedOperationException("Engine does not support isolated package scopes");
+    }
+    default lib.kasuga.scripting.resource.ScriptSafetyCapabilities safetyCapabilities() {
+        return lib.kasuga.scripting.resource.ScriptSafetyCapabilities.UNVERIFIED;
+    }
     void init(ScriptConsole console) throws ScriptException;
 
     void setFeatures(Map<EngineFeatureType<?>, EngineFeature> features);

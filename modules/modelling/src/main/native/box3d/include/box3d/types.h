@@ -8,56 +8,64 @@
 #include "id.h"
 #include "math_functions.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define B3_DEFAULT_CATEGORY_BITS UINT64_MAX
 #define B3_DEFAULT_MASK_BITS UINT64_MAX
 
 /// Task interface
-/// This is the prototype for a Box3D task. Your task system is expected to run this callback on a worker thread,
-/// exactly once per enqueue, passing back the same taskContext pointer supplied to b3EnqueueTaskCallback.
+/// This is the prototype for a Box3D task. Your task system is expected to run this callback on a
+/// worker thread, exactly once per enqueue, passing back the same taskContext pointer supplied to
+/// b3EnqueueTaskCallback.
 /// @ingroup world
 typedef void b3TaskCallback( void* taskContext );
 
 /// These functions can be provided to Box3D to invoke a task system.
-/// Returns a pointer to the user's task object. May be nullptr. A nullptr indicates to Box3D that the work was executed
-/// serially within the callback and there is no need to call b3FinishTaskCallback. Otherwise the returned
-/// value must be non-null will be passed to b3FinishTaskCallback as the userTask.
+/// Returns a pointer to the user's task object. May be nullptr. A nullptr indicates to Box3D that
+/// the work was executed serially within the callback and there is no need to call
+/// b3FinishTaskCallback. Otherwise the returned value must be non-null will be passed to
+/// b3FinishTaskCallback as the userTask.
 /// @param task the Box3D task to be called by the scheduler
 /// @param taskContext the Box3D context object that the scheduler must pass to the task
 /// @param userContext the scheduler context object that is opaque to Box3D
 /// @param taskName the Box3D task name that the scheduler can use for diagnostics
 /// @ingroup world
-typedef void* b3EnqueueTaskCallback( b3TaskCallback* task, void* taskContext, void* userContext, const char* taskName );
+typedef void* b3EnqueueTaskCallback( b3TaskCallback* task, void* taskContext, void* userContext,
+									 const char* taskName );
 
-/// Finishes a user task object that wraps a Box3D task. This must block until the task has completed.
-/// The step blocks here on the tasks it spawned, so b3World_Step holds its stack across every
-/// fork/join. Drive it from a thread you can dedicate to the step, or from a fiber this callback can
-/// park to free the underlying thread. In a job system that cannot park a job's stack, do not call
-/// b3World_Step from inside a job: a job that blocks on its own sub-jobs without yielding its thread
-/// can deadlock. The in-tree scheduler instead runs other pending tasks on the waiting thread.
+/// Finishes a user task object that wraps a Box3D task. This must block until the task has
+/// completed. The step blocks here on the tasks it spawned, so b3World_Step holds its stack across
+/// every fork/join. Drive it from a thread you can dedicate to the step, or from a fiber this
+/// callback can park to free the underlying thread. In a job system that cannot park a job's stack,
+/// do not call b3World_Step from inside a job: a job that blocks on its own sub-jobs without
+/// yielding its thread can deadlock. The in-tree scheduler instead runs other pending tasks on the
+/// waiting thread.
 /// @ingroup world
 typedef void b3FinishTaskCallback( void* userTask, void* userContext );
 
 typedef struct b3DebugShape b3DebugShape;
 
-/// The user needs to be able to create debug draw shapes for multi-pass rendering to work efficiently.
-/// These user shapes are created and destroyed via callback so they can be bound to shape lifetime and scaling updates.
+/// The user needs to be able to create debug draw shapes for multi-pass rendering to work
+/// efficiently. These user shapes are created and destroyed via callback so they can be bound to
+/// shape lifetime and scaling updates.
 /// @ingroup debug_draw
 typedef void* b3CreateDebugShapeCallback( const b3DebugShape* debugShape, void* userContext );
 typedef void b3DestroyDebugShapeCallback( void* userShape, void* userContext );
 
-/// Optional friction mixing callback. This intentionally provides no context objects because this is called
-/// from a worker thread.
+/// Optional friction mixing callback. This intentionally provides no context objects because this
+/// is called from a worker thread.
 /// @warning This function should not attempt to modify Box3D state or user application state.
 /// @ingroup world
-typedef float b3FrictionCallback( float frictionA, uint64_t userMaterialIdA, float frictionB, uint64_t userMaterialIdB );
+typedef float b3FrictionCallback( float frictionA, uint64_t userMaterialIdA, float frictionB,
+								  uint64_t userMaterialIdB );
 
-/// Optional restitution mixing callback. This intentionally provides no context objects because this is called
-/// from a worker thread.
+/// Optional restitution mixing callback. This intentionally provides no context objects because
+/// this is called from a worker thread.
 /// @warning This function should not attempt to modify Box3D state or user application state.
 /// @ingroup world
-typedef float b3RestitutionCallback( float restitutionA, uint64_t userMaterialIdA, float restitutionB, uint64_t userMaterialIdB );
+typedef float b3RestitutionCallback( float restitutionA, uint64_t userMaterialIdA,
+									 float restitutionB, uint64_t userMaterialIdB );
 
 /// Prototype for a contact filter callback.
 /// This is called when a contact pair is considered for collision. This allows you to
@@ -85,7 +93,8 @@ typedef bool b3CustomFilterFcn( b3ShapeId shapeIdA, b3ShapeId shapeIdB, void* co
 /// full contact manifold.
 /// @warning Do not attempt to modify the world inside this callback
 /// @ingroup world
-typedef bool b3PreSolveFcn( b3ShapeId shapeIdA, b3ShapeId shapeIdB, b3Pos point, b3Vec3 normal, void* context );
+typedef bool b3PreSolveFcn( b3ShapeId shapeIdA, b3ShapeId shapeIdB, b3Pos point, b3Vec3 normal,
+							void* context );
 
 /// Prototype callback for overlap queries.
 /// Called for each shape found in the query.
@@ -106,14 +115,16 @@ typedef bool b3OverlapResultFcn( b3ShapeId shapeId, void* context );
 /// @param normal the normal vector at the point of intersection
 /// @param fraction the fraction along the ray at the point of intersection
 /// @param userMaterialId the shape or triangle surface type
-/// @param triangleIndex the triangle index for mesh or height field shapes or -1 for other shape types
+/// @param triangleIndex the triangle index for mesh or height field shapes or -1 for other shape
+/// types
 /// @param childIndex the child shape index for compound shapes
 /// @param context the user context
 /// @return -1 to filter, 0 to terminate, fraction to clip the ray for closest hit, 1 to continue
 /// @see b3World_CastRay
 /// @ingroup world
-typedef float b3CastResultFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction, uint64_t userMaterialId,
-							   int triangleIndex, int childIndex, void* context );
+typedef float b3CastResultFcn( b3ShapeId shapeId, b3Pos point, b3Vec3 normal, float fraction,
+							   uint64_t userMaterialId, int triangleIndex, int childIndex,
+							   void* context );
 
 /// Optional world capacities that can be use to avoid run-time allocations
 /// @ingroup world
@@ -146,24 +157,37 @@ typedef struct b3WorldDef
 	/// speed have restitution applied (will bounce).
 	float restitutionThreshold;
 
+	/// Number of iterations of the restitution solver. More iterations can lead to less box
+	/// spinning.
+	/// @see B3_MAX_RESTITUTION_ITERATIONS
+	int restitutionIterations;
+
+	/// Enable full contact propagation in the restitution solver. Expensive.
+	bool enableRestitutionPropagation;
+
 	/// Hit event speed threshold, usually in m/s. Collisions above this
 	/// speed can generate hit events if the shape also enables hit events.
 	float hitEventThreshold;
 
-	/// Contact stiffness. Cycles per second. Increasing this increases the speed of overlap recovery, but can introduce jitter.
+	/// Contact stiffness. Cycles per second. Increasing this increases the speed of overlap
+	/// recovery, but can introduce jitter.
 	float contactHertz;
 
-	/// Contact bounciness. Non-dimensional. You can speed up overlap recovery by decreasing this with
-	/// the trade-off that overlap resolution becomes more energetic.
+	/// Contact bounciness. Non-dimensional. You can speed up overlap recovery by decreasing this
+	/// with the trade-off that overlap resolution becomes more energetic.
 	float contactDampingRatio;
 
-	/// This parameter controls how fast overlap is resolved and usually has units of meters per second. This only
-	/// puts a cap on the resolution speed. The resolution speed is increased by increasing the hertz and/or
-	/// decreasing the damping ratio.
+	/// This parameter controls how fast overlap is resolved and usually has units of meters per
+	/// second. This only puts a cap on the resolution speed. The resolution speed is increased by
+	/// increasing the hertz and/or decreasing the damping ratio.
 	float contactSpeed;
 
 	/// Maximum linear speed. Usually meters per second.
 	float maximumLinearSpeed;
+
+	/// Use this to disable gyroscopic torque on sphere-like objects automatically.
+	/// Range is [0, 1]. A sphere is 0 and a 1x1x2 box is 0.5.
+	float isotropicInertiaTolerance;
 
 	/// Optional mixing callback for friction. The default uses sqrt(frictionA * frictionB).
 	b3FrictionCallback* frictionCallback;
@@ -178,11 +202,11 @@ typedef struct b3WorldDef
 	bool enableContinuous;
 
 	/// Number of workers to use with the provided task system. Box3D performs best when using only
-	/// performance cores and accessing a single L2 cache. Efficiency cores and hyper-threading provide
-	/// little benefit and may even harm performance.
-	/// This is clamped to the range [1, B3_MAX_WORKERS]. Using a value above 1 will turn on multithreading.
-	/// If task callbacks are provided then Box3D will use the user provided task system. Otherwise Box3D
-	/// will create threads and use an internal scheduler.
+	/// performance cores and accessing a single L2 cache. Efficiency cores and hyper-threading
+	/// provide little benefit and may even harm performance. This is clamped to the range [1,
+	/// B3_MAX_WORKERS]. Using a value above 1 will turn on multithreading. If task callbacks are
+	/// provided then Box3D will use the user provided task system. Otherwise Box3D will create
+	/// threads and use an internal scheduler.
 	uint32_t workerCount;
 
 	/// function to spawn task
@@ -219,7 +243,8 @@ typedef struct b3WorldDef
 B3_API b3WorldDef b3DefaultWorldDef( void );
 
 /// The body simulation type.
-/// Each body is one of these three types. The type determines how the body behaves in the simulation.
+/// Each body is one of these three types. The type determines how the body behaves in the
+/// simulation.
 /// @ingroup body
 typedef enum b3BodyType
 {
@@ -270,8 +295,8 @@ typedef struct b3BodyDef
 	b3BodyType type;
 
 	/// The initial world position of the body. Bodies should be created with the desired position.
-	/// @note Creating bodies at the origin and then moving them nearly doubles the cost of body creation, especially
-	/// if the body is moved after shapes have been added.
+	/// @note Creating bodies at the origin and then moving them nearly doubles the cost of body
+	/// creation, especially if the body is moved after shapes have been added.
 	b3Pos position;
 
 	/// The initial world rotation of the body.
@@ -302,6 +327,14 @@ typedef struct b3BodyDef
 	/// Sleep speed threshold, default is 0.05 meters per second
 	float sleepThreshold;
 
+	/// Continuous collision safety factor. The solver only uses continuous collision if there is a
+	/// risk of tunneling. If the body is moving fast enough to risk tunneling then it is considered
+	/// a "fast body". This improves performance and prevents movement hitches. If a body moving N
+	/// meter risks tunneling, then the body will be considered fast if it moves more than a
+	/// safetyFactor times N meters over one full time step. Non-dimensional. Recommended range
+	/// [0.01, 0.5]. Default is 0.5 for high performance with low tunneling risk.
+	float safetyFactor;
+
 	/// Optional body name for debugging.
 	const char* name;
 
@@ -319,18 +352,19 @@ typedef struct b3BodyDef
 
 	/// Treat this body as a high speed object that performs continuous collision detection
 	/// against dynamic and kinematic bodies, but not other bullet bodies.
-	/// @warning Bullets should be used sparingly. They are not a solution for general dynamic-versus-dynamic
-	/// continuous collision. They do not guarantee accurate collision if both bodies are fast moving because
-	/// the bullet does a continuous check after all non-bullet bodies have moved. You could get unlucky and have
-	/// the bullet body end a time step very close to a non-bullet body and the non-bullet body then moves over
-	/// the bullet body. In continuous collision, initial overlap is ignored to avoid freezing bodies in place.
-	/// I do not recommend using them for game projectiles if precise collision timing is needed. Instead consider
-	/// using a ray or shape cast. You can use a marching ray or shape cast for projectile that moves over time.
-	/// If you want a fast moving projectile to collide with a fast moving target, you need to consider the relative
-	/// movement in your ray or shape cast. This is out of the scope of Box3D.
-	/// So what are good use cases for bullets? Pinball games or games with dynamic containers that hold other objects.
-	/// It should be a use case where it doesn't break the game if there is a collision missed, but having them
-	/// captured improves the quality of the game.
+	/// @warning Bullets should be used sparingly. They are not a solution for general
+	/// dynamic-versus-dynamic continuous collision. They do not guarantee accurate collision if
+	/// both bodies are fast moving because the bullet does a continuous check after all non-bullet
+	/// bodies have moved. You could get unlucky and have the bullet body end a time step very close
+	/// to a non-bullet body and the non-bullet body then moves over the bullet body. In continuous
+	/// collision, initial overlap is ignored to avoid freezing bodies in place. I do not recommend
+	/// using them for game projectiles if precise collision timing is needed. Instead consider
+	/// using a ray or shape cast. You can use a marching ray or shape cast for projectile that
+	/// moves over time. If you want a fast moving projectile to collide with a fast moving target,
+	/// you need to consider the relative movement in your ray or shape cast. This is out of the
+	/// scope of Box3D. So what are good use cases for bullets? Pinball games or games with dynamic
+	/// containers that hold other objects. It should be a use case where it doesn't break the game
+	/// if there is a collision missed, but having them captured improves the quality of the game.
 	bool isBullet;
 
 	/// Used to disable a body. A disabled body does not move or collide.
@@ -384,8 +418,8 @@ typedef struct b3Filter
 	/// or always collide (positive). A group index of zero has no effect. Non-zero group filtering
 	/// always wins against the mask bits.
 	/// For example, you may want ragdolls to collide with other ragdolls but you don't want
-	/// ragdoll self-collision. In this case you would give each ragdoll a unique negative group index
-	/// and apply that group index to all shapes on the ragdoll.
+	/// ragdoll self-collision. In this case you would give each ragdoll a unique negative group
+	/// index and apply that group index to all shapes on the ragdoll.
 	int groupIndex;
 } b3Filter;
 
@@ -404,7 +438,8 @@ typedef struct b3SurfaceMaterial
 	/// https://en.wikipedia.org/wiki/Coefficient_of_restitution
 	float restitution;
 
-	/// The rolling resistance usually in the range [0,1]. This is only used for spheres and capsules.
+	/// The rolling resistance usually in the range [0,1]. This is only used for spheres and
+	/// capsules.
 	float rollingResistance;
 
 	/// The tangent velocity for conveyor belts. This is local to the shape and will be projected
@@ -464,7 +499,8 @@ typedef struct b3ShapeDef
 	/// Use this to store application specific shape data.
 	void* userData;
 
-	/// Surface material used on mesh shapes per triangle. Ignored for convex shapes. Ignored for compound shapes.
+	/// Surface material used on mesh shapes per triangle. Ignored for convex shapes. Ignored for
+	/// compound shapes.
 	b3SurfaceMaterial* materials;
 
 	/// Surface material count.
@@ -482,42 +518,49 @@ typedef struct b3ShapeDef
 	/// Contact filtering data.
 	b3Filter filter;
 
-	/// Enable custom filtering. Only one of the two shapes needs to enable custom filtering. See b3WorldDef.
+	/// Enable custom filtering. Only one of the two shapes needs to enable custom filtering. See
+	/// b3WorldDef.
 	bool enableCustomFiltering;
 
 	/// A sensor shape generates overlap events but never generates a collision response.
-	/// Sensors do not have continuous collision. Instead, use a ray or shape cast for those scenarios.
-	/// Sensors still contribute to the body mass if they have non-zero density.
+	/// Sensors do not have continuous collision. Instead, use a ray or shape cast for those
+	/// scenarios. Sensors still contribute to the body mass if they have non-zero density.
 	/// @note Sensor events are disabled by default.
 	/// @see enableSensorEvents
 	bool isSensor;
 
-	/// Enable sensor events for this shape. This applies to sensors and non-sensors. False by default, even for sensors.
-	/// Only convex shapes may act as sensor visitors.
+	/// Enable sensor events for this shape. This applies to sensors and non-sensors. False by
+	/// default, even for sensors. Only convex shapes may act as sensor visitors.
 	bool enableSensorEvents;
 
-	/// Enable contact events for this shape. Only applies to kinematic and dynamic bodies. Ignored for sensors. False by default.
+	/// Enable contact events for this shape. Only applies to kinematic and dynamic bodies. Ignored
+	/// for sensors. False by default.
 	bool enableContactEvents;
 
-	/// Enable hit events for this shape. Only applies to kinematic and dynamic bodies. Ignored for sensors. False by default.
+	/// Enable hit events for this shape. Only applies to kinematic and dynamic bodies. Ignored for
+	/// sensors. False by default.
 	bool enableHitEvents;
 
-	/// Enable pre-solve contact events for this shape. Only applies to dynamic bodies. These are expensive
+	/// Enable pre-solve contact events for this shape. Only applies to dynamic bodies. These are
+	/// expensive
 	///	and must be carefully handled due to multithreading. Ignored for sensors.
 	bool enablePreSolveEvents;
 
-	/// When shapes are created they will scan the environment for collision the next time step. This can significantly slow down
-	/// static body creation when there are many static shapes.
-	/// This is flag is ignored for dynamic and kinematic shapes which always invoke contact creation.
+	/// When shapes are created they will scan the environment for collision the next time step.
+	/// This can significantly slow down static body creation when there are many static shapes.
+	/// This is flag is ignored for dynamic and kinematic shapes which always invoke contact
+	/// creation.
 	bool invokeContactCreation;
 
 	/// Should the body update the mass properties when this shape is created. Default is true.
-	/// Warning: if this is false, you MUST call b3Body_ApplyMassFromShapes or b3Body_SetMassData before simulating the world.
+	/// Warning: if this is false, you MUST call b3Body_ApplyMassFromShapes or b3Body_SetMassData
+	/// before simulating the world.
 	bool updateBodyMass;
 
 	/// Enable speculative collision. Leave this true unless you care about reducing ghost collision
 	/// more than continuous collision under rotation.
-	/// Experimental: this can only disable speculative contact between hulls and triangles (meshes and height fields).
+	/// Experimental: this can only disable speculative contact between hulls and triangles (meshes
+	/// and height fields).
 	bool enableSpeculativeContact;
 
 	/// Used internally to detect a valid definition. DO NOT SET.
@@ -529,69 +572,71 @@ typedef struct b3ShapeDef
 /// @ingroup shape
 B3_API b3ShapeDef b3DefaultShapeDef( void );
 
-//! @cond
 /// Profiling data. Times are in milliseconds.
 /// @ingroup world
 typedef struct b3Profile
 {
-	float step;
-	float pairs;
-	float collide;
-	float solve;
-	float solverSetup;
-	float constraints;
-	float prepareConstraints;
-	float integrateVelocities;
-	float warmStart;
-	float solveImpulses;
-	float integratePositions;
-	float relaxImpulses;
-	float applyRestitution;
-	float storeImpulses;
-	float splitIslands;
-	float transforms;
-	float sensorHits;
-	float jointEvents;
-	float hitEvents;
-	float refit;
-	float bullets;
-	float sleepIslands;
-	float sensors;
+	float step;				   //
+	float pairs;			   //
+	float collide;			   //
+	float solve;			   //
+	float solverSetup;		   //
+	float constraints;		   //
+	float prepareConstraints;  //
+	float integrateVelocities; //
+	float warmStart;		   //
+	float solveImpulses;	   //
+	float integratePositions;  //
+	float relaxImpulses;	   //
+	float restitution;		   //
+	float storeImpulses;	   //
+	float splitIslands;		   //
+	float transforms;		   //
+	float sensorHits;		   //
+	float jointEvents;		   //
+	float hitEvents;		   //
+	float refit;			   //
+	float bullets;			   //
+	float sleepIslands;		   //
+	float sensors;			   //
 } b3Profile;
 
 /// Counters that give details of the simulation size.
 /// @ingroup world
 typedef struct b3Counters
 {
-	int bodyCount;
-	int shapeCount;
-	int contactCount;
-	int jointCount;
-	int islandCount;
-	int stackUsed;
-	int arenaCapacity;
-	int staticTreeHeight;
-	int treeHeight;
-	int satCallCount;
-	int satCacheHitCount;
-	int byteCount;
-	int taskCount;
-	int colorCounts[24];
-	int manifoldCounts[B3_CONTACT_MANIFOLD_COUNT_BUCKETS];
+	int64_t byteCount;									   //
+	int bodyCount;										   //
+	int shapeCount;										   //
+	int contactCount;									   //
+	int jointCount;										   //
+	int islandCount;									   //
+	int stackUsed;										   //
+	int arenaCapacity;									   //
+	int staticTreeHeight;								   //
+	int treeHeight;										   //
+	int satCallCount;									   //
+	int satCacheHitCount;								   //
+	int taskCount;										   //
+	int colorCounts[24];								   //
+	int manifoldCounts[B3_CONTACT_MANIFOLD_COUNT_BUCKETS]; //
 
 	/// Number of contacts touched by the collide pass
 	/// graph contacts + awake-set non-touching
-	int awakeContactCount;
+	int awakeContactCount; //
 
 	/// Number of contacts recycled in the most recent step.
 	int recycledContactCount;
 
-	/// Maximum number of time of impact iterations
+	/// Maximum number of time of impact outer iterations
 	int distanceIterations;
+
+	/// Maximum TOI push backs.
 	int pushBackIterations;
+
+	/// Maximum TOI root solver iterations.
 	int rootIterations;
 } b3Counters;
-//! @endcond
 
 /// Joint type enumeration. This is useful because all joint types use b3JointId and sometimes you
 /// want to get the type of a joint.
@@ -607,6 +652,8 @@ typedef enum b3JointType
 	b3_sphericalJoint,
 	b3_weldJoint,
 	b3_wheelJoint,
+	b3_moverJoint,
+	b3_pogoJoint,
 } b3JointType;
 
 /// Base joint definition used by all joint types. The local frames are measured from the
@@ -745,6 +792,64 @@ typedef struct b3MotorJointDef
 /// Use this to initialize your joint definition
 /// @ingroup motor_joint
 B3_API b3MotorJointDef b3DefaultMotorJointDef( void );
+
+/// A mover joint is used to move a dynamic character mover through velocity commands. Force is only
+/// applied in the xz plane of joint frame B. Does not affect rotation.
+/// @ingroup mover_joint
+typedef struct b3MoverJointDef
+{
+	/// Base joint definition
+	b3JointDef base;
+
+	/// The desired linear velocity
+	b3Vec3 linearVelocity;
+
+	/// The maximum motor force in newtons.
+	float maxForce;
+} b3MoverJointDef;
+
+/// Use this to initialize your joint definition
+/// @ingroup mover_joint
+B3_API b3MoverJointDef b3DefaultMoverJointDef( void );
+
+/// The pogo joint is used for the dynamic character mover. The pogo axis is along the frame B
+/// y-axis.
+/// @ingroup pogo_joint
+typedef struct b3PogoJointDef
+{
+	/// Base joint definition
+	b3JointDef base;
+
+	/// Normal vector at the contact
+	b3Vec3 normal;
+
+	/// The spring stiffness Hertz, cycles per second
+	float hertz;
+
+	/// The spring damping ratio, non-dimensional
+	float dampingRatio;
+
+	/// Spring length.
+	float restLength;
+
+	/// Maximum tension force. Controls how sticky the mover is to ground.
+	float maxTensionForce;
+
+	/// Maximum compression force. How hard the pogo pushes the mover up from the ground.
+	float maxCompressionForce;
+
+	/// The initial pogo internal impulse. The pogo is typically recreated every frame. This gives a
+	/// way to move the internal state forward for smoother spring behavior.
+	float impulse;
+
+	/// The initial pogo internal velocity. The pogo is typically recreated every frame. This gives
+	/// a way to move the internal state forward for smoother spring behavior.
+	float velocity;
+} b3PogoJointDef;
+
+/// Use this to initialize your joint definition
+/// @ingroup pogo_joint
+B3_API b3PogoJointDef b3DefaultPogoJointDef( void );
 
 /// A filter joint is used to disable collision between two specific bodies.
 /// @ingroup filter_joint
@@ -912,7 +1017,9 @@ typedef struct b3SphericalJointDef
 	/// The maximum motor torque, typically in newton-meters. Non-negative number.
 	float maxMotorTorque;
 
-	/// The desired motor angular velocity in radians per second.
+	/// The desired motor angular velocity in radians per second. This is the relative angular
+	/// velocity between the two bodies in world space.
+	/// motorVelocity = angularVelocityB - angularVelocityA
 	b3Vec3 motorVelocity;
 } b3SphericalJointDef;
 
@@ -1052,8 +1159,9 @@ B3_API b3ExplosionDef b3DefaultExplosionDef( void );
  * Also when events occur in the simulation step it may be problematic to modify the world, which is
  * often what applications want to do when events occur.
  *
- * With event arrays, you can scan the events in a loop and modify the world. However, you need to be careful
- * that some event data may become invalid. There are several samples that show how to do this safely.
+ * With event arrays, you can scan the events in a loop and modify the world. However, you need to
+ * be careful that some event data may become invalid. There are several samples that show how to do
+ * this safely.
  *
  * @{
  */
@@ -1112,8 +1220,8 @@ typedef struct b3ContactBeginTouchEvent
 	/// Id of the second shape
 	b3ShapeId shapeIdB;
 
-	/// The transient contact id. This contact may be destroyed automatically when the world is modified or simulated.
-	/// Use b3Contact_IsValid before using this id.
+	/// The transient contact id. This contact may be destroyed automatically when the world is
+	/// modified or simulated. Use b3Contact_IsValid before using this id.
 	b3ContactId contactId;
 } b3ContactBeginTouchEvent;
 
@@ -1139,8 +1247,8 @@ typedef struct b3ContactEndTouchEvent
 	b3ContactId contactId;
 } b3ContactEndTouchEvent;
 
-/// A hit touch event is generated when two shapes collide with a speed faster than the hit speed threshold.
-/// This may be reported for speculative contacts that have a confirmed impulse.
+/// A hit touch event is generated when two shapes collide with a speed faster than the hit speed
+/// threshold. This may be reported for speculative contacts that have a confirmed impulse.
 typedef struct b3ContactHitEvent
 {
 	/// Id of the first shape
@@ -1204,8 +1312,8 @@ typedef struct b3ContactEvents
 /// On the other hand if the flag does not indicate the body went to sleep then the application
 /// can treat the actor/entity/object associated with the body as awake.
 /// This is an efficient way for an application to update game object transforms rather than
-/// calling functions such as b3Body_GetTransform() because this data is delivered as a contiguous array
-/// and it is only populated with bodies that have moved.
+/// calling functions such as b3Body_GetTransform() because this data is delivered as a contiguous
+/// array and it is only populated with bodies that have moved.
 /// @note If sleeping is disabled all dynamic and kinematic bodies will trigger move events.
 typedef struct b3BodyMoveEvent
 {
@@ -1276,7 +1384,8 @@ typedef struct b3ContactData
 	/// this pointer.
 	const struct b3Manifold* manifolds;
 
-	/// The number of contact manifolds. For mesh and height-field collision there can be multiple manifolds.
+	/// The number of contact manifolds. For mesh and height-field collision there can be multiple
+	/// manifolds.
 	int manifoldCount;
 } b3ContactData;
 
@@ -1302,14 +1411,15 @@ typedef struct b3QueryFilter
 	/// query would accept for collision.
 	uint64_t maskBits;
 
-	/// Optional id combined with @ref name to identify this query in a recording, e.g. an entity id.
-	/// Need not be unique on its own. 0 with a null name means untagged. Ignored when not recording.
+	/// Optional id combined with @ref name to identify this query in a recording, e.g. an entity
+	/// id. Need not be unique on its own. 0 with a null name means untagged. Ignored when not
+	/// recording.
 	uint64_t id;
 
-	/// Optional label combined with @ref id to identify this query, e.g. "bullet". Need not be unique
-	/// on its own. The recorder hashes (id, name) into one stable key the viewer tracks the query by,
-	/// so the same id and name pair identifies the same query across frames. NULL means none. Ignored
-	/// when not recording.
+	/// Optional label combined with @ref id to identify this query, e.g. "bullet". Need not be
+	/// unique on its own. The recorder hashes (id, name) into one stable key the viewer tracks the
+	/// query by, so the same id and name pair identifies the same query across frames. NULL means
+	/// none. Ignored when not recording.
 	const char* name;
 } b3QueryFilter;
 
@@ -1393,7 +1503,8 @@ typedef struct b3ShapeCastInput
 	/// The maximum fraction of the translation to consider, typically 1.
 	float maxFraction;
 
-	/// Allow shape cast to encroach when initially touching. This only works if the radius is greater than zero.
+	/// Allow shape cast to encroach when initially touching. This only works if the radius is
+	/// greater than zero.
 	bool canEncroach;
 } b3ShapeCastInput;
 
@@ -1539,7 +1650,7 @@ typedef struct b3ShapeCastPairInput
 	b3Transform transform; ///< Transform of shape B in shape A's frame, the relative pose B in A
 	b3Vec3 translationB;   ///< The translation of shape B, in A's frame
 	float maxFraction;	   ///< The fraction of the translation to consider, typically 1
-	bool canEncroach;	   ///< Allows shapes with a radius to move slightly closer if already touching
+	bool canEncroach; ///< Allows shapes with a radius to move slightly closer if already touching
 } b3ShapeCastPairInput;
 
 /// Input for b3ShapeDistance
@@ -1552,7 +1663,8 @@ typedef struct b3DistanceInput
 	b3ShapeProxy proxyB;
 
 	/// Transform of shape B in shape A's frame, the relative pose B in A
-	/// (b3InvMulWorldTransforms( worldA, worldB )). The query is origin independent and runs in frame A.
+	/// (b3InvMulWorldTransforms( worldA, worldB )). The query is origin independent and runs in
+	/// frame A.
 	b3Transform transform;
 
 	/// Should the proxy radius be considered?
@@ -1588,9 +1700,9 @@ typedef struct b3Simplex
 	int count;					 ///< number of valid vertices
 } b3Simplex;
 
-/// This describes the motion of a body/shape for TOI computation. Shapes are defined with respect to the body origin,
-/// which may not coincide with the center of mass. However, to support dynamics we must interpolate the center of mass
-/// position.
+/// This describes the motion of a body/shape for TOI computation. Shapes are defined with respect
+/// to the body origin, which may not coincide with the center of mass. However, to support dynamics
+/// we must interpolate the center of mass position.
 typedef struct b3Sweep
 {
 	b3Vec3 localCenter; ///< Local center of mass position
@@ -1620,31 +1732,31 @@ typedef enum b3TOIState
 	b3_toiStateSeparated
 } b3TOIState;
 
-/// Time of impact output
+/// Time of impact output.
 typedef struct b3TOIOutput
 {
-	/// The type of result
+	/// The type of result.
 	b3TOIState state;
 
-	/// The hit point
+	/// The hit point. A shared point if overlapped.
 	b3Vec3 point;
 
-	/// The hit normal
+	/// The hit normal. Zero if overlapped.
 	b3Vec3 normal;
 
-	/// The sweep time of the collision
+	/// The sweep time of the collision. 0 if overlapped.
 	float fraction;
 
-	/// The final distance
+	/// The final distance. 0 if overlapped.
 	float distance;
 
-	/// Number of outer iterations
+	/// Number of outer iterations.
 	int distanceIterations;
 
-	/// Total number of push back iterations
+	/// Total number of push back iterations.
 	int pushBackIterations;
 
-	/// Total number of root iterations
+	/// Total number of root iterations.
 	int rootIterations;
 
 	/// Indicates that the time of impact detected initial
@@ -1659,9 +1771,9 @@ typedef struct b3TOIOutput
  * @defgroup tree Dynamic Tree
  * The dynamic tree is a binary AABB tree to organize and query large numbers of geometric objects
  *
- * Box3D uses the dynamic tree internally to sort collision shapes into a binary bounding volume hierarchy.
- * This data structure may have uses in games for organizing other geometry data and may be used independently
- * of Box3D rigid body simulation.
+ * Box3D uses the dynamic tree internally to sort collision shapes into a binary bounding volume
+ * hierarchy. This data structure may have uses in games for organizing other geometry data and may
+ * be used independently of Box3D rigid body simulation.
  *
  * A dynamic AABB tree broad-phase, inspired by Nathanael Presson's btDbvt.
  * A dynamic tree arranges data in a binary tree to accelerate
@@ -1673,58 +1785,46 @@ typedef struct b3TOIOutput
  * @{
  */
 
-/// Flags for tree nodes. For internal usage.
-typedef enum b3TreeNodeFlags
-{
-	b3_allocatedNode = 0x0001,
-	b3_enlargedNode = 0x0002,
-	b3_leafNode = 0x0004,
-} b3TreeNodeFlags;
-
-/// Tree node child indices. For internal usage.
-typedef struct b3TreeNodeChildren
-{
-	int child1; ///< child node index 1
-	int child2; ///< child node index 2
-} b3TreeNodeChildren;
-
-/// A node in the dynamic tree. This is private data placed here for performance reasons.
-/// todo test padding to 64 bytes to avoid straddling cache lines
+/// A node in the dynamic tree. Siblings sit together at an even index so two nodes fit in
+/// a 64 byte cache line. The root is at index zero and index one always empty.
 typedef struct b3TreeNode
 {
 	/// The node bounding box
 	b3AABB aabb; // 24
 
-	/// Category bits for collision filtering
-	uint64_t categoryBits; // 8
+	/// bit 31 : 1 for leaf node
+	/// bit 30 : 1 for moved flag
+	/// bits 0-29 : index of the sibling pair node or the proxy id for a leaf
+	uint32_t flagIndex; // 4
 
 	union
 	{
-		/// Children (internal node)
-		b3TreeNodeChildren children;
+		/// The height of an internal node. A leaf has zero height.
+		int32_t height;
 
-		/// User data (leaf node)
-		uint64_t userData;
-	}; // 8
-
-	union
-	{
-		/// The node parent index (allocated node)
-		int parent;
-
-		/// The node freelist next index (free node)
-		int next;
+		/// The shape index for a leaf. Truncated from proxy user data.
+		int32_t shapeIndex;
 	}; // 4
-
-	/// Height of the node. Leaves have a height of 0.
-	uint16_t height; // 2
-
-	/// @see b3TreeNodeFlags
-	uint16_t flags; // 2
 } b3TreeNode;
 
+/// Separate storage for tree leaves.
+typedef struct b3TreeProxy
+{
+	/// User data is an index instead of void* because it is used internally as a shape index.
+	uint64_t userData;
+
+	/// Category bits for collision filtering.
+	uint64_t categoryBits;
+
+	/// The leaf node. B3_NULL_INDEX for a free proxy.
+	int32_t node;
+
+	/// Next free proxy.
+	int32_t next;
+} b3TreeProxy;
+
 /// Dynamic tree version for compatibility testing.
-#define B3_DYNAMIC_TREE_VERSION 0x93EDAF889FD30B4Aull
+#define B3_DYNAMIC_TREE_VERSION 0x1D6F4C2A73B80E91ull
 
 /// The dynamic tree structure. This should be considered private data.
 /// It is placed here for performance reasons.
@@ -1734,26 +1834,42 @@ typedef struct b3DynamicTree
 	/// if the tree is serialized.
 	uint64_t version;
 
-	/// The tree nodes
+	/// Array of nodes. The root is at index zero and index 1 is empty.
+	/// Otherwise siblings are paired at even indices. Has holes for free node pairs.
 	b3TreeNode* nodes;
 
-	/// The root index
-	int root;
+	/// Parent index per node. The free list is interweaved.
+	int32_t* parents;
 
-	/// The number of nodes
-	int nodeCount;
+	/// Proxy data split from node array as cold data.
+	b3TreeProxy* proxies;
+
+	/// Every allocated node has a lower index than this.
+	int32_t nodeEnd;
 
 	/// The allocated node space
-	int nodeCapacity;
+	int32_t nodeCapacity;
+
+	/// Free pairs below nodeEnd
+	int32_t pairFreeList;
 
 	/// Number of proxies created
-	int proxyCount;
+	int32_t proxyCount;
 
-	/// Node free list
-	int freeList;
+	/// The allocated proxy space
+	int32_t proxyCapacity;
+
+	/// Proxy free list
+	int32_t proxyFreeList;
+
+	/// Array of nodes for rebuild.
+	b3TreeNode* swapNodes;
 
 	/// Leaf indices for rebuild
-	int* leafIndices;
+	int32_t* leafIndices;
+
+	/// Leaves for the rebuild. May represent a proxy or a retained subtree.
+	b3TreeNode* leafNodes;
 
 	/// Leaf bounding boxes for rebuild
 	b3AABB* leafBoxes;
@@ -1762,10 +1878,14 @@ typedef struct b3DynamicTree
 	b3Vec3* leafCenters;
 
 	/// Bins for sorting during rebuild
-	int* binIndices;
+	int32_t* binIndices;
 
 	/// Allocated space for rebuilding
-	int rebuildCapacity;
+	int32_t rebuildCapacity;
+
+	/// Rebuild orders the nodes so the children follow parents. Cache friendly for queries
+	/// and refitting. The order can be disrupted by proxy creation.
+	bool dfsOrdered;
 } b3DynamicTree;
 
 /// These are performance results returned by dynamic tree queries.
@@ -1782,23 +1902,27 @@ typedef struct b3TreeStats
 /// @return true if the query should continue
 typedef bool b3TreeQueryCallbackFcn( int proxyId, uint64_t userData, void* context );
 
-/// This function receives the minimum distance squared so far and proxy to check in the closest query.
+/// This function receives the minimum distance squared so far and proxy to check in the closest
+/// query.
 /// @return minimum distance squared to user objects in the proxy
-typedef float b3TreeQueryClosestCallbackFcn( float distanceSqrMin, int proxyId, uint64_t userData, void* context );
+typedef float b3TreeQueryClosestCallbackFcn( float distanceSqrMin, int proxyId, uint64_t userData,
+											 void* context );
 
 /// This function receives clipped AABB cast input for a proxy. The function returns the new cast
 /// fraction.
 /// - return a value of 0 to terminate the cast
 /// - return a value less than input->maxFraction to clip the cast
 /// - return a value of input->maxFraction to continue the cast without clipping
-typedef float b3TreeBoxCastCallbackFcn( const b3BoxCastInput* input, int proxyId, uint64_t userData, void* context );
+typedef float b3TreeBoxCastCallbackFcn( const b3BoxCastInput* input, int proxyId, uint64_t userData,
+										void* context );
 
 /// This function receives clipped ray cast input for a proxy. The function
 /// returns the new ray fraction.
 /// - return a value of 0 to terminate the ray cast
 /// - return a value less than input->maxFraction to clip the ray
 /// - return a value of input->maxFraction to continue the ray cast without clipping
-typedef float b3TreeRayCastCallbackFcn( const b3RayCastInput* input, int proxyId, uint64_t userData, void* context );
+typedef float b3TreeRayCastCallbackFcn( const b3RayCastInput* input, int proxyId, uint64_t userData,
+										void* context );
 
 /**@}*/ // tree
 
@@ -1817,6 +1941,15 @@ typedef struct b3PlaneResult
 	/// Closest point on the shape. May not be unique.
 	b3Vec3 point;
 
+	/// The index of the mesh or height field triangle hit.
+	int triangleIndex;
+
+	/// The index of the compound child shape.
+	int childIndex;
+
+	/// The material index.
+	int materialIndex;
+
 } b3PlaneResult;
 
 /// These are collision planes that can be fed to b3SolvePlanes. Normally
@@ -1833,7 +1966,8 @@ typedef struct b3CollisionPlane
 	/// The push on the mover determined by b3SolvePlanes. Usually in meters.
 	float push;
 
-	/// Indicates if b3ClipVector should clip against this plane. Should be false for soft collision.
+	/// Indicates if b3ClipVector should clip against this plane. Should be false for soft
+	/// collision.
 	bool clipVelocity;
 } b3CollisionPlane;
 
@@ -1857,9 +1991,26 @@ typedef struct b3BodyPlaneResult
 	b3PlaneResult result;
 } b3BodyPlaneResult;
 
+/// Body time of impact result for movers.
+typedef struct b3BodyTOIResult
+{
+	/// The hit point in world space.
+	b3Pos point;
+
+	/// The hit normal. Points from the body to the mover.
+	b3Vec3 normal;
+
+	/// The sweep time of the collision.
+	float fraction;
+
+	/// The hit shape.
+	b3ShapeId shapeId;
+} b3BodyTOIResult;
+
 /// Used to collect collision planes for character movers.
 /// Return true to continue gathering planes.
-typedef bool b3PlaneResultFcn( b3ShapeId shapeId, const b3PlaneResult* plane, int planeCount, void* context );
+typedef bool b3PlaneResultFcn( b3ShapeId shapeId, const b3PlaneResult* plane, int planeCount,
+							   void* context );
 
 /// Used to filter shapes for shape casting character movers.
 /// Return true to accept the collision
@@ -1912,8 +2063,7 @@ typedef struct b3Sphere
  * @{
  */
 
-/// A solid capsule can be viewed as two hemispheres connected
-/// by a rectangle.
+/// A solid capsule can be viewed as two hemispheres connected by a cylinder.
 typedef struct b3Capsule
 {
 	/// Local center of the first hemisphere
@@ -1968,7 +2118,7 @@ typedef struct b3HullFace
 } b3HullFace;
 
 /// 64-bit hull version. Useful for validating serialized data.
-#define B3_HULL_VERSION 0x4A4C9587DE57485Cull
+#define B3_HULL_VERSION 0x6B1E39D4A87C25F3ull
 
 /// A convex hull.
 /// @note This data structure has data hanging off the end and cannot be directly copied.
@@ -1992,7 +2142,7 @@ typedef struct b3HullData
 	/// The radius of the largest sphere at the center.
 	float innerRadius;
 
-	/// The local centroid
+	/// The local centroid.
 	b3Vec3 center;
 
 	/// The inertia tensor about the centroid.
@@ -2007,7 +2157,7 @@ typedef struct b3HullData
 	/// Offset of the point array in bytes from the struct address.
 	int32_t pointOffset;
 
-	/// This is the half-edge count (double the edge count)
+	/// This is the half-edge count (double the edge count).
 	int32_t edgeCount;
 
 	/// Offset of the edge array in bytes from the struct address.
@@ -2022,14 +2172,20 @@ typedef struct b3HullData
 	/// Offset of the face array in bytes from the struct address.
 	int32_t faceOffset;
 
-	/// Offset of structure of array (SOA) vertices
+	/// Offset of structure of array (SOA) vertices.
 	int32_t soaVertexOffset;
 
-	/// Offset of structure of array (SOA) unit normal vectors
+	/// Offset of structure of array (SOA) unit normal vectors.
 	int32_t soaNormalOffset;
+
+	/// Offset of dot(n1, n2) for each full edge.
+	int32_t edgeCosineOffset;
 
 	/// The total number of bytes for this hull.
 	int32_t byteCount;
+
+	/// Explicit padding for determinism.
+	int32_t padding;
 
 	/// Any padding must be explicit.
 } b3HullData;
@@ -2048,9 +2204,10 @@ typedef struct b3BoxHull
 	float vx[8];				 ///< vertex x
 	float vy[8];				 ///< vertex y
 	float vz[8];				 ///< vertex z
-	float nx[8];				 ///< normal x, padded to multiple of 4
-	float ny[8];				 ///< normal y, padded to multiple of 4
-	float nz[8];				 ///< normal z, padded to multiple of 4
+	float nx[8];				 ///< normal x, padded to multiple of 8
+	float ny[8];				 ///< normal y, padded to multiple of 8
+	float nz[8];				 ///< normal z, padded to multiple of 8
+	float edgeCosines[12];		 ///< dot(n1, n2) for each full edge.
 } b3BoxHull;
 
 /**@}*/ // hull
@@ -2068,7 +2225,10 @@ typedef struct b3MeshDef
 	/// Triangle vertices.
 	b3Vec3* vertices;
 
-	/// Triangle vertex indices. 3 for each triangle. CCW winding.
+	/// Stride between vertices. Use 0 for contiguous vertices.
+	size_t stride;
+
+	/// Triangle vertex indices. 3 for each triangle. CCW winding unless CW is indicated below.
 	int32_t* indices;
 
 	/// Triangle material index. 1 per triangle. Indexes into b3ShapeDef::materials.
@@ -2094,6 +2254,9 @@ typedef struct b3MeshDef
 
 	/// Compute triangle adjacency information using shared edges
 	bool identifyEdges;
+
+	/// Input indices have clockWise winding order.
+	bool clockWiseWinding;
 } b3MeshDef;
 
 /// 64-bit mesh version. Useful for validating serialized data.
@@ -2423,12 +2586,8 @@ typedef struct b3CompoundDef
 	int sphereCount;
 } b3CompoundDef;
 
-/// The baked compound version depends on the tree, mesh, and hull versions.
-#define B3_COMPOUND_VERSION ( 0xB11DCE70FAD5622Bull ^ B3_DYNAMIC_TREE_VERSION ^ B3_MESH_VERSION ^ B3_HULL_VERSION )
-
-/// Meshes used in compounds have limited space for materials. If you have
-/// a mesh with many materials, you can use it outside of the compound.
-#define B3_MAX_COMPOUND_MESH_MATERIALS 4
+/// The baked compound version depends on the mesh and hull versions.
+#define B3_COMPOUND_VERSION ( 0x9E4B17D3A25C68F1ull ^ B3_MESH_VERSION ^ B3_HULL_VERSION )
 
 /// The data for a baked compound shape. This is a potentially large yet highly optimized
 /// data structure. It can contain thousands of child shapes, yet at runtime it populates
@@ -2445,11 +2604,17 @@ typedef struct b3CompoundData
 	/// The total number of bytes for this compound.
 	int byteCount;
 
+	// Bounds of the tree.
+	b3AABB bounds;
+
+	// Tree height for diagnostics.
+	int treeHeight;
+
 	/// Offset of the tree node array in bytes from the struct address.
 	int nodeOffset;
 
-	/// Immutable dynamic tree. The tree node pointer must be fixed up using the node offset
-	b3DynamicTree tree;
+	// The number of tree nodes.
+	int nodeCount;
 
 	/// Offset of the material array in bytes from the struct address.
 	int materialOffset;
@@ -2495,7 +2660,10 @@ typedef struct b3CompoundCapsule
 	b3Capsule capsule;
 
 	/// Index to a shared material.
-	int materialIndex;
+	uint16_t materialIndex;
+
+	/// Padding for determinism.
+	uint16_t padding;
 } b3CompoundCapsule;
 
 /// A hull that lives in a compound.
@@ -2508,7 +2676,10 @@ typedef struct b3CompoundHull
 	b3Transform transform;
 
 	/// Index to a shared material.
-	int materialIndex;
+	uint16_t materialIndex;
+
+	/// Padding for determinism.
+	uint16_t padding;
 } b3CompoundHull;
 
 /// A mesh with non-uniform scale that lives in a compound.
@@ -2524,10 +2695,12 @@ typedef struct b3CompoundMesh
 	b3Vec3 scale;
 
 	/// This is used to access the surface material from b3GetCompoundMaterials.
-	/// Requires an extra level of indirection. The triangle material index
-	/// is clamped to B3_MAX_COMPOUND_MESH_MATERIALS.
+	/// Requires an extra level of indirection.
 	/// materialIndex = materialIndices[triangle->materialIndex]
-	int materialIndices[B3_MAX_COMPOUND_MESH_MATERIALS];
+	const uint16_t* materialIndices;
+
+	/// The number of materials. 1 for convex hapes.
+	int materialCount;
 } b3CompoundMesh;
 
 /// A sphere that lives in a compound.
@@ -2537,7 +2710,10 @@ typedef struct b3CompoundSphere
 	b3Sphere sphere;
 
 	/// Index to a shared material.
-	int materialIndex;
+	uint16_t materialIndex;
+
+	/// Padding for determinism.
+	uint16_t padding;
 } b3CompoundSphere;
 
 /// Child shape of a compound
@@ -2556,8 +2732,11 @@ typedef struct b3ChildShape
 	b3Transform transform;
 
 	/// Material indices. Index 0 is used for convex shapes.
-	/// todo limit to 64K?
-	int materialIndices[B3_MAX_COMPOUND_MESH_MATERIALS];
+	const uint16_t* materialIndices;
+
+	/// The number of materials. This is one for convex shapes. For
+	/// meshes it is determined by the maximum triangle material index.
+	int materialCount;
 
 	/// The shape type (union tag).
 	b3ShapeType type;
@@ -2592,20 +2771,22 @@ typedef struct b3ManifoldPoint
 	/// The separation of the contact point, negative if penetrating
 	float separation;
 
-	/// Cached separation used for contact recycling
-	float baseSeparation;
-
 	/// The impulse along the manifold normal vector. Since Box3D uses sub-stepping, this is
 	/// result from the final sub-step.
 	float normalImpulse;
 
-	/// The total normal impulse applied during sub-stepping. This is important
+	/// The total normal impulse applied across sub-stepping and restitution. This is important
 	/// to identify speculative contact points that had an interaction in the time step.
+	/// This includes the warm starting impulse, the sub-step delta impulse, and the restitution
+	/// impulse.
 	float totalNormalImpulse;
 
-	/// Relative normal velocity pre-solve. Used for hit events. If the normal impulse is
-	/// zero then there was no hit. Negative means shapes are approaching.
+	/// Relative normal velocity pre-solve. Negative when approaching. This is only
+	/// computed if hit events are enabled.
 	float normalVelocity;
+
+	/// Cached separation used for contact recycling
+	float baseSeparation;
 
 	/// Local point for matching
 	/// Uniquely identifies a contact point between two shapes
@@ -2946,8 +3127,8 @@ B3_INLINE uint32_t b3MakeDebugColor( b3HexColor rgb, b3DebugMaterial material )
 /// (B3_GRAPH_COLOR_COUNT - 1) is the overflow color.
 B3_API b3HexColor b3GetGraphColor( int index );
 
-/// This is sent to the user for debug shape creation. The user should know the type in case they have
-/// custom sphere or capsule rendering.
+/// This is sent to the user for debug shape creation. The user should know the type in case they
+/// have custom sphere or capsule rendering.
 typedef struct b3DebugShape
 {
 	/// Shape id.
@@ -2973,10 +3154,11 @@ typedef struct b3DebugShape
 /// it stays accurate far from the origin. Shift into your own camera frame inside the callbacks.
 typedef struct b3DebugDraw
 {
-	/// Draws a user shape. The userShape pointer is owned by the application and is known to Box3D as
-	/// an opaque pointer returned from b3CreateDebugShapeCallback. When this is called the drawn shape has
-	/// passed a culling test against drawingBounds below.
-	void ( *DrawShapeFcn )( void* userShape, b3WorldTransform transform, b3HexColor color, void* context );
+	/// Draws a user shape. The userShape pointer is owned by the application and is known to Box3D
+	/// as an opaque pointer returned from b3CreateDebugShapeCallback. When this is called the drawn
+	/// shape has passed a culling test against drawingBounds below.
+	void ( *DrawShapeFcn )( void* userShape, b3WorldTransform transform, b3HexColor color,
+							void* context );
 
 	/// Draw a line segment.
 	void ( *DrawSegmentFcn )( b3Pos p1, b3Pos p2, b3HexColor color, void* context );
@@ -2991,13 +3173,15 @@ typedef struct b3DebugDraw
 	void ( *DrawSphereFcn )( b3Pos p, float radius, b3HexColor color, float alpha, void* context );
 
 	/// Draw a capsule.
-	void ( *DrawCapsuleFcn )( b3Pos p1, b3Pos p2, float radius, b3HexColor color, float alpha, void* context );
+	void ( *DrawCapsuleFcn )( b3Pos p1, b3Pos p2, float radius, b3HexColor color, float alpha,
+							  void* context );
 
 	/// Draw a bounding box.
 	void ( *DrawBoundsFcn )( b3AABB aabb, b3HexColor color, void* context );
 
 	/// Draw an oriented box.
-	void ( *DrawBoxFcn )( b3Vec3 extents, b3WorldTransform transform, b3HexColor color, void* context );
+	void ( *DrawBoxFcn )( b3Vec3 extents, b3WorldTransform transform, b3HexColor color,
+						  void* context );
 
 	/// Draw a string in world space
 	void ( *DrawStringFcn )( b3Pos p, const char* s, b3HexColor color, void* context );

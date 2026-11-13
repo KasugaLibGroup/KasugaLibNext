@@ -4,6 +4,7 @@ import lib.kasuga.core.holder.Holder;
 import lib.kasuga.core.resource.pack.ScopedPackResources;
 import lib.kasuga.core.resource.pack.ScopedVanillaFileResourcePack;
 import lib.kasuga.core.resource.pack.ScopedVanillaPathResourcePack;
+import lib.kasuga.core.resource.pack.VfsBackedPackResources;
 import lib.kasuga.mixins.*;
 import net.minecraft.server.packs.CompositePackResources;
 import net.minecraft.server.packs.FilePackResources;
@@ -18,7 +19,7 @@ import java.util.Iterator;
 import java.util.List;
 
 public class ScopedResourceManager implements ResourceManagerReloadListener {
-    private ResourceManager resourceManager;
+    private volatile ResourceManager resourceManager;
     private List<ScopedPackResources> packResources = new ArrayList<>();
     private List<ScopedResourcePackListener> listeners = new ArrayList<>();
 
@@ -43,6 +44,10 @@ public class ScopedResourceManager implements ResourceManagerReloadListener {
         return resourceManager;
     }
 
+    public lib.kasuga.core.resource.pack.McManagedResourceView managedView(net.minecraft.server.packs.PackType type) {
+        return new lib.kasuga.core.resource.pack.McManagedResourceView(() -> resourceManager, type);
+    }
+
     @Override
     public void onResourceManagerReload(@NotNull ResourceManager rm) {
         this.reload(rm);
@@ -54,6 +59,8 @@ public class ScopedResourceManager implements ResourceManagerReloadListener {
             for (PackResources resources : ((CompositePackResourcesAccess) composite).getPackResourcesStack()) {
                 adapt(resources);
             }
+        } else if(next instanceof VfsBackedPackResources vfsBacked) {
+            packResources.add(vfsBacked.asScopedPackResources());
         } else if(next instanceof PathPackResources path) {
             packResources.add(new ScopedVanillaPathResourcePack(((PathPackResourcesMixin) path).getRoot(), path));
         } else if(next instanceof FilePackResources file) {

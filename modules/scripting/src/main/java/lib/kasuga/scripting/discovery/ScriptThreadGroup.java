@@ -9,8 +9,10 @@ import java.util.concurrent.CompletableFuture;
 public class ScriptThreadGroup {
     private final String packageName;
     private final ThreadGroup threadGroup;
-    private final Map<String, ScriptThread> threads = new HashMap<>();
-    private final Set<ScriptThreadGroup> children = new HashSet<>();
+    private final Map<String, ScriptThread> threads = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Set<ScriptThreadGroup> children = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private boolean closed;
+    private final CompletableFuture<Void> termination = new CompletableFuture<>();
     @Nullable
     private final ScriptThreadGroup parent;
 
@@ -22,7 +24,8 @@ public class ScriptThreadGroup {
             : new ThreadGroup(packageName);
     }
 
-    public ScriptThread createThread(String entryName, ScriptEngine engine) {
+    public synchronized ScriptThread createThread(String entryName, ScriptEngine engine) {
+        if (closed || threads.containsKey(entryName)) throw new IllegalStateException("Closed group or duplicate script thread");
         ScriptThread thread = new ScriptThread(this, engine, entryName);
         threads.put(entryName, thread);
         thread.start();
@@ -38,27 +41,36 @@ public class ScriptThreadGroup {
         }
     }
 
-    public ScriptThreadGroup createChild(String childPackageName) {
+    public synchronized ScriptThreadGroup createChild(String childPackageName) {
+        if (closed) throw new IllegalStateException("Script thread group closed");
         ScriptThreadGroup child = new ScriptThreadGroup(childPackageName, this);
         children.add(child);
         return child;
     }
 
     public CompletableFuture<Void> shutdown() {
+        List<ScriptThread> ownThreads;
+        List<ScriptThreadGroup> ownChildren;
+        synchronized (this) {
+            if (closed) return termination;
+            closed = true; ownThreads = List.copyOf(threads.values()); ownChildren = List.copyOf(children);
+            threads.clear(); children.clear();
+        }
         List<CompletableFuture<Void>> futures = new ArrayList<>();
-        for (ScriptThread thread : threads.values()) {
+        for (ScriptThread thread : ownThreads) {
             futures.add(thread.shutdown());
         }
-        for (ScriptThreadGroup child : children) {
+        for (ScriptThreadGroup child : ownChildren) {
             futures.add(child.shutdown());
         }
-        threads.clear();
-        children.clear();
-        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).whenComplete((ignored, failure) -> {
+            if (failure == null) termination.complete(null); else termination.completeExceptionally(failure);
+        });
+        return termination;
     }
 
     void onThreadTerminated(ScriptThread thread) {
-        // cleanup logic
+        threads.values().removeIf(candidate -> candidate == thread);
     }
 
     public String getPackageName() { return packageName; }

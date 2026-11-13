@@ -115,6 +115,9 @@ scene.add(source, new Vec3(10, 70, 10))
 // 场景结束时 scene.close()；换世界也会自动释放。
 ```
 
+跟随 Create 移动结构时使用 `scene.add(source, CreateSceneHosts.contraption(entity))`；
+模型和附属 UI 共用宿主姿态，详见[移动结构上的场景与 UI](moving-scene-hosts.md)。
+
 位置为世界坐标；玩家绕行时模型保持原位，深度与世界共享。`Entry.position(...)` 可移动模型，
 `transform(...)` 设置局部旋转/缩放，`visible(false)` 隐藏；这些操作和 scene 的创建/关闭都在渲染线程。
 具体 UI 与世界样例位于 `test.kasuga.modelling.demo.preview.MinecraftPreviewDemo`，

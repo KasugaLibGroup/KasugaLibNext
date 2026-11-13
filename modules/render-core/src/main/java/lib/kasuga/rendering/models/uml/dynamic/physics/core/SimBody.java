@@ -58,7 +58,11 @@ public interface SimBody {
      */
     default int selfCollisionGroup() { return 0; }
 
-    /** Generated humanoid profiles additionally align their inferred joint frames. */
+    /**
+     * Explicit opt-in to a spring toward the inferred joint-frame rest rotation.
+     * Passive generated humanoid profiles leave this disabled; skeleton pose
+     * tracking is controlled separately by the explicit pose drive.
+     */
     default boolean ragdollAlignmentSpring() { return false; }
 
     /** Collision group index (0-15) used with the non-collision mask. */

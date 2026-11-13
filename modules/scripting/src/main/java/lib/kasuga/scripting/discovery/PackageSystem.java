@@ -8,6 +8,7 @@ import jakarta.annotation.Nullable;
 import jakarta.inject.Inject;
 import lib.kasuga.core.resource.pack.HierarchicalScopedPackResources;
 import lib.kasuga.core.resource.pack.ScopedPackResources;
+import lib.kasuga.core.vfs.VfsInvalidPathException;
 import lib.kasuga.scripting.ScriptEngineRegistry;
 import lib.kasuga.scripting.ScriptEngineType;
 import lib.kasuga.scripting.module.DuplicatePackageException;
@@ -43,9 +44,9 @@ public class PackageSystem {
 
 
     public void init() {
-        loadingErrors.clear();
+        synchronized (loadingErrors) { loadingErrors.clear(); }
         engineErrors.clear();
-        engineMissing.clear();
+        synchronized (engineMissing) { engineMissing.clear(); }
     }
 
     public boolean hasLoadingErrors() {
@@ -71,8 +72,10 @@ public class PackageSystem {
         if (!spr.exists(packRelativeRoot, "package.toml"))
             return null;
         CommentedConfig config;
-        try {
-            config = scriptInfoParser.parse(new InputStreamReader(spr.open(packRelativeRoot, "package.toml")));
+        try (var input = spr.open(packRelativeRoot, "package.toml");
+             var reader = new InputStreamReader(input, java.nio.charset.StandardCharsets.UTF_8)) {
+            // Managed resource generations can prepare independently from the legacy runtime scan.
+            config = new TomlParser().parse(reader);
         } catch (IOException e) {
             throw new PackageLoadingError(e);
         }
@@ -119,9 +122,16 @@ public class PackageSystem {
             : workspaceGlob;
 
         try {
+            globPattern = ScopedPackResources.toLogicalPath(globPattern).asString();
+        } catch (VfsInvalidPathException e) {
+            addLoadingError(new PackageLoadingError(e));
+            return result;
+        }
+
+        try {
             List<String> entries = hierarchical.list(prefix, globPattern);
             for (String entry : entries) {
-                String subPath = globPattern + "/" + entry;
+                String subPath = globPattern.isEmpty() ? entry : globPattern + "/" + entry;
                 if (!hierarchical.isDirectory(prefix, subPath)) continue;
 
                 ResolvedPackage subPkg = tryResolve(packResource, prefix + "/" + subPath);

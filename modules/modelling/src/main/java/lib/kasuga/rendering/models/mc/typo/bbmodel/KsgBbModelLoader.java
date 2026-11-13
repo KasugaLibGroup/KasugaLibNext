@@ -79,7 +79,8 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
                                           MaterialSet materialSet) {
         List<Vertex> vertices = new ArrayList<>();
         List<Mesh> meshes = new ArrayList<>();
-        Bone root = new Bone("root", new Transform(), null);
+        var components = lib.kasuga.rendering.models.mc.component.ModelComponents.parse(definition.components());
+        Bone root = new Bone(components.isEmpty() ? "root" : components.rootName(), new Transform(), null);
         List<Bone> bones = new ArrayList<>();
         bones.add(root);
 
@@ -101,9 +102,11 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
         }
 
         Skeleton skeleton = new Skeleton(bones.toArray(new Bone[0]), root, new lib.kasuga.rendering.models.uml.structure.skeleton.Anchor[0], null, new Transform());
+        components.apply(skeleton);
         Model model = new Model(
                 vertices.toArray(new Vertex[0]), meshes.toArray(new Mesh[0]), bones.toArray(new Bone[0]), skeleton,
-                materialSet, MeshMode.QUADS, null, null
+                materialSet, MeshMode.QUADS,
+                components.isEmpty() ? null : new lib.kasuga.rendering.models.mc.component.ModelComponentsData(components), null
         );
         for (int index = 0; index < definition.animations().size(); index++) {
             BbModelAnimation animation = definition.animations().get(index);

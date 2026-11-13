@@ -94,6 +94,7 @@ public class Constants {
                 ResourceLocation.fromNamespaceAndPath(KasugaLib.MODID, "builtin_rendering")
         );
         BillboardEffects.initialize(pipelines);
+        lib.kasuga.rendering.models.mc.dynamic.ModelParticleRuntime.initialize(pipelines);
         BlackHoleEffects.initialize(pipelines);
         lib.kasuga.rendering.effect.builtin.cloud.CloudEffects.initialize(pipelines);
         lib.kasuga.rendering.effect.builtin.water.WaterEffects.initialize(pipelines);
@@ -126,6 +127,8 @@ public class Constants {
     @SubscribeEvent
     @SuppressWarnings("unchecked")
     public static void onReloadListenerRegister(RegisterClientReloadListenersEvent event) {
+        event.registerReloadListener((net.minecraft.server.packs.resources.ResourceManagerReloadListener) resources ->
+                lib.kasuga.rendering.models.mc.dynamic.ModelParticleRuntime.invalidateTextures());
         IrisCompat.onStart();
         TEXTURE_TYPE = new SourceType("texture");
         MODEL_TYPE = new SourceType("model");

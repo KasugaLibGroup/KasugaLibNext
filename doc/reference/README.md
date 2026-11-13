@@ -17,6 +17,7 @@
 | [Physics 与 tick loop](physics.md) | 原生 world、复合形状、关节、力/冲量、环境、拖拽、主动布娃娃、锚点和方块物理 |
 | [MMD/glTF 配置与部署](mmd-ragdoll.md) | model manifest、profile 字段、角色限位、运行时部署和命令 |
 | [模型加载与渲染](modelling/README.md) | 资源格式、model_proxy、实例创建、Blockbench 与运行入口 |
+| [Minecraft 模型附加组件](mc-model-components.md) | Blockbench 插件的数据格式、IK/物理/粒子扩展与游戏端加载契约 |
 | [摄像机与动画](camera-animation.md) | 直接控制、关键帧、JSON、共享时间轴与模型片段绑定 |
 | [FSM](fsm.md) | 状态变量、层/状态/转移、姿态 schema 与宿主绑定 |
 | [Multiplexer](multiplexer.md) | 变体选择 DSL、Builder、实例状态及 FSM 组合 |
@@ -46,6 +47,7 @@
 | --- | --- |
 | [数据驱动注册](data-driven/README.md) | 内容 schema、工厂与属性扩展、诊断与 reload；入门与教程在 [data-driven/](../guides/data-driven/intro.md)（四篇参考 + 三篇指南） |
 | [Formula](formula/README.md) | 表达式、Namespace、函数/变量、运算符和错误 |
+| [统一资源平台与 Script Ticket](resource-platform.md) | 来源/URI、magic number、目录路由、MC 首次发现、scope/generation、脚本注册与异步 Ticket |
 | [构建与验证入口](../guides/verification.md) | Gradle 任务、独立 GL、客户端验收与证据边界 |
 
 ## 文档维护

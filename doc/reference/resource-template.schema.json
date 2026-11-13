@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Kasuga resource template v1",
+  "type": "object", "additionalProperties": false, "required": ["format_version", "id"],
+  "properties": {
+    "format_version": {"const": 1},
+    "id": {"$ref": "#/$defs/id"}, "extends": {"$ref": "#/$defs/id"},
+    "remove_outputs": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+    "outputs": {"type": "array", "items": {"$ref": "#/$defs/output"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,160}$"},
+    "output": {
+      "type": "object", "additionalProperties": false, "required": ["id", "entry_point_id", "when", "side"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "entry_point_id": {"$ref": "#/$defs/id"},
+        "when": {"enum": ["bootstrap", "client_startup", "server_startup", "resource_reload", "remote_connect"]},
+        "side": {"enum": ["client", "server", "both", "none"]},
+        "target_prefix": {"type": "string", "description": "Canonical relative path prefix; empty is allowed."}
+      }
+    }
+  }
+}
