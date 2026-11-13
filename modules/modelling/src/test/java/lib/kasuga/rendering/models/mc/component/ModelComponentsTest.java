@@ -42,4 +42,28 @@ class ModelComponentsTest {
         assertTrue(ModelComponents.parse(null).isEmpty());
         var input=JsonParser.parseString(DATA);var snapshot=input.deepCopy();var data=ModelComponents.parse(input);data.apply(data.createSkeleton());assertEquals(snapshot,input);
     }
+    @Test void importsDiamondBranchesAndRejectsSharedOrMissingChains() {
+        var input=JsonParser.parseString(DATA).getAsJsonObject();
+        var bones=input.getAsJsonArray("bones");
+        bones.add(JsonParser.parseString("""
+          {"id":"base2","name":"base2","parent":null,"pivot":[0,0,0],"components":{}}
+          """));
+        bones.add(JsonParser.parseString("""
+          {"id":"mid2","name":"mid2","parent":"base2","pivot":[-8,8,0],"components":{}}
+          """));
+        bones.add(JsonParser.parseString("""
+          {"id":"tip2","name":"tip2","parent":"mid2","pivot":[0,16,0],"components":{"ik":{"target":"t","links":[{"bone":"base2"},{"bone":"mid2"}]}}}
+          """));
+        input.add("diamonds",JsonParser.parseString("""
+          [{"id":"closed","first":"c","second":"tip2","iterations":64,"tolerance":0.02}]
+          """));
+        var data=ModelComponents.parse(input);var skeleton=data.createSkeleton();data.apply(skeleton);
+        var diamond=skeleton.getDynamics().diamonds().getFirst();
+        assertEquals("c",diamond.firstChain());assertEquals("tip2",diamond.secondChain());
+        assertEquals(0.02/16,diamond.tolerance(),1e-8);
+        var bad=input.deepCopy();bad.getAsJsonArray("diamonds").get(0).getAsJsonObject().addProperty("first","missing");
+        assertThrows(IllegalArgumentException.class,()->{var d=ModelComponents.parse(bad);d.apply(d.createSkeleton());});
+        var repeated=input.deepCopy();repeated.getAsJsonArray("diamonds").add(input.getAsJsonArray("diamonds").get(0).deepCopy());
+        assertThrows(IllegalArgumentException.class,()->{var d=ModelComponents.parse(repeated);d.apply(d.createSkeleton());});
+    }
 }

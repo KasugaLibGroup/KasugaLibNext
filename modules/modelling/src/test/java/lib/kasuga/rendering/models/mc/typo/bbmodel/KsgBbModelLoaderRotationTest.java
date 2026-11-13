@@ -170,6 +170,22 @@ class KsgBbModelLoaderRotationTest {
                 "group ZYX and mesh XYZ must compose exactly as Blockbench 5.2.2 renders the nested QJ wheel");
     }
 
+    @Test
+    void meshUsesNativeXyzRotationInsideZyxGroup() {
+        Model model=cubeModel("""
+          {"uuid":"mesh","type":"mesh","origin":[8,4,12],"rotation":[30,60,20],
+           "vertices":{"a":[16,0,0],"b":[0,16,0],"c":[0,0,16]},
+           "faces":{"face":{"vertices":["a","b","c"],"uv":{"a":[0,0],"b":[16,0],"c":[0,16]},"texture":0}}}
+          """, """
+          [{"name":"group","origin":[4,8,0],"rotation":[15,25,35],"children":["mesh"]}]
+          """);
+        Matrix4f transform=pivot(4,8,0,15,25,35).translate(8,4,12)
+                .rotate(new Quaternionf().rotationXYZ(rad(30),rad(60),rad(20)));
+        List<Vector3f> expected=List.of(new Vector3f(16,0,0),new Vector3f(0,16,0),new Vector3f(0,0,16))
+                .stream().map(p->transform.transformPosition(p).mul(1f/16)).toList();
+        assertCornerInstances(model,expected,1);
+    }
+
     //region helpers
 
     private static float rad(float degrees) {

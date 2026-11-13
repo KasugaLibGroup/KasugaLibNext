@@ -3,6 +3,12 @@ package lib.kasuga.rendering.models.mc.component;
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
 import lib.kasuga.KasugaLib;
+import lib.kasuga.core.resource.ResourceSystem;
+import lib.kasuga.core.vfs.VfsPath;
+import lib.kasuga.core.vfs.VfsSubscription;
+import lib.kasuga.core.vfs.VfsWriteTransaction;
+import lib.kasuga.core.vfs.VirtualFileSystem;
+import lib.kasuga.core.vfs.backend.DirectoryVfs;
 import net.minecraft.client.Minecraft;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -22,8 +28,14 @@ import java.util.concurrent.CompletableFuture;
 @EventBusSubscriber(modid = KasugaLib.MODID, value = Dist.CLIENT)
 public final class LiveModelSync {
     private static final Logger LOGGER = LogUtils.getLogger();
+    static final VfsPath LIVE_MOUNT_POINT = VfsPath.of("live/kasuga_live");
+    static final VfsPath PACK_MCMETA = VfsPath.of("pack.mcmeta");
+    static final VfsPath SYNC_MARKER = VfsPath.of(".kasuga-sync.json");
+
     private static LiveModelSyncState state;
     private static Path directory;
+    private static DirectoryVfs liveVfs;
+    private static VfsSubscription liveMount;
     private static long nextPoll;
     private static String lastError;
     private static CompletableFuture<Void> reload;
@@ -35,17 +47,54 @@ public final class LiveModelSync {
         return Minecraft.getInstance().gameDirectory.toPath().resolve("resourcepacks/kasuga_live");
     }
 
+    static DirectoryVfs openLiveVfs(Path root) throws IOException {
+        Files.createDirectories(root);
+        DirectoryVfs vfs = new DirectoryVfs("kasuga-live-sync", root);
+        try {
+            if (!vfs.exists(PACK_MCMETA)) {
+                try (VfsWriteTransaction tx = vfs.beginTransaction()) {
+                    tx.putString(PACK_MCMETA,
+                            "{\"pack\":{\"pack_format\":34,\"description\":\"Kasuga Blockbench live preview\"}}");
+                    tx.commit();
+                }
+            }
+            return vfs;
+        } catch (IOException | RuntimeException e) {
+            vfs.close();
+            throw e;
+        }
+    }
+
+    static DirectoryVfs liveVfs() {
+        return liveVfs;
+    }
+
+    static void pollMarker(VirtualFileSystem vfs, LiveModelSyncState syncState, long now) throws IOException {
+        if (vfs.isRegularFile(SYNC_MARKER)) {
+            if (vfs.stat(SYNC_MARKER).size() > 8192) throw new IOException("preview marker exceeds 8 KiB");
+            String signature = vfs.readString(SYNC_MARKER);
+            var json = JsonParser.parseString(signature).getAsJsonObject();
+            if (!json.has("version") || json.get("version").getAsInt() != 1 || !json.has("generation"))
+                throw new IOException("unsupported preview marker");
+            syncState.observe(signature, now);
+        }
+    }
+
     public static void start() throws IOException {
+        closeVfs();
         Minecraft mc = Minecraft.getInstance();
         directory = directory();
-        Files.createDirectories(directory);
-        Path metadata = directory.resolve("pack.mcmeta");
-        if (!Files.exists(metadata)) Files.writeString(metadata,
-                "{\"pack\":{\"pack_format\":34,\"description\":\"Kasuga Blockbench live preview\"}}");
+        liveVfs = openLiveVfs(directory);
         var repository = mc.getResourcePackRepository();
         repository.reload();
-        if (!repository.getSelectedIds().contains("file/kasuga_live") && !repository.addPack("file/kasuga_live"))
+        if (!repository.getSelectedIds().contains("file/kasuga_live") && !repository.addPack("file/kasuga_live")) {
+            closeVfs();
             throw new IOException("Cannot enable resourcepacks/kasuga_live; check pack.mcmeta");
+        }
+        if (KasugaLib.isRunning()) {
+            liveMount = KasugaLib.getBean(ResourceSystem.class)
+                    .mountClientScoped(LIVE_MOUNT_POINT, liveVfs, true);
+        }
         state = new LiveModelSyncState(350);
         lastError = null;
         nextPoll = 0;
@@ -55,10 +104,22 @@ public final class LiveModelSync {
     }
 
     public static void stop() {
+        closeVfs();
         state = null;
         directory = null;
         lastError = null;
         // An already running Minecraft reload belongs to Minecraft and is allowed to finish.
+    }
+
+    private static void closeVfs() {
+        if (liveMount != null) {
+            liveMount.close();
+            liveMount = null;
+        }
+        if (liveVfs != null) {
+            liveVfs.close();
+            liveVfs = null;
+        }
     }
 
     public static boolean enabled() { return state != null; }
@@ -102,14 +163,13 @@ public final class LiveModelSync {
                 message("预览资源包已关闭，自动同步停止；可用 /kasuga_models live start 重新开启");
                 return;
             }
-            Path marker = directory.resolve(".kasuga-sync.json");
-            if (Files.isRegularFile(marker)) {
-                if (Files.size(marker) > 8192) throw new IOException("preview marker exceeds 8 KiB");
-                String signature = Files.readString(marker);
-                var json = JsonParser.parseString(signature).getAsJsonObject();
-                if (json.get("version").getAsInt() != 1 || !json.has("generation"))
-                    throw new IOException("unsupported preview marker");
-                state.observe(signature, now);
+            DirectoryVfs vfs = liveVfs;
+            if (vfs == null && directory != null) {
+                vfs = openLiveVfs(directory);
+                liveVfs = vfs;
+            }
+            if (vfs != null) {
+                pollMarker(vfs, state, now);
             }
             if (reload != null && !reload.isDone()) return;
             String publication = state.beginReload(now);

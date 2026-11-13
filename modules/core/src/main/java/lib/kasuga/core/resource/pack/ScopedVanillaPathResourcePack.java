@@ -20,14 +20,12 @@ public class ScopedVanillaPathResourcePack implements HierarchicalScopedPackReso
     @Override
     public InputStream open(String prefix, String path) throws IOException {
         Path filePath = resolve(prefix, path);
-        System.out.printf("Opening file: %s\n",filePath.toString());
         return Files.newInputStream(filePath);
     }
 
     @Override
     public boolean exists(String prefix, String path) {
         Path filePath = resolve(prefix, path);
-        System.out.printf("Testing file: %s\n",filePath.toString());
         return Files.exists(filePath);
     }
 
@@ -52,10 +50,8 @@ public class ScopedVanillaPathResourcePack implements HierarchicalScopedPackReso
         return pack.packId();
     }
 
-    public Path resolve(String prefix, String path){
-        if(path.startsWith("/"))
-            path = path.substring(1);
-        return this.source.resolve(prefix).resolve(path);
+    public Path resolve(String prefix, String path) {
+        return ScopedPackResources.safeResolve(this.source, prefix, path);
     }
 }
 
