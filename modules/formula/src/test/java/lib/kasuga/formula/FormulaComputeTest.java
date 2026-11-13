@@ -46,6 +46,8 @@ class FormulaComputeTest {
         assertEquals(-2f, eval("-5 + 3"), 0f);
         assertEquals(-6f, eval("2 * -3"), 0f);
         assertEquals(5f, eval("3 - -2"), 0f);
+        assertEquals(-1f, eval("-cos(0)"), 1e-4f);
+        assertEquals(1f, eval("max(cos(0), -cos(0))"), 1e-4f);
     }
 
     @Test
@@ -60,6 +62,33 @@ class FormulaComputeTest {
         ns.assign("time", 0.5f);
         float expected = (float) (Math.sin(0.5f * 180f) * 30f);
         assertEquals(expected, f.getResult(), 1e-4f);
+    }
+
+    @Test
+    void functionNamesUseWholeTokenBoundaries() {
+        assertEquals((float) (Math.PI / 6), eval("asin(0.5)"), 1e-4f);
+        assertEquals(30f, eval("deg(asin(0.5))"), 1e-4f);
+    }
+
+    @Test
+    void nestedFunctionsKeepUnaryVariableExpressions() {
+        Namespace ns = newNs();
+        Formula unaryFunctionArgument = Code.decodeFormula("rad(-theta3 - 11.4502)", ns);
+        Formula f = Code.decodeFormula(
+                "deg(asin(max(-1, min(1, (9.712 * sin(rad(-theta3 - 11.4502))"
+                        + " + 3.6 * sin(angle2 + rad(70))) / 27.399968))))",
+                ns
+        );
+        ns.assign("theta3", 25.05f);
+        ns.assign("angle2", (float) (-Math.PI / 2));
+        assertEquals((float) Math.toRadians(-36.5002), unaryFunctionArgument.getResult(), 1e-4f);
+
+        double expected = Math.toDegrees(Math.asin(
+                (9.712 * Math.sin(Math.toRadians(-25.05 - 11.4502))
+                        + 3.6 * Math.sin(-Math.PI / 2 + Math.toRadians(70)))
+                        / 27.399968
+        ));
+        assertEquals((float) expected, f.getResult(), 1e-4f);
     }
 
     @Test
@@ -121,6 +150,9 @@ class FormulaComputeTest {
         ns.assign("query.anim_time", 3f);
         assertEquals(4f, f.getResult(), 0f);
         assertTrue(ns.containsInstance("query.anim_time"));
+
+        Formula negated = Code.decodeFormula("-query.anim_time", ns);
+        assertEquals(-3f, negated.getResult(), 0f);
     }
 
     @Test

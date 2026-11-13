@@ -7,13 +7,14 @@ import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.codec.TransformDefinition;
 import lib.kasuga.rendering.models.uml.dynamic.math.Easing;
 import lib.kasuga.rendering.output.camera.CameraAnimationClip;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 
 /**
- * Data-driven keyframe animation clip: bone, morph, material and named camera tracks on one timeline.
+ * Data-driven animation clip: keyframes, formulas, morphs, material frames and named camera tracks.
  *
  * <p>JSON shape mirrors the FSM's {@code state_machines/*.json} conventions ({@link TransformDefinition}
  * for transforms, angles in degrees, easing referenced by canonical name — see {@link Easing#byName}):
@@ -29,6 +30,10 @@ import java.util.Objects;
  *   ]
  * }
  * }</pre>
+ *
+ * <p>Formula variables are evaluated in declaration order before any formula transform. A formula
+ * transform targets either an entire rigid model part or one bone inside a model instance. Both
+ * target scopes share one expression namespace and one complete transform shape.
  */
 public record AnimationClip(
         Id id,
@@ -36,22 +41,43 @@ public record AnimationClip(
         List<BoneTrack> bones,
         List<MorphTrack> morphs,
         List<FrameTrack> frames,
-        List<FunctionTrack> functions,
-        List<CameraTrack> cameras
+        List<CameraTrack> cameras,
+        List<FormulaVariable> variables,
+        List<FormulaTransformTrack> formulaTransforms
 ) {
 
-    /** Existing model-only constructor remains source-compatible. */
+    /** Creates a clip with no cameras, variables or formula transforms. */
     public AnimationClip(Id id, float durationSeconds, List<BoneTrack> bones, List<MorphTrack> morphs,
-                         List<FrameTrack> frames, List<FunctionTrack> functions) {
-        this(id, durationSeconds, bones, morphs, frames, functions, List.of());
+                         List<FrameTrack> frames) {
+        this(id, durationSeconds, bones, morphs, frames, List.of(), List.of(), List.of());
+    }
+
+    /** Creates a clip without variables or formula transforms. */
+    public AnimationClip(Id id, float durationSeconds, List<BoneTrack> bones, List<MorphTrack> morphs,
+                         List<FrameTrack> frames, List<CameraTrack> cameras) {
+        this(id, durationSeconds, bones, morphs, frames, cameras, List.of(), List.of());
     }
 
     public AnimationClip {
         cameras = List.copyOf(cameras);
+        variables = List.copyOf(variables);
+        formulaTransforms = List.copyOf(formulaTransforms);
         var names = new HashSet<String>();
         for (var camera : cameras) {
             if (!names.add(camera.camera())) throw new IllegalArgumentException("Duplicate camera target: " + camera.camera());
             new CameraAnimationClip(id, durationSeconds, camera.tracks());
+        }
+        names.clear();
+        for (var variable : variables) {
+            if (!names.add(variable.name())) {
+                throw new IllegalArgumentException("Duplicate formula variable: " + variable.name());
+            }
+        }
+        names.clear();
+        for (var track : formulaTransforms) {
+            if (!names.add(track.target().key())) {
+                throw new IllegalArgumentException("Duplicate formula transform target: " + track.target());
+            }
         }
     }
 
@@ -59,7 +85,8 @@ public record AnimationClip(
     public static final Codec<Easing> EASING_CODEC = Easing.CODEC;
 
     private record Data(Id id, float durationSeconds, List<BoneTrack> bones, List<MorphTrack> morphs,
-                        List<FrameTrack> frames, List<FunctionTrack> functions, List<CameraTrack> cameras) {}
+                        List<FrameTrack> frames, List<CameraTrack> cameras,
+                        List<FormulaVariable> variables, List<FormulaTransformTrack> formulaTransforms) {}
 
     public static final Codec<AnimationClip> CODEC = RecordCodecBuilder.<Data>create(instance -> instance.group(
             Id.CODEC.fieldOf("id").forGetter(Data::id),
@@ -67,13 +94,17 @@ public record AnimationClip(
             BoneTrack.CODEC.listOf().optionalFieldOf("bones", List.of()).forGetter(Data::bones),
             MorphTrack.CODEC.listOf().optionalFieldOf("morphs", List.of()).forGetter(Data::morphs),
             FrameTrack.CODEC.listOf().optionalFieldOf("frames", List.of()).forGetter(Data::frames),
-            FunctionTrack.CODEC.listOf().optionalFieldOf("functions", List.of()).forGetter(Data::functions),
-            CameraTrack.CODEC.listOf().optionalFieldOf("cameras", List.of()).forGetter(Data::cameras)
+            CameraTrack.CODEC.listOf().optionalFieldOf("cameras", List.of()).forGetter(Data::cameras),
+            FormulaVariable.CODEC.listOf().optionalFieldOf("variables", List.of()).forGetter(Data::variables),
+            FormulaTransformTrack.CODEC.listOf().optionalFieldOf("formula_transforms", List.of())
+                    .forGetter(Data::formulaTransforms)
     ).apply(instance, Data::new)).comapFlatMap(data -> {
         try { return DataResult.success(new AnimationClip(data.id(), data.durationSeconds(), data.bones(),
-                data.morphs(), data.frames(), data.functions(), data.cameras())); }
+                data.morphs(), data.frames(), data.cameras(), data.variables(),
+                data.formulaTransforms())); }
         catch (IllegalArgumentException failure) { return DataResult.error(failure::getMessage); }
-    }, clip -> new Data(clip.id(), clip.durationSeconds(), clip.bones(), clip.morphs(), clip.frames(), clip.functions(), clip.cameras()));
+    }, clip -> new Data(clip.id(), clip.durationSeconds(), clip.bones(), clip.morphs(), clip.frames(),
+            clip.cameras(), clip.variables(), clip.formulaTransforms()));
 
     /** Camera names are logical binding targets; they need not equal the output view ID. */
     public record CameraTrack(String camera, List<CameraAnimationClip.Track> tracks) {
@@ -151,43 +182,200 @@ public record AnimationClip(
         ).apply(instance, FrameKeyframe::new));
     }
 
-    /** Which {@link TransformDefinition} channel a function track drives. */
-    public enum FunctionChannel { ROTATE, TRANSLATE, SCALE }
+    /**
+     * One reusable formula value evaluated before formula tracks.
+     *
+     * <p>Expressions may read {@code query.*} values and variables declared earlier in the list.
+     * The evaluated value is assigned to {@code name} in the clip namespace.
+     *
+     * @param name       formula variable name, for example {@code qj.angle}
+     * @param expression arithmetic expression evaluated for each logical step
+     */
+    public record FormulaVariable(String name, String expression) {
+
+        /** Validates that both fields are present. */
+        public FormulaVariable {
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("Formula variable name must not be blank");
+            }
+            if (!name.matches(
+                    "[a-z][a-z1-9]*(?:_[a-z1-9]+)*(?:\\.[a-z][a-z1-9]*(?:_[a-z1-9]+)*)*"
+            )) {
+                throw new IllegalArgumentException("Invalid formula variable name: " + name);
+            }
+            if (name.startsWith("query.")) {
+                throw new IllegalArgumentException(
+                        "Formula variable must not replace a query input: " + name
+                );
+            }
+            if (expression == null || expression.isBlank()) {
+                throw new IllegalArgumentException("Formula variable expression must not be blank: " + name);
+            }
+        }
+
+        /** JSON codec for one formula variable. */
+        public static final Codec<FormulaVariable> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Codec.STRING.fieldOf("name").forGetter(FormulaVariable::name),
+                Codec.STRING.fieldOf("expression").forGetter(FormulaVariable::expression)
+        ).apply(instance, FormulaVariable::new));
+    }
 
     /**
-     * One bone's formula-driven track: each axis of the chosen channel is a formula
-     * expression string evaluated against a {@code lib.kasuga.formula} namespace at each committed
-     * logical step. Render frames interpolate the resulting poses; they do not re-evaluate formulas.
-     * A blank axis string means "leave that component at its identity value"
-     * (rotate 0 / translate 0 / scale 1).
+     * Three optional formula expressions for one transform vector.
+     *
+     * <p>A blank axis uses the identity value of its containing channel: zero for translation and
+     * rotation, one for scale.
      */
-    public record FunctionTrack(
-            String bone,
-            FunctionChannel channel,
-            String x,
-            String y,
-            String z
+    public record FormulaVector(String x, String y, String z) {
+
+        /** An all-axis identity expression vector. */
+        public static final FormulaVector EMPTY = new FormulaVector("", "", "");
+
+        /** Normalizes missing fields to blank expressions. */
+        public FormulaVector {
+            x = x == null ? "" : x;
+            y = y == null ? "" : y;
+            z = z == null ? "" : z;
+        }
+
+        /** JSON codec for one optional three-axis formula vector. */
+        public static final Codec<FormulaVector> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Codec.STRING.optionalFieldOf("x", "").forGetter(FormulaVector::x),
+                Codec.STRING.optionalFieldOf("y", "").forGetter(FormulaVector::y),
+                Codec.STRING.optionalFieldOf("z", "").forGetter(FormulaVector::z)
+        ).apply(instance, FormulaVector::new));
+    }
+
+    /**
+     * Formula transform target.
+     *
+     * <p>A target with only {@code part} drives the entire rigid model part. A target with
+     * {@code bone} drives that bone inside the selected part instance. Omitting {@code part} while
+     * setting {@code bone} addresses a bone in the clip's single model instance.
+     *
+     * @param part optional model part or instance ID
+     * @param bone optional bone ID inside that instance
+     */
+    public record FormulaTarget(@Nullable String part, @Nullable String bone) {
+
+        /** Normalizes blank fields and requires at least one target component. */
+        public FormulaTarget {
+            part = blankToNull(part);
+            bone = blankToNull(bone);
+            if (part == null && bone == null) {
+                throw new IllegalArgumentException(
+                        "Formula target must declare part, bone, or both"
+                );
+            }
+        }
+
+        /** Whether this target addresses an entire rigid part. */
+        public boolean isPartRoot() {
+            return part != null && bone == null;
+        }
+
+        /** Whether this target addresses a bone. */
+        public boolean isBone() {
+            return bone != null;
+        }
+
+        private String key() {
+            return (part == null ? "" : part) + '\u0000' + (bone == null ? "" : bone);
+        }
+
+        /** JSON codec for a formula transform target. */
+        public static final Codec<FormulaTarget> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Codec.STRING.optionalFieldOf("part", "").forGetter(target ->
+                        target.part() == null ? "" : target.part()),
+                Codec.STRING.optionalFieldOf("bone", "").forGetter(target ->
+                        target.bone() == null ? "" : target.bone())
+        ).apply(instance, FormulaTarget::new));
+    }
+
+    /**
+     * Complete formula transform.
+     *
+     * <p>Values are composed as translation, intrinsic Z-Y-X rotation in degrees, then scale.
+     * Blank axes use identity values: zero for translation and rotation, one for scale.
+     *
+     * @param translate optional translation expressions
+     * @param rotate    optional rotation expressions in degrees
+     * @param scale     optional scale expressions
+     */
+    public record FormulaTransform(
+            FormulaVector translate,
+            FormulaVector rotate,
+            FormulaVector scale
     ) {
-        public static final Codec<FunctionChannel> CHANNEL_CODEC = Codec.STRING.xmap(
-                name -> switch (name) {
-                    case "rotate" -> FunctionChannel.ROTATE;
-                    case "translate" -> FunctionChannel.TRANSLATE;
-                    case "scale" -> FunctionChannel.SCALE;
-                    default -> FunctionChannel.ROTATE;
-                },
-                channel -> switch (channel) {
-                    case ROTATE -> "rotate";
-                    case TRANSLATE -> "translate";
-                    case SCALE -> "scale";
-                }
+
+        /** An identity formula transform. */
+        public static final FormulaTransform EMPTY = new FormulaTransform(
+                FormulaVector.EMPTY,
+                FormulaVector.EMPTY,
+                FormulaVector.EMPTY
         );
 
-        public static final Codec<FunctionTrack> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-                Codec.STRING.fieldOf("bone").forGetter(FunctionTrack::bone),
-                CHANNEL_CODEC.fieldOf("channel").forGetter(FunctionTrack::channel),
-                Codec.STRING.optionalFieldOf("x", "").forGetter(FunctionTrack::x),
-                Codec.STRING.optionalFieldOf("y", "").forGetter(FunctionTrack::y),
-                Codec.STRING.optionalFieldOf("z", "").forGetter(FunctionTrack::z)
-        ).apply(instance, FunctionTrack::new));
+        /** Normalizes omitted transform vectors. */
+        public FormulaTransform {
+            translate = translate == null ? FormulaVector.EMPTY : translate;
+            rotate = rotate == null ? FormulaVector.EMPTY : rotate;
+            scale = scale == null ? FormulaVector.EMPTY : scale;
+        }
+
+        /** JSON codec for one complete formula transform. */
+        public static final Codec<FormulaTransform> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                FormulaVector.CODEC.optionalFieldOf("translate", FormulaVector.EMPTY)
+                        .forGetter(FormulaTransform::translate),
+                FormulaVector.CODEC.optionalFieldOf("rotate", FormulaVector.EMPTY)
+                        .forGetter(FormulaTransform::rotate),
+                FormulaVector.CODEC.optionalFieldOf("scale", FormulaVector.EMPTY)
+                        .forGetter(FormulaTransform::scale)
+        ).apply(instance, FormulaTransform::new));
+    }
+
+    /**
+     * One formula-driven transform for a rigid part or bone target.
+     *
+     * @param target    rigid part or bone target
+     * @param transform complete local transform expressions
+     */
+    public record FormulaTransformTrack(FormulaTarget target, FormulaTransform transform) {
+
+        /** Validates and normalizes one unified formula track. */
+        public FormulaTransformTrack {
+            target = Objects.requireNonNull(target, "target");
+            transform = transform == null ? FormulaTransform.EMPTY : transform;
+        }
+
+        /** Creates a whole-part transform track. */
+        public static FormulaTransformTrack part(String part, FormulaTransform transform) {
+            return new FormulaTransformTrack(new FormulaTarget(part, null), transform);
+        }
+
+        /** Creates a bone transform track for a single model instance. */
+        public static FormulaTransformTrack bone(String bone, FormulaTransform transform) {
+            return new FormulaTransformTrack(new FormulaTarget(null, bone), transform);
+        }
+
+        /** Creates a bone transform track scoped to one model part instance. */
+        public static FormulaTransformTrack bone(
+                String part,
+                String bone,
+                FormulaTransform transform
+        ) {
+            return new FormulaTransformTrack(new FormulaTarget(part, bone), transform);
+        }
+
+        /** JSON codec for one unified formula transform track. */
+        public static final Codec<FormulaTransformTrack> CODEC =
+                RecordCodecBuilder.create(instance -> instance.group(
+                        FormulaTarget.CODEC.fieldOf("target").forGetter(FormulaTransformTrack::target),
+                        FormulaTransform.CODEC.optionalFieldOf("transform", FormulaTransform.EMPTY)
+                                .forGetter(FormulaTransformTrack::transform)
+                ).apply(instance, FormulaTransformTrack::new));
+    }
+
+    private static @Nullable String blankToNull(@Nullable String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

@@ -12,6 +12,7 @@ class KasugaResourceCompilerPlugin implements Plugin<Project> {
         }
         var compileResource = project.tasks.register('compileResources', JavaExec) {
             String inDir = "$project.projectDir/resources", outDir = "$project.projectDir/src/compiled/resources";
+            File outputDirectory = project.file(outDir);
 
             inputs.dir(inDir)
                     .withPropertyName("sources");
@@ -27,6 +28,10 @@ class KasugaResourceCompilerPlugin implements Plugin<Project> {
             javaLauncher.set(project.javaToolchains.launcherFor {
                 languageVersion = project.java.toolchain.languageVersion
             })
+
+            doFirst {
+                outputDirectory.deleteDir()
+            }
         }
 
         project.tasks.getByName("processResources").dependsOn(compileResource);

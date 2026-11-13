@@ -9,10 +9,8 @@ import lib.kasuga.rendering.models.uml.dynamic.math.Easing;
 import lib.kasuga.rendering.models.uml.dynamic.math.Lerp;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import org.jetbrains.annotations.Nullable;
-import org.joml.Vector3f;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * {@link AnimationSampler} for {@link AnimationClip}: keyframe interpolation for bones, morphs and
@@ -42,13 +40,21 @@ public final class ClipSampler implements AnimationSampler<AnimationClip> {
     }
 
     /**
-     * Samples the clip; when {@code namespace} is non-null, formula {@link AnimationClip.FunctionTrack}s
-     * are evaluated against it (assign the clip's query.* variables into this namespace before calling).
-     * The formula branch evaluates each non-blank axis via {@code namespace.decodeFormula(axis).getResult()}.
-     * Blank axes fall back to the identity value for the channel (rotate 0 / translate 0 / scale 1).
+     * Samples the clip; when {@code namespace} is non-null, the clip's reusable variables and
+     * bone-targeted formula transforms are evaluated against it. Assign the clip's {@code query.*}
+     * inputs into this namespace before calling. Variables are evaluated in declaration order.
+     * Formula transforms that name a {@code part} are intentionally excluded from this single-model
+     * pose; use {@link FormulaTransformSampler} for part and multi-instance bone transforms.
+     *
+     * <p>The formula branch evaluates each non-blank axis via
+     * {@code namespace.decodeFormula(axis).getResult()}. Blank axes fall back to the identity value
+     * for the channel (rotate 0 / translate 0 / scale 1).
      */
     public Pose sample(AnimationClip data, float time, @Nullable Namespace namespace) {
         Pose.Builder builder = new Pose.Builder();
+        if (namespace != null) {
+            evaluateVariables(data.variables(), namespace);
+        }
         for (AnimationClip.BoneTrack track : data.bones()) {
             Transform transform = sampleBone(track.keyframes(), time);
             if (transform != null) {
@@ -62,29 +68,45 @@ public final class ClipSampler implements AnimationSampler<AnimationClip> {
             builder.frame(track.material(), sampleFrame(track.keyframes(), time));
         }
         if (namespace != null) {
-            for (AnimationClip.FunctionTrack track : data.functions()) {
-                TransformDefinition def = sampleFunction(track, namespace);
-                if (def != null) {
-                    builder.bone(track.bone(), toTransform(def), ApplyMode.REPLACE);
+            for (AnimationClip.FormulaTransformTrack track : data.formulaTransforms()) {
+                AnimationClip.FormulaTarget target = track.target();
+                if (!target.isBone() || target.part() != null) {
+                    continue;
                 }
+                builder.bone(
+                        target.bone(),
+                        sampleTransform(track.transform(), namespace),
+                        ApplyMode.REPLACE
+                );
             }
         }
         return builder.build();
     }
 
-    private static TransformDefinition sampleFunction(AnimationClip.FunctionTrack track, Namespace ns) {
-        // The identity fallback is per-channel: a blank axis (or a throwing formula) leaves that component
-        // untouched — 0 for rotate/translate, 1 for scale. Mirrors TransformDefinition.CODEC's scale default.
-        float identity = track.channel() == AnimationClip.FunctionChannel.SCALE ? 1f : 0f;
-        float rx = eval(track.x(), identity, ns);
-        float ry = eval(track.y(), identity, ns);
-        float rz = eval(track.z(), identity, ns);
-        switch (track.channel()) {
-            case ROTATE -> { return new TransformDefinition(Optional.empty(), Optional.of(new Vector3f(rx, ry, rz)), Optional.empty()); }
-            case TRANSLATE -> { return new TransformDefinition(Optional.of(new Vector3f(rx, ry, rz)), Optional.empty(), Optional.empty()); }
-            case SCALE -> { return new TransformDefinition(Optional.empty(), Optional.empty(), Optional.of(new Vector3f(rx, ry, rz))); }
+    private static void evaluateVariables(
+            List<AnimationClip.FormulaVariable> variables,
+            Namespace namespace
+    ) {
+        for (AnimationClip.FormulaVariable variable : variables) {
+            float value = eval(variable.expression(), 0f, namespace);
+            namespace.assign(variable.name(), value);
         }
-        return null;
+    }
+
+    private static Transform sampleTransform(
+            AnimationClip.FormulaTransform transform,
+            Namespace namespace
+    ) {
+        float tx = eval(transform.translate().x(), 0f, namespace);
+        float ty = eval(transform.translate().y(), 0f, namespace);
+        float tz = eval(transform.translate().z(), 0f, namespace);
+        float rx = eval(transform.rotate().x(), 0f, namespace);
+        float ry = eval(transform.rotate().y(), 0f, namespace);
+        float rz = eval(transform.rotate().z(), 0f, namespace);
+        float sx = eval(transform.scale().x(), 1f, namespace);
+        float sy = eval(transform.scale().y(), 1f, namespace);
+        float sz = eval(transform.scale().z(), 1f, namespace);
+        return FormulaTransforms.build(tx, ty, tz, rx, ry, rz, sx, sy, sz);
     }
 
     private static float eval(String axis, float fallback, Namespace ns) {

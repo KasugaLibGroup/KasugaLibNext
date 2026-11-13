@@ -1,6 +1,8 @@
 package lib.kasuga.rendering.models.mc.proxies;
 
 import com.mojang.serialization.Codec;
+import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationClip;
+import lib.kasuga.rendering.models.uml.dynamic.animation.FormulaTransformSampler;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.state.ParameterSpec;
 import lib.kasuga.rendering.models.uml.math.Transform;
@@ -196,6 +198,47 @@ class ModelPartsTest {
 
         assertEquals(ModelPart.TimeDomain.TICK, tick.timeDomain());
         assertEquals(ModelPart.TimeDomain.FRAME, frame.timeDomain());
+    }
+
+    @Test
+    void formulaFactoriesSampleOnePartInBothTimeDomains() {
+        AnimationClip clip = new AnimationClip(
+                Id.fromNamespaceAndPath("kasuga_lib", "formula_motion"),
+                1f,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(AnimationClip.FormulaTransformTrack.part(
+                        "part_06",
+                        new AnimationClip.FormulaTransform(
+                                new AnimationClip.FormulaVector("query.wheel_angle", "", ""),
+                                AnimationClip.FormulaVector.EMPTY,
+                                AnimationClip.FormulaVector.EMPTY
+                        )
+                ))
+        );
+        FormulaTransformSampler sampler = new FormulaTransformSampler(clip);
+
+        ModelPart.Motion tick = ModelPart.tickFormula(
+                sampler,
+                "part_06",
+                input -> input.assignQuery("wheel_angle", 12f)
+        );
+        ModelPart.Motion frame = ModelPart.frameFormula(
+                sampler,
+                "part_06",
+                input -> input.assignQuery("wheel_angle", 24f)
+        );
+
+        Transform tickTransform = ((ModelPart.TransformMotion.Tick) tick).source().atTick(null);
+        Transform frameTransform = ((ModelPart.TransformMotion.Frame) frame).source().current();
+        assertPosition(tickTransform, 12f, 0f, 0f);
+        assertPosition(frameTransform, 24f, 0f, 0f);
+        assertThrows(IllegalArgumentException.class,
+                () -> ModelPart.tickFormula(sampler, "missing", ignored -> {
+                }));
     }
 
     @Test

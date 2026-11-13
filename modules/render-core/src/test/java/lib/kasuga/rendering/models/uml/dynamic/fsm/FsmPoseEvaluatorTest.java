@@ -162,10 +162,16 @@ class FsmPoseEvaluatorTest {
                 Id.fromNamespaceAndPath("kasuga_lib", "logical_formula"),
                 1f,
                 List.of(), List.of(), List.of(),
-                List.of(new AnimationClip.FunctionTrack(
+                List.of(),
+                List.of(),
+                List.of(AnimationClip.FormulaTransformTrack.bone(
                         "formula",
-                        AnimationClip.FunctionChannel.TRANSLATE,
-                        "query.angle", "", "")));
+                        new AnimationClip.FormulaTransform(
+                                new AnimationClip.FormulaVector("query.angle", "", ""),
+                                AnimationClip.FormulaVector.EMPTY,
+                                AnimationClip.FormulaVector.EMPTY
+                        )
+                )));
         StateMachine<Object> machine = StateMachine.<Object>builder(new Object())
                 .layer("loco", layer -> {
                     State<Object> state = layer.state("state")

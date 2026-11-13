@@ -141,4 +141,58 @@ class AnimationClipLoaderTest {
         assertEquals(1, decoded.clips().size());
         assertEquals(1.5f, decoded.clips().get(0).durationSeconds(), 1e-4f);
     }
+
+    @Test
+    void decodesFormulaVariablesAndUnifiedTransformTracks() {
+        AnimationClipLoader.DecodedFile decoded = decode(clipsFile("""
+                {
+                  "id": "kasuga_lib:formula_transforms",
+                  "variables": [
+                    { "name": "derived.angle", "expression": "rad(query.wheel_angle)" }
+                  ],
+                  "formula_transforms": [
+                    {
+                      "target": { "part": "part_06" },
+                      "transform": {
+                        "translate": { "z": "sin(derived.angle)" },
+                        "rotate": { "x": "-query.wheel_angle", "y": "180" }
+                      }
+                    },
+                    {
+                      "target": { "bone": "root" },
+                      "transform": { "rotate": { "y": "query.spin" } }
+                    }
+                  ]
+                }
+                """));
+
+        assertEquals(List.of(), decoded.errors());
+        AnimationClip clip = decoded.clips().getFirst();
+        assertEquals("derived.angle", clip.variables().getFirst().name());
+        assertEquals("part_06", clip.formulaTransforms().getFirst().target().part());
+        assertEquals("sin(derived.angle)",
+                clip.formulaTransforms().getFirst().transform().translate().z());
+        assertEquals("root", clip.formulaTransforms().get(1).target().bone());
+    }
+
+    @Test
+    void rejectsRemovedFormulaTrackKeys() {
+        AnimationClipLoader.DecodedFile functions = decode(clipsFile("""
+                {
+                  "id": "kasuga_lib:legacy_functions",
+                  "functions": []
+                }
+                """));
+        AnimationClipLoader.DecodedFile parts = decode(clipsFile("""
+                {
+                  "id": "kasuga_lib:legacy_parts",
+                  "formula_parts": []
+                }
+                """));
+
+        assertEquals(List.of(), functions.clips());
+        assertEquals(List.of(), parts.clips());
+        assertTrue(functions.errors().getFirst().contains("formula_transforms"));
+        assertTrue(parts.errors().getFirst().contains("formula_transforms"));
+    }
 }

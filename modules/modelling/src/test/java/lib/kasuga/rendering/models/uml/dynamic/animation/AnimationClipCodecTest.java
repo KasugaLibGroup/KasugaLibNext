@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** AnimationClip CODEC round-trip and JSON decoding tests (moved off the deleted AnimationClipPoseDriverTest). */
 class AnimationClipCodecTest {
@@ -62,5 +64,102 @@ class AnimationClipCodecTest {
         assertEquals(2, clip.bones().get(0).keyframes().size());
         assertEquals("ease_in_out_cubic", AnimationClip.EASING_CODEC.encodeStart(JsonOps.INSTANCE,
                 clip.bones().get(0).keyframes().get(1).easing()).result().orElseThrow().getAsString());
+    }
+
+    @Test
+    void codecDecodesFormulaVariablesAndUnifiedTransforms() {
+        com.google.gson.JsonElement json = com.google.gson.JsonParser.parseString("""
+                {
+                  "id": "kasuga_lib:formula_transforms",
+                  "variables": [
+                    { "name": "derived.angle", "expression": "rad(query.wheel_angle)" }
+                  ],
+                  "formula_transforms": [
+                    {
+                      "target": { "part": "crank" },
+                      "transform": {
+                        "translate": { "z": "sin(derived.angle)" },
+                        "rotate": { "x": "-query.wheel_angle", "y": "180" },
+                        "scale": { "y": "1.5" }
+                      }
+                    },
+                    {
+                      "target": { "part": "crank", "bone": "pin" },
+                      "transform": { "rotate": { "z": "query.pin_angle" } }
+                    }
+                  ]
+                }
+                """);
+        AnimationClip clip = AnimationClip.CODEC.decode(JsonOps.INSTANCE, json).resultOrPartial(error -> {
+            throw new AssertionError(error);
+        }).orElseThrow().getFirst();
+
+        assertEquals(1, clip.variables().size());
+        assertEquals("derived.angle", clip.variables().getFirst().name());
+        assertEquals(2, clip.formulaTransforms().size());
+        AnimationClip.FormulaTransformTrack partTrack = clip.formulaTransforms().getFirst();
+        assertEquals("crank", partTrack.target().part());
+        assertNull(partTrack.target().bone());
+        assertEquals("sin(derived.angle)", partTrack.transform().translate().z());
+        assertEquals("180", partTrack.transform().rotate().y());
+        assertEquals("1.5", partTrack.transform().scale().y());
+        AnimationClip.FormulaTransformTrack boneTrack = clip.formulaTransforms().get(1);
+        assertEquals("crank", boneTrack.target().part());
+        assertEquals("pin", boneTrack.target().bone());
+        assertEquals("query.pin_angle", boneTrack.transform().rotate().z());
+    }
+
+    @Test
+    void formulaTransformClipRoundTrips() {
+        AnimationClip original = new AnimationClip(
+                Id.parse("kasuga_lib:formula_transform_round_trip"),
+                1f,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(new AnimationClip.FormulaVariable(
+                        "mechanism.angle",
+                        "rad(query.wheel_angle)"
+                )),
+                List.of(AnimationClip.FormulaTransformTrack.part(
+                        "crank",
+                        new AnimationClip.FormulaTransform(
+                                new AnimationClip.FormulaVector("", "", "sin(mechanism.angle)"),
+                                new AnimationClip.FormulaVector("-query.wheel_angle", "180", ""),
+                                AnimationClip.FormulaVector.EMPTY
+                        )
+                ))
+        );
+
+        AnimationClip decoded = AnimationClip.CODEC.decode(
+                        JsonOps.INSTANCE,
+                        AnimationClip.CODEC.encodeStart(JsonOps.INSTANCE, original)
+                                .result()
+                                .orElseThrow()
+                )
+                .resultOrPartial(error -> {
+                    throw new AssertionError(error);
+                })
+                .orElseThrow()
+                .getFirst();
+
+        assertEquals(original, decoded);
+    }
+
+    @Test
+    void codecRejectsDuplicateFormulaTargets() {
+        com.google.gson.JsonElement json = com.google.gson.JsonParser.parseString("""
+                {
+                  "id": "kasuga_lib:duplicate_targets",
+                  "formula_transforms": [
+                    { "target": { "part": "crank" } },
+                    { "target": { "part": "crank" } }
+                  ]
+                }
+                """);
+        var result = AnimationClip.CODEC.decode(JsonOps.INSTANCE, json);
+
+        assertTrue(result.error().isPresent());
     }
 }
