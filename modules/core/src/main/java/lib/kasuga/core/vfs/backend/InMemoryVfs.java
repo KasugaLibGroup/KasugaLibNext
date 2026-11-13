@@ -11,6 +11,7 @@ import java.nio.file.NoSuchFileException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
@@ -28,7 +29,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
     private final boolean readOnly;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final VfsEventDispatcher dispatcher = new VfsEventDispatcher();
-    private NavigableMap<VfsPath, MemoryNode> nodes = new TreeMap<>();
+    private final PathIndex<MemoryNode> nodes = new PathIndex<>();
     private volatile boolean closed = false;
 
     public InMemoryVfs(String sourceId) {
@@ -76,7 +77,13 @@ public final class InMemoryVfs implements VirtualFileSystem {
 
     @Override
     public InputStream openRead(VfsPath path) throws IOException {
-        return new ByteArrayInputStream(readBytes(path));
+        lock.readLock().lock();
+        try {
+            MemoryNode node = nodes.get(path);
+            if (node == null) throw new NoSuchFileException(path.toString());
+            if (node.kind != VfsNodeKind.FILE) throw new VfsException("Cannot open directory for reading: " + path);
+            return node.content.open();
+        } finally { lock.readLock().unlock(); }
     }
 
     @Override
@@ -91,7 +98,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
             if (node.kind != VfsNodeKind.FILE) {
                 throw new VfsException("Cannot open directory for reading: " + path);
             }
-            return Arrays.copyOf(node.data, node.data.length);
+            return node.content.copy();
         } finally {
             lock.readLock().unlock();
         }
@@ -106,14 +113,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
             if (dirNode == null || dirNode.kind != VfsNodeKind.DIRECTORY) {
                 throw new NoSuchFileException(dir.toString());
             }
-            int expectedDepth = dir.segmentCount() + 1;
-            TreeSet<String> children = new TreeSet<>();
-            for (VfsPath candidate : nodes.navigableKeySet()) {
-                if (candidate.segmentCount() == expectedDepth && candidate.startsWith(dir)) {
-                    children.add(candidate.fileName());
-                }
-            }
-            return List.copyOf(children);
+            return nodes.children(dir);
         } finally {
             lock.readLock().unlock();
         }
@@ -129,10 +129,8 @@ public final class InMemoryVfs implements VirtualFileSystem {
                 return List.of();
             }
             List<VfsPath> result = new ArrayList<>();
-            for (Map.Entry<VfsPath, MemoryNode> entry : nodes.entrySet()) {
-                if (entry.getValue().kind == VfsNodeKind.FILE && entry.getKey().startsWith(prefix)) {
-                    result.add(entry.getKey());
-                }
+            for (var entry : nodes.subtree(prefix)) {
+                if (entry.value().kind == VfsNodeKind.FILE) result.add(entry.path());
             }
             return List.copyOf(result);
         } finally {
@@ -156,6 +154,14 @@ public final class InMemoryVfs implements VirtualFileSystem {
         dispatcher.dispatch(sourceId, VfsChangeEvent.ChangeOrigin.INTERNAL_WRITE, changes);
     }
 
+    private void writeContent(VfsPath path, MemoryContent content) throws IOException {
+        List<VfsChangeEvent.EntryChange> changes;
+        lock.writeLock().lock();
+        try { ensureNotClosed(); changes = applyPutContent(nodes, path, content); }
+        finally { lock.writeLock().unlock(); }
+        dispatcher.dispatch(sourceId, VfsChangeEvent.ChangeOrigin.INTERNAL_WRITE, changes);
+    }
+
     @Override
     public OutputStream openWrite(VfsPath path) throws IOException {
         Objects.requireNonNull(path, "path");
@@ -164,7 +170,14 @@ public final class InMemoryVfs implements VirtualFileSystem {
         if (path.isRoot()) {
             throw new VfsException("Cannot open root path for writing");
         }
-        return VfsSupport.bufferedAtomicOutputStream(bytes -> writeBytes(path, bytes));
+        return new MemoryContent.Builder() {
+            private boolean closed;
+            @Override public void close() throws IOException {
+                if (closed) return;
+                closed = true;
+                writeContent(path, finish());
+            }
+        };
     }
 
     @Override
@@ -253,10 +266,15 @@ public final class InMemoryVfs implements VirtualFileSystem {
     }
 
     private static List<VfsChangeEvent.EntryChange> applyPutBytes(
-            NavigableMap<VfsPath, MemoryNode> targetMap,
+            PathIndex<MemoryNode> targetMap,
             VfsPath path,
             byte[] content
     ) throws IOException {
+        return applyPutContent(targetMap, path, MemoryContent.copyOf(content));
+    }
+
+    private static List<VfsChangeEvent.EntryChange> applyPutContent(PathIndex<MemoryNode> targetMap, VfsPath path,
+                                                                  MemoryContent content) throws IOException {
         if (path.isRoot()) {
             throw new VfsException("Cannot write file to VFS root");
         }
@@ -269,8 +287,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
         if (parent != null && !parent.isRoot()) {
             changes.addAll(applyMkdirs(targetMap, parent));
         }
-        byte[] copy = Arrays.copyOf(content, content.length);
-        MemoryNode node = MemoryNode.file(copy, System.currentTimeMillis());
+        MemoryNode node = MemoryNode.file(content, System.currentTimeMillis());
         targetMap.put(path, node);
         changes.add(new VfsChangeEvent.EntryChange(
                 existing == null ? VfsChangeEvent.ChangeKind.CREATED : VfsChangeEvent.ChangeKind.MODIFIED,
@@ -282,7 +299,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
     }
 
     private static List<VfsChangeEvent.EntryChange> applyMkdirs(
-            NavigableMap<VfsPath, MemoryNode> targetMap,
+            PathIndex<MemoryNode> targetMap,
             VfsPath dir
     ) throws IOException {
         if (dir.isRoot()) {
@@ -312,7 +329,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
     }
 
     private static List<VfsChangeEvent.EntryChange> applyDelete(
-            NavigableMap<VfsPath, MemoryNode> targetMap,
+            PathIndex<MemoryNode> targetMap,
             VfsPath path
     ) throws IOException {
         if (path.isRoot()) {
@@ -322,12 +339,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
         if (existing == null) {
             return List.of();
         }
-        List<VfsPath> toRemove = new ArrayList<>();
-        for (VfsPath candidate : targetMap.tailMap(path, true).navigableKeySet()) {
-            if (candidate.startsWith(path)) {
-                toRemove.add(candidate);
-            }
-        }
+        List<VfsPath> toRemove = targetMap.subtree(path).stream().map(PathIndex.Entry::path).toList();
         List<VfsChangeEvent.EntryChange> changes = new ArrayList<>(toRemove.size());
         for (int i = toRemove.size() - 1; i >= 0; i--) {
             VfsPath p = toRemove.get(i);
@@ -343,7 +355,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
     }
 
     private static List<VfsChangeEvent.EntryChange> applyMove(
-            NavigableMap<VfsPath, MemoryNode> targetMap,
+            PathIndex<MemoryNode> targetMap,
             VfsPath from,
             VfsPath to
     ) throws IOException {
@@ -364,13 +376,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
             throw new VfsException("Cannot move directory into its own descendant: " + from + " -> " + to);
         }
 
-        List<VfsPath> subtree = new ArrayList<>();
-        for (VfsPath candidate : targetMap.tailMap(from, true).navigableKeySet()) {
-            if (candidate.startsWith(from)) {
-                subtree.add(candidate);
-            }
-        }
-
+        List<VfsPath> subtree = targetMap.subtree(from).stream().map(PathIndex.Entry::path).toList();
         List<VfsChangeEvent.EntryChange> changes = new ArrayList<>();
         VfsPath destParent = to.parent();
         if (destParent != null && !destParent.isRoot()) {
@@ -398,6 +404,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
 
     private sealed interface StagedOp {
         record PutBytes(VfsPath path, byte[] bytes) implements StagedOp {}
+        record PutStream(VfsPath path, VfsWriteTransaction.ContentSource source) implements StagedOp {}
         record Mkdirs(VfsPath dir) implements StagedOp {}
         record Delete(VfsPath path) implements StagedOp {}
         record Move(VfsPath from, VfsPath to) implements StagedOp {}
@@ -408,12 +415,21 @@ public final class InMemoryVfs implements VirtualFileSystem {
         private boolean committed = false;
         private boolean rolledBack = false;
         private VfsPreparedTransaction reservation;
+        private final Map<StagedOp, MemoryContent> contents = new IdentityHashMap<>();
 
         @Override
         public VfsWriteTransaction putBytes(VfsPath path, byte[] content) {
             ensureActive();
             ops.add(new StagedOp.PutBytes(Objects.requireNonNull(path, "path"), Arrays.copyOf(content, content.length)));
             return this;
+        }
+
+        @Override
+        public Object coordinationKey() { return InMemoryVfs.this; }
+
+        @Override
+        public VfsWriteTransaction putStream(VfsPath path, ContentSource source) {
+            ensureActive(); ops.add(new StagedOp.PutStream(Objects.requireNonNull(path), Objects.requireNonNull(source))); return this;
         }
 
         @Override
@@ -443,27 +459,44 @@ public final class InMemoryVfs implements VirtualFileSystem {
         }
 
         @Override
+        public void stage() throws IOException {
+            ensureActive(); ensureWritable(); ensureNotClosed();
+            for (StagedOp op : ops) {
+                if (contents.containsKey(op)) continue;
+                if (op instanceof StagedOp.PutBytes put) contents.put(op, MemoryContent.owned(put.bytes()));
+                else if (op instanceof StagedOp.PutStream put) {
+                    try (InputStream in = put.source().open()) { contents.put(op, MemoryContent.read(in)); }
+                }
+            }
+        }
+
+        @Override
         public VfsPreparedTransaction prepare() throws IOException {
-            ensureActive();
-            ensureWritable();
+            stage();
             List<VfsChangeEvent.EntryChange> allChanges = new ArrayList<>();
             lock.writeLock().lock();
             try {
                 ensureNotClosed();
-                // Replay onto isolated copy so partial failure leaves live state intact
-                NavigableMap<VfsPath, MemoryNode> workingCopy = new TreeMap<>(nodes);
+                TransactionTree view = new TransactionTree(InMemoryVfs.this);
+                List<VfsPath> affected = new ArrayList<>();
                 for (StagedOp op : ops) {
                     if (op instanceof StagedOp.PutBytes put) {
-                        allChanges.addAll(applyPutBytes(workingCopy, put.path(), put.bytes()));
-                    } else if (op instanceof StagedOp.Mkdirs mk) {
-                        allChanges.addAll(applyMkdirs(workingCopy, mk.dir()));
-                    } else if (op instanceof StagedOp.Delete del) {
-                        allChanges.addAll(applyDelete(workingCopy, del.path()));
-                    } else if (op instanceof StagedOp.Move mv) {
-                        allChanges.addAll(applyMove(workingCopy, mv.from(), mv.to()));
-                    }
+                        view.put(put.path(), put.bytes()); affected.add(put.path());
+                    } else if (op instanceof StagedOp.PutStream put) {
+                        view.putStream(put.path(), put.source()); affected.add(put.path());
+                    } else if (op instanceof StagedOp.Mkdirs mk) { view.mkdirs(mk.dir()); affected.add(mk.dir()); }
+                    else if (op instanceof StagedOp.Delete del) { view.delete(del.path()); affected.add(del.path()); }
+                    else if (op instanceof StagedOp.Move mv) { view.move(mv.from(), mv.to()); affected.add(mv.from()); affected.add(mv.to()); }
                 }
-                NavigableMap<VfsPath, MemoryNode> original = nodes;
+                List<VfsPath> roots = new ArrayList<>();
+                for (VfsPath path : affected) {
+                    VfsPath cursor = VfsPath.ROOT;
+                    for (String part : path.segments()) { cursor = cursor.resolve(part); if (!nodes.containsKey(cursor)) break; }
+                    if (!cursor.isRoot()) roots.add(cursor);
+                }
+                List<VfsPath> undoRoots = PathIndex.minimalRoots(roots);
+                List<PathIndex.Entry<MemoryNode>> originals = new ArrayList<>();
+                for (VfsPath path : undoRoots) originals.addAll(nodes.subtree(path));
                 reservation = new VfsPreparedTransaction() {
                     private boolean applied;
                     private boolean finished;
@@ -473,16 +506,26 @@ public final class InMemoryVfs implements VirtualFileSystem {
                     public void apply() throws IOException {
                         if (finished || applied) throw new IllegalStateException("Participant already applied or finished");
                         ensureNotClosed();
-                        nodes = workingCopy;
                         applied = true;
+                        for (StagedOp op : ops) {
+                            if (op instanceof StagedOp.PutBytes put) allChanges.addAll(applyPutContent(nodes, put.path(), contents.get(op)));
+                            else if (op instanceof StagedOp.PutStream put) allChanges.addAll(applyPutContent(nodes, put.path(), contents.get(op)));
+                            else if (op instanceof StagedOp.Mkdirs mk) allChanges.addAll(applyMkdirs(nodes, mk.dir()));
+                            else if (op instanceof StagedOp.Delete del) allChanges.addAll(applyDelete(nodes, del.path()));
+                            else if (op instanceof StagedOp.Move mv) allChanges.addAll(applyMove(nodes, mv.from(), mv.to()));
+                        }
                     }
 
                     @Override
                     public void rollback() {
                         if (finished) return;
-                        if (applied) nodes = original;
+                        if (applied) {
+                            for (VfsPath path : undoRoots) nodes.removeSubtree(path);
+                            nodes.putAll(originals);
+                        }
                         rolledBack = true;
                         finished = true;
+                        contents.clear(); ops.clear(); originals.clear();
                         lock.writeLock().unlock();
                     }
 
@@ -491,6 +534,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
                         if (finished || !applied) throw new IllegalStateException("Participant was not applied");
                         committed = true;
                         finished = true;
+                        contents.clear(); ops.clear(); originals.clear();
                         lock.writeLock().unlock();
                     }
 
@@ -520,7 +564,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
                     catch (IOException e) { throw new java.io.UncheckedIOException(e); }
                 }
                 rolledBack = true;
-                ops.clear();
+                contents.clear(); ops.clear();
             }
         }
 
@@ -538,29 +582,29 @@ public final class InMemoryVfs implements VirtualFileSystem {
 
     private static final class MemoryNode {
         final VfsNodeKind kind;
-        final byte[] data;
+        final MemoryContent content;
         final long lastModifiedMillis;
         final Optional<String> sha256;
 
-        private MemoryNode(VfsNodeKind kind, byte[] data, long lastModifiedMillis, Optional<String> sha256) {
+        private MemoryNode(VfsNodeKind kind, MemoryContent content, long lastModifiedMillis, Optional<String> sha256) {
             this.kind = kind;
-            this.data = data;
+            this.content = content;
             this.lastModifiedMillis = lastModifiedMillis;
             this.sha256 = sha256;
         }
 
         static MemoryNode directory(long now) {
-            return new MemoryNode(VfsNodeKind.DIRECTORY, new byte[0], now, Optional.empty());
+            return new MemoryNode(VfsNodeKind.DIRECTORY, null, now, Optional.empty());
         }
 
-        static MemoryNode file(byte[] bytes, long now) {
-            return new MemoryNode(VfsNodeKind.FILE, bytes, now, Optional.of(VfsSupport.sha256Hex(bytes)));
+        static MemoryNode file(MemoryContent content, long now) {
+            return new MemoryNode(VfsNodeKind.FILE, content, now, Optional.of(content.hash));
         }
 
         VfsNodeStat toStat(VfsPath path) {
             return kind == VfsNodeKind.DIRECTORY
                     ? VfsNodeStat.directory(path, lastModifiedMillis)
-                    : VfsNodeStat.file(path, data.length, lastModifiedMillis, sha256);
+                    : VfsNodeStat.file(path, content.size, lastModifiedMillis, sha256);
         }
     }
 }

@@ -18,6 +18,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeSet;
 import java.util.zip.ZipEntry;
+import java.util.NavigableMap;
+import java.util.TreeMap;
+import java.util.WeakHashMap;
 import java.util.zip.ZipFile;
 
 /**
@@ -32,9 +35,12 @@ public final class ZipVfs implements VirtualFileSystem {
     private final ZipFile zipFile;
     private final boolean closeZipOnClose;
     private final VfsEventDispatcher dispatcher = new VfsEventDispatcher();
-    private final Map<VfsPath, ZipNodeMeta> nodes = new HashMap<>();
-    private final Map<VfsPath, TreeSet<String>> dirChildren = new HashMap<>();
-    private final TreeSet<VfsPath> sortedFiles = new TreeSet<>();
+    private static final Map<ZipFile, Index> OPEN_ARCHIVE_INDEXES = new WeakHashMap<>();
+    private record Index(Map<VfsPath, ZipNodeMeta> nodes, Map<VfsPath, List<String>> children,
+                         NavigableMap<String, VfsPath> files) {}
+    private final Map<VfsPath, ZipNodeMeta> nodes;
+    private final Map<VfsPath, List<String>> dirChildren;
+    private final NavigableMap<String, VfsPath> sortedFiles;
     private volatile boolean closed = false;
 
     public ZipVfs(String sourceId, Path archivePath) throws IOException {
@@ -45,58 +51,55 @@ public final class ZipVfs implements VirtualFileSystem {
         this.sourceId = Objects.requireNonNull(sourceId, "sourceId");
         this.zipFile = Objects.requireNonNull(zipFile, "zipFile");
         this.closeZipOnClose = closeZipOnClose;
-        indexArchive();
+        zipFile.size(); // A cached index must not make an already closed handle appear usable.
+        Index index;
+        synchronized (zipFile) {
+            synchronized (OPEN_ARCHIVE_INDEXES) { index = OPEN_ARCHIVE_INDEXES.get(zipFile); }
+            if (index == null) {
+                index = indexArchive(zipFile, sourceId);
+                synchronized (OPEN_ARCHIVE_INDEXES) { OPEN_ARCHIVE_INDEXES.put(zipFile, index); }
+            }
+        }
+        this.nodes = index.nodes(); this.dirChildren = index.children(); this.sortedFiles = index.files();
     }
 
-    private void indexArchive() {
+    private static Index indexArchive(ZipFile zipFile, String sourceId) {
+        Map<VfsPath, ZipNodeMeta> nodes = new HashMap<>();
+        Map<VfsPath, TreeSet<String>> children = new HashMap<>();
+        NavigableMap<String, VfsPath> files = new TreeMap<>();
+        Map<String, VfsPath> parents = new HashMap<>();
+        parents.put("", VfsPath.ROOT);
         nodes.put(VfsPath.ROOT, ZipNodeMeta.directory(0L));
-        dirChildren.put(VfsPath.ROOT, new TreeSet<>());
-
+        children.put(VfsPath.ROOT, new TreeSet<>());
         Enumeration<? extends ZipEntry> entries = zipFile.entries();
         while (entries.hasMoreElements()) {
             ZipEntry entry = entries.nextElement();
-            String rawName = entry.getName();
-            if (rawName == null || rawName.isEmpty() || "/".equals(rawName)) {
-                continue;
-            }
-            boolean isDir = entry.isDirectory() || rawName.endsWith("/");
+            String raw = entry.getName();
+            if (raw == null || raw.isEmpty() || raw.equals("/")) continue;
             VfsPath path;
-            try {
-                path = VfsPath.of(rawName);
-            } catch (VfsInvalidPathException invalid) {
-                LOGGER.warn("Skipping unsafe ZIP entry '{}' in '{}': {}", rawName, sourceId, invalid.getMessage());
-                continue;
+            try { path = VfsPath.of(raw); }
+            catch (VfsInvalidPathException invalid) { LOGGER.warn("Skipping unsafe ZIP entry '{}' in '{}': {}", raw, sourceId, invalid.getMessage()); continue; }
+            if (path.isRoot()) continue;
+            long modified = Math.max(0L, entry.getTime());
+            VfsPath parent = VfsPath.ROOT;
+            String normalized = path.asString(); int end = 0;
+            for (int i = 0; i < path.segmentCount(); i++) {
+                String segment = path.segments().get(i);
+                children.computeIfAbsent(parent, ignored -> new TreeSet<>()).add(segment);
+                if (i == path.segmentCount() - 1) break;
+                end += segment.length();
+                String key = normalized.substring(0, end);
+                parent = parents.computeIfAbsent(key, VfsPath::of); end++;
+                nodes.putIfAbsent(parent, ZipNodeMeta.directory(modified));
             }
-            if (path.isRoot()) {
-                continue;
-            }
-
-            long lastMod = Math.max(0L, entry.getTime());
-            ensureParentDirectories(path, lastMod);
-
-            if (isDir) {
-                nodes.putIfAbsent(path, ZipNodeMeta.directory(lastMod));
-                dirChildren.computeIfAbsent(path, ignored -> new TreeSet<>());
-            } else {
-                long size = Math.max(0L, entry.getSize());
-                nodes.put(path, ZipNodeMeta.file(entry, size, lastMod));
-                sortedFiles.add(path);
-            }
+            if (entry.isDirectory() || raw.endsWith("/")) {
+                nodes.putIfAbsent(path, ZipNodeMeta.directory(modified)); children.computeIfAbsent(path, ignored -> new TreeSet<>());
+            } else { nodes.put(path, ZipNodeMeta.file(entry, Math.max(0L, entry.getSize()), modified)); files.put(normalized, path); }
         }
-    }
-
-    private void ensureParentDirectories(VfsPath path, long lastModifiedMillis) {
-        VfsPath current = VfsPath.ROOT;
-        List<String> segments = path.segments();
-        for (int i = 0; i < segments.size(); i++) {
-            String segment = segments.get(i);
-            dirChildren.computeIfAbsent(current, ignored -> new TreeSet<>()).add(segment);
-            current = current.resolve(segment);
-            if (i < segments.size() - 1) {
-                nodes.putIfAbsent(current, ZipNodeMeta.directory(lastModifiedMillis));
-                dirChildren.computeIfAbsent(current, ignored -> new TreeSet<>());
-            }
-        }
+        Map<VfsPath, List<String>> immutableChildren = new HashMap<>();
+        children.forEach((path, names) -> immutableChildren.put(path, List.copyOf(names)));
+        // No reference to the ZipFile is retained in this cache value; weak keys can be collected.
+        return new Index(nodes, immutableChildren, files);
     }
 
     @Override
@@ -147,8 +150,7 @@ public final class ZipVfs implements VirtualFileSystem {
         if (meta == null || meta.kind != VfsNodeKind.DIRECTORY) {
             throw new NoSuchFileException(dir.toString());
         }
-        TreeSet<String> children = dirChildren.get(dir);
-        return children == null ? List.of() : List.copyOf(children);
+        return dirChildren.getOrDefault(dir, List.of());
     }
 
     @Override
@@ -157,13 +159,9 @@ public final class ZipVfs implements VirtualFileSystem {
         if (!nodes.containsKey(prefix)) {
             return List.of();
         }
-        List<VfsPath> result = new ArrayList<>();
-        for (VfsPath file : sortedFiles) {
-            if (file.startsWith(prefix)) {
-                result.add(file);
-            }
-        }
-        return List.copyOf(result);
+        if (prefix.isRoot()) return List.copyOf(sortedFiles.values());
+        if (sortedFiles.containsKey(prefix.asString())) return List.of(sortedFiles.get(prefix.asString()));
+        return List.copyOf(sortedFiles.subMap(prefix.asString() + "/", true, prefix.asString() + "0", false).values());
     }
 
     @Override

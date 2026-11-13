@@ -17,6 +17,7 @@ final class DirectoryTransactionJournal {
     private record BeforeImage(Path target, Path backup, boolean existed) {}
 
     private final Path journalDir;
+    private final List<VfsPath> affectedRoots;
     private final List<BeforeImage> images = new ArrayList<>();
 
     DirectoryTransactionJournal(Path root, List<VfsPath> affected) throws IOException {
@@ -29,11 +30,11 @@ final class DirectoryTransactionJournal {
             }
             if (!cursor.isRoot()) roots.add(cursor);
         }
-        journalDir = roots.isEmpty() ? null : Files.createTempDirectory(root, VfsSupport.TEMP_FILE_PREFIX + "journal-");
+        affectedRoots = PathIndex.minimalRoots(roots);
+        journalDir = affectedRoots.isEmpty() ? null : Files.createTempDirectory(root, VfsSupport.TEMP_FILE_PREFIX + "journal-");
         try {
-            for (VfsPath path : roots) {
+            for (VfsPath path : affectedRoots) {
                 Path target = root.resolve(path.asString());
-                if (images.stream().anyMatch(image -> target.startsWith(image.target()))) continue;
                 boolean existed = Files.exists(target, LinkOption.NOFOLLOW_LINKS);
                 Path backup = journalDir.resolve(Integer.toString(images.size()));
                 if (existed) copyTree(target, backup);
@@ -44,6 +45,8 @@ final class DirectoryTransactionJournal {
             throw failure;
         }
     }
+
+    List<VfsPath> roots() { return affectedRoots; }
 
     void restore() throws IOException {
         IOException failure = null;

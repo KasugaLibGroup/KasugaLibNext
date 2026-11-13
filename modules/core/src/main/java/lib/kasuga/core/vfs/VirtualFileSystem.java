@@ -37,6 +37,19 @@ public interface VirtualFileSystem extends AutoCloseable {
 
     VfsNodeStat stat(VfsPath path) throws IOException;
 
+    /** Explicit content fingerprint; ordinary stat may omit its optional SHA-256. */
+    default VfsNodeStat statWithHash(VfsPath path) throws IOException {
+        VfsNodeStat stat = stat(path);
+        if (!stat.isFile() || stat.sha256().isPresent()) return stat;
+        try (InputStream input = openRead(path)) {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[64 * 1024];
+            for (int count; (count = input.read(buffer)) != -1;) if (count > 0) digest.update(buffer, 0, count);
+            return VfsNodeStat.file(path, stat.size(), stat.lastModifiedMillis(),
+                    Optional.of(java.util.HexFormat.of().formatHex(digest.digest())));
+        } catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+    }
+
     InputStream openRead(VfsPath path) throws IOException;
 
     default byte[] readBytes(VfsPath path) throws IOException {

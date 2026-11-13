@@ -3,6 +3,7 @@ package lib.kasuga.core.vfs.backend;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -36,11 +37,20 @@ final class VfsSupport {
     }
 
     static String sha256Hex(byte[] bytes) {
+        return HexFormat.of().formatHex(digest().digest(bytes));
+    }
+
+    static MessageDigest digest() {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(bytes));
+            return MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 algorithm unavailable", e);
         }
+    }
+
+    static String hash(InputStream input, MessageDigest digest, byte[] buffer) throws IOException {
+        digest.reset();
+        for (int count; (count = input.read(buffer)) != -1;) if (count > 0) digest.update(buffer, 0, count);
+        return HexFormat.of().formatHex(digest.digest());
     }
 }

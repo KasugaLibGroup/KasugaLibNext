@@ -96,6 +96,12 @@ public final class CompositeVfs implements VirtualFileSystem {
     }
 
     @Override
+    public VfsNodeStat statWithHash(VfsPath path) throws IOException {
+        VirtualFileSystem winner = resolveDelegateForPath(path, false);
+        return winner == null ? VfsNodeStat.missing(path) : winner.statWithHash(path);
+    }
+
+    @Override
     public InputStream openRead(VfsPath path) throws IOException {
         VirtualFileSystem winner = resolveDelegateForPath(path, true);
         if (winner == null) {
@@ -199,6 +205,14 @@ public final class CompositeVfs implements VirtualFileSystem {
 
     private @Nullable VirtualFileSystem resolveDelegateForPath(VfsPath path, boolean checkFileConflict) throws VfsConflictException {
         Objects.requireNonNull(path, "path");
+        if (conflictPolicy == VfsConflictPolicy.FIRST_WINS || !checkFileConflict && conflictPolicy == VfsConflictPolicy.THROW_ON_CONFLICT) {
+            for (VirtualFileSystem delegate : delegates) if (delegate.exists(path)) return delegate;
+            return null;
+        }
+        if (conflictPolicy == VfsConflictPolicy.LAST_WINS) {
+            for (int i = delegates.size() - 1; i >= 0; i--) if (delegates.get(i).exists(path)) return delegates.get(i);
+            return null;
+        }
         List<VirtualFileSystem> matching = new ArrayList<>();
         for (VirtualFileSystem delegate : delegates) {
             if (delegate.exists(path)) {

@@ -28,7 +28,7 @@ public final class MountTableVfs implements VirtualFileSystem {
     }
 
     private final String sourceId;
-    private final ConcurrentHashMap<VfsPath, MountEntry> mounts = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, MountEntry> mounts = new ConcurrentHashMap<>();
     private final VfsEventDispatcher dispatcher = new VfsEventDispatcher();
     private final ThreadLocal<List<VfsChangeEvent.EntryChange>> transactionChanges = new ThreadLocal<>();
     private volatile boolean closed = false;
@@ -52,7 +52,8 @@ public final class MountTableVfs implements VirtualFileSystem {
         }
 
         AtomicBoolean inserted = new AtomicBoolean(false);
-        MountEntry entry = mounts.computeIfAbsent(mountPoint, mp -> {
+        MountEntry entry = mounts.computeIfAbsent(mountPoint.asString(), ignored -> {
+            VfsPath mp = mountPoint;
             inserted.set(true);
             VfsSubscription forwardSub = backend.watchAll(event -> {
                 List<VfsChangeEvent.EntryChange> prefixed = prefixChanges(mp, event.changes());
@@ -83,12 +84,12 @@ public final class MountTableVfs implements VirtualFileSystem {
 
     public boolean unmount(VfsPath mountPoint) {
         Objects.requireNonNull(mountPoint, "mountPoint");
-        MountEntry removed = mounts.remove(mountPoint);
+        MountEntry removed = mounts.remove(mountPoint.asString());
         return finishUnmount(removed);
     }
 
     private boolean unmount(MountEntry expected) {
-        return mounts.remove(expected.mountPoint, expected) && finishUnmount(expected);
+        return mounts.remove(expected.mountPoint.asString(), expected) && finishUnmount(expected);
     }
 
     private boolean finishUnmount(MountEntry removed) {
@@ -118,34 +119,30 @@ public final class MountTableVfs implements VirtualFileSystem {
 
     public Map<VfsPath, VirtualFileSystem> mounts() {
         Map<VfsPath, VirtualFileSystem> snapshot = new TreeMap<>();
-        for (Map.Entry<VfsPath, MountEntry> entry : mounts.entrySet()) {
-            snapshot.put(entry.getKey(), entry.getValue().backend);
+        for (MountEntry entry : mounts.values()) {
+            snapshot.put(entry.mountPoint, entry.backend);
         }
         return Map.copyOf(snapshot);
     }
 
     public Optional<MountResolution> resolveMount(VfsPath path) {
         Objects.requireNonNull(path, "path");
-        MountEntry best = null;
-        int bestDepth = -1;
-        for (MountEntry entry : mounts.values()) {
-            VfsPath mp = entry.mountPoint;
-            if (path.startsWith(mp) && mp.segmentCount() > bestDepth) {
-                best = entry;
-                bestDepth = mp.segmentCount();
-            }
+        String candidate = path.asString();
+        while (true) {
+            MountEntry entry = mounts.get(candidate);
+            if (entry != null) return Optional.of(new MountResolution(entry.mountPoint, entry.backend, entry.mountPoint.relativize(path)));
+            if (candidate.isEmpty()) return Optional.empty();
+            int slash = candidate.lastIndexOf('/');
+            candidate = slash < 0 ? "" : candidate.substring(0, slash);
         }
-        if (best == null) {
-            return Optional.empty();
-        }
-        return Optional.of(new MountResolution(best.mountPoint, best.backend, best.mountPoint.relativize(path)));
     }
 
     private boolean isVirtualAncestorDirectory(VfsPath path) {
         if (path.isRoot()) {
             return true;
         }
-        for (VfsPath mp : mounts.keySet()) {
+        for (MountEntry mounted : mounts.values()) {
+            VfsPath mp = mounted.mountPoint;
             if (mp.startsWith(path) && !mp.equals(path)) {
                 return true;
             }
@@ -154,7 +151,8 @@ public final class MountTableVfs implements VirtualFileSystem {
     }
 
     private boolean isMountOrAncestor(VfsPath path) {
-        for (VfsPath mp : mounts.keySet()) {
+        for (MountEntry mounted : mounts.values()) {
+            VfsPath mp = mounted.mountPoint;
             if (mp.startsWith(path)) {
                 return true;
             }
@@ -206,6 +204,16 @@ public final class MountTableVfs implements VirtualFileSystem {
     }
 
     @Override
+    public VfsNodeStat statWithHash(VfsPath path) throws IOException {
+        Optional<MountResolution> resolution = resolveMount(path);
+        if (resolution.isEmpty()) return stat(path);
+        var r = resolution.get();
+        VfsNodeStat snapshot = r.backend().statWithHash(r.relativePath());
+        if (!snapshot.exists()) return stat(path);
+        return new VfsNodeStat(path, snapshot.kind(), snapshot.size(), snapshot.lastModifiedMillis(), snapshot.sha256());
+    }
+
+    @Override
     public InputStream openRead(VfsPath path) throws IOException {
         Objects.requireNonNull(path, "path");
         Optional<MountResolution> res = resolveMount(path);
@@ -234,7 +242,8 @@ public final class MountTableVfs implements VirtualFileSystem {
         }
 
         int childDepthIndex = dir.segmentCount();
-        for (VfsPath mp : mounts.keySet()) {
+        for (MountEntry mounted : mounts.values()) {
+            VfsPath mp = mounted.mountPoint;
             if (mp.startsWith(dir) && !mp.equals(dir)) {
                 matchedDir = true;
                 children.add(mp.segments().get(childDepthIndex));
@@ -406,6 +415,7 @@ public final class MountTableVfs implements VirtualFileSystem {
 
     private sealed interface StagedOp {
         record PutBytes(VfsPath path, byte[] bytes) implements StagedOp {}
+        record PutStream(VfsPath path, VfsWriteTransaction.ContentSource source) implements StagedOp {}
         record Mkdirs(VfsPath dir) implements StagedOp {}
         record Delete(VfsPath path) implements StagedOp {}
         record Move(VfsPath from, VfsPath to) implements StagedOp {}
@@ -421,6 +431,10 @@ public final class MountTableVfs implements VirtualFileSystem {
             ensureActive();
             ops.add(new StagedOp.PutBytes(Objects.requireNonNull(path, "path"), Arrays.copyOf(content, content.length)));
             return this;
+        }
+
+        @Override public VfsWriteTransaction putStream(VfsPath path, ContentSource source) {
+            ensureActive(); ops.add(new StagedOp.PutStream(Objects.requireNonNull(path), Objects.requireNonNull(source))); return this;
         }
 
         @Override
@@ -450,6 +464,8 @@ public final class MountTableVfs implements VirtualFileSystem {
             // Validate every target mount before starting any backend write
             for (StagedOp op : ops) {
                 if (op instanceof StagedOp.PutBytes put) {
+                    requireWritableMount(put.path());
+                } else if (op instanceof StagedOp.PutStream put) {
                     requireWritableMount(put.path());
                 } else if (op instanceof StagedOp.Mkdirs mk) {
                     requireWritableMount(mk.dir());
@@ -482,6 +498,11 @@ public final class MountTableVfs implements VirtualFileSystem {
                         MountGroup group = group(groups, r, crossBackendMove);
                         if (group.tree != null) group.tree.put(r.relativePath(), put.bytes());
                         group.tx.putBytes(r.relativePath(), put.bytes());
+                    } else if (op instanceof StagedOp.PutStream put) {
+                        MountResolution r = requireWritableMount(put.path());
+                        MountGroup group = group(groups, r, crossBackendMove);
+                        if (group.tree != null) group.tree.putStream(r.relativePath(), put.source());
+                        group.tx.putStream(r.relativePath(), put.source());
                     } else if (op instanceof StagedOp.Mkdirs mk) {
                         MountResolution r = requireWritableMount(mk.dir());
                         MountGroup group = group(groups, r, crossBackendMove);
@@ -508,7 +529,10 @@ public final class MountTableVfs implements VirtualFileSystem {
                     }
                 }
                 transactionChanges.set(changes);
-                TransactionSupport.commit(groups.values().stream().map(MountGroup::tx).toList());
+                Map<VfsWriteTransaction, Object> reservations = new java.util.IdentityHashMap<>();
+                groups.forEach((backend, group) -> reservations.put(group.tx,
+                        group.tx.coordinationKey() == group.tx ? backend : group.tx.coordinationKey()));
+                TransactionSupport.commit(groups.values().stream().map(MountGroup::tx).toList(), reservations::get);
                 committed = true;
             } finally {
                 if (previous == null) transactionChanges.remove();
@@ -607,7 +631,7 @@ public final class MountTableVfs implements VirtualFileSystem {
 
         @Override
         public boolean isClosed() {
-            return handleClosed.get() || mounts.get(entry.mountPoint) != entry;
+            return handleClosed.get() || mounts.get(entry.mountPoint.asString()) != entry;
         }
 
         @Override
