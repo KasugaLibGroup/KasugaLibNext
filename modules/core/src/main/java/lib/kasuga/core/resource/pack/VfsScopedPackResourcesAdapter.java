@@ -26,11 +26,7 @@ public final class VfsScopedPackResourcesAdapter implements HierarchicalScopedPa
     }
 
     private static VfsPath toVfsPath(String prefix, String path) {
-        VfsPath prefixPath = VfsPath.of(prefix == null ? "" : prefix);
-        if (path == null || path.isEmpty()) {
-            return prefixPath;
-        }
-        return prefixPath.resolve(path);
+        return ScopedPackResources.toLogicalPath(prefix, path);
     }
 
     @Override
@@ -60,8 +56,8 @@ public final class VfsScopedPackResourcesAdapter implements HierarchicalScopedPa
 
     @Override
     public Stream<String> listEntries(String prefix) {
-        VfsPath prefixPath = VfsPath.of(prefix == null ? "" : prefix);
         try {
+            VfsPath prefixPath = ScopedPackResources.toLogicalPath(prefix == null ? "" : prefix);
             return vfs.walk(prefixPath).stream()
                     .map(entry -> prefixPath.relativize(entry).asString())
                     .filter(s -> !s.isEmpty());

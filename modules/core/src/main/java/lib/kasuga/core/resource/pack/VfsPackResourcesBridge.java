@@ -27,7 +27,7 @@ import java.util.TreeSet;
  * Bridges any {@link VirtualFileSystem} into Minecraft's {@link PackResources} pipeline
  * without referencing client-only classes (safe on Dedicated Server and Client).
  */
-public final class VfsPackResourcesBridge implements PackResources {
+public final class VfsPackResourcesBridge implements VfsBackedPackResources {
     private static final Logger LOGGER = LoggerFactory.getLogger(VfsPackResourcesBridge.class);
 
     private final VirtualFileSystem vfs;
@@ -58,6 +58,11 @@ public final class VfsPackResourcesBridge implements PackResources {
     public @Nullable IoSupplier<InputStream> getRootResource(String... elements) {
         if (elements == null || elements.length == 0) {
             return null;
+        }
+        for (String element : elements) {
+            if (element == null) {
+                return null;
+            }
         }
         try {
             VfsPath path = VfsPath.ofSegments(List.of(elements));
@@ -90,12 +95,16 @@ public final class VfsPackResourcesBridge implements PackResources {
 
     @Override
     public void listResources(PackType packType, String namespace, String path, ResourceOutput resourceOutput) {
-        if (packType == null || namespace == null || path == null || resourceOutput == null) {
+        if (packType == null || namespace == null || path == null || resourceOutput == null
+                || !ResourceLocation.isValidNamespace(namespace)) {
             return;
         }
         try {
             VfsPath namespaceRoot = VfsPath.of(packType.getDirectory()).resolve(namespace);
             VfsPath searchRoot = path.isEmpty() ? namespaceRoot : namespaceRoot.resolve(path);
+            if (!vfs.isDirectory(searchRoot)) {
+                return;
+            }
             for (VfsPath file : vfs.walk(searchRoot)) {
                 String relative = namespaceRoot.relativize(file).asString();
                 ResourceLocation rl = ResourceLocation.tryBuild(namespace, relative);

@@ -4,6 +4,9 @@ import io.micronaut.context.annotation.Context;
 import jakarta.annotation.PostConstruct;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
+import lib.kasuga.core.vfs.VfsPath;
+import lib.kasuga.core.vfs.VfsSubscription;
+import lib.kasuga.core.vfs.VirtualFileSystem;
 import lib.kasuga.core.vfs.backend.MountTableVfs;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.MinecraftServer;
@@ -15,10 +18,12 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +35,8 @@ public class ResourceSystem {
     ScopedResourceManager client = null;
     HashMap<MinecraftServer, ScopedResourceManager> managers = new HashMap<>();
     private final CopyOnWriteArrayList<AutoCloseable> managedCloseables = new CopyOnWriteArrayList<>();
+    private final ConcurrentHashMap<MinecraftServer, CopyOnWriteArrayList<AutoCloseable>> serverManagedCloseables = new ConcurrentHashMap<>();
+    private final CopyOnWriteArrayList<AutoCloseable> clientManagedCloseables = new CopyOnWriteArrayList<>();
     private final MountTableVfs unifiedVfs = new MountTableVfs("kasuga_unified");
 
     public void onServerReloading(MinecraftServer server) {
@@ -86,7 +93,7 @@ public class ResourceSystem {
         for (ScopedResourceManagerConsumer consumer : this.consumers) {
             consumer.onResourceManagerRemoved(event.getServer(), removed);
         }
-        closeManagedResources();
+        closeManagedResources(event.getServer());
     }
 
     public MountTableVfs getUnifiedVfs() {
@@ -98,24 +105,114 @@ public class ResourceSystem {
      * when the server shuts down.
      */
     public void registerManagedCloseable(AutoCloseable closeable) {
-        if (closeable != null) {
+        registerManagedCloseable(null, closeable);
+    }
+
+    public void registerManagedCloseable(@Nullable MinecraftServer server, AutoCloseable closeable) {
+        if (closeable == null) {
+            return;
+        }
+        if (server == null) {
             managedCloseables.addIfAbsent(closeable);
+        } else {
+            serverManagedCloseables
+                    .computeIfAbsent(server, ignored -> new CopyOnWriteArrayList<>())
+                    .addIfAbsent(closeable);
         }
     }
 
     public void unregisterManagedCloseable(AutoCloseable closeable) {
-        managedCloseables.remove(closeable);
+        unregisterManagedCloseable(null, closeable);
+    }
+
+    public void unregisterManagedCloseable(@Nullable MinecraftServer server, AutoCloseable closeable) {
+        if (closeable == null) {
+            return;
+        }
+        if (server == null) {
+            managedCloseables.remove(closeable);
+        } else {
+            CopyOnWriteArrayList<AutoCloseable> list = serverManagedCloseables.get(server);
+            if (list != null) {
+                list.remove(closeable);
+            }
+        }
+    }
+
+    public void registerClientManagedCloseable(AutoCloseable closeable) {
+        if (closeable != null) {
+            clientManagedCloseables.addIfAbsent(closeable);
+        }
+    }
+
+    public void unregisterClientManagedCloseable(AutoCloseable closeable) {
+        if (closeable != null) {
+            clientManagedCloseables.remove(closeable);
+        }
+    }
+
+    public VfsSubscription mountScoped(
+            @Nullable MinecraftServer server,
+            VfsPath mountPoint,
+            VirtualFileSystem backend,
+            boolean closeBackendOnUnmount
+    ) {
+        VfsSubscription subscription = replaceUnifiedMount(mountPoint, backend, closeBackendOnUnmount);
+        registerManagedCloseable(server, subscription);
+        return subscription;
+    }
+
+    public VfsSubscription mountClientScoped(
+            VfsPath mountPoint,
+            VirtualFileSystem backend,
+            boolean closeBackendOnUnmount
+    ) {
+        VfsSubscription subscription = replaceUnifiedMount(mountPoint, backend, closeBackendOnUnmount);
+        registerClientManagedCloseable(subscription);
+        return subscription;
+    }
+
+    private VfsSubscription replaceUnifiedMount(
+            VfsPath mountPoint,
+            VirtualFileSystem backend,
+            boolean closeBackendOnUnmount
+    ) {
+        if (unifiedVfs.mounts().containsKey(mountPoint)) {
+            unifiedVfs.unmount(mountPoint);
+        }
+        return unifiedVfs.mount(mountPoint, backend, closeBackendOnUnmount);
+    }
+
+    public void closeManagedResources(@Nullable MinecraftServer server) {
+        if (server != null) {
+            closeAndClear(serverManagedCloseables.remove(server));
+        }
+        closeAndClear(managedCloseables);
     }
 
     public void closeManagedResources() {
-        for (AutoCloseable closeable : managedCloseables) {
+        closeAndClear(managedCloseables);
+        for (MinecraftServer key : new ArrayList<>(serverManagedCloseables.keySet())) {
+            closeAndClear(serverManagedCloseables.remove(key));
+        }
+    }
+
+    public void closeClientManagedResources() {
+        closeAndClear(clientManagedCloseables);
+    }
+
+    private static void closeAndClear(@Nullable CopyOnWriteArrayList<AutoCloseable> list) {
+        if (list == null) {
+            return;
+        }
+        for (AutoCloseable closeable : list) {
             try {
                 closeable.close();
             } catch (Exception e) {
                 LOGGER.warn("Error closing managed VFS resource during shutdown", e);
             }
         }
-        managedCloseables.clear();
+        list.clear();
     }
 
     public ScopedResourceManager getServerManager(MinecraftServer server) {

@@ -50,17 +50,19 @@ The protocol covers in-process validation and I/O failures. It does not provide 
 
 Directory polling remains a strict full-content SHA-256 check, including same-size changes with restored timestamps. It uses streaming buffers and scans outside the state lock, then validates the internal-write version before publication. Under sustained write contention it retries and eventually reserves the original locked scan for progress. Full verification therefore remains linear in total file content; it does not become a metadata-only watcher.
 
-`VfsWatchService` is optional and uses one daemon polling thread with a fixed delay after each cycle. Close it and its subscriptions with their owning lifecycle. `ResourceSystem.getUnifiedVfs()` exposes a process-level mount table; server-scoped mount handles and watch services can be registered with `registerManagedCloseable()` for shutdown cleanup. Read-only ZIP indexes are shared only between adapters for the same open `ZipFile` instance; a new handle builds a fresh index.
+`VfsWatchService` is optional and uses one daemon polling thread with a fixed delay after each cycle. Close it and its subscriptions with their owning lifecycle. `ResourceSystem.getUnifiedVfs()` exposes a process-level mount table; use `mountScoped(server, ...)` / `registerManagedCloseable(server, ...)` for per-`MinecraftServer` mounts and `mountClientScoped(...)` / `registerClientManagedCloseable(...)` for client-scoped mounts so stopping one server does not tear down client or other server instances' mounts. Read-only ZIP indexes are shared only between adapters for the same open `ZipFile` instance; a new handle builds a fresh index.
+
+`ScopedPackResources.toLogicalPath(...)` strips `.` identity segments uniformly across directory, ZIP (`ScopedVanillaFileResourcePack`), and VFS (`VfsScopedPackResourcesAdapter`) packs as well as `PackageSystem.scanWorkspace(...)`, while still rejecting `..` traversal and empty path segments. Custom packs backed by a VFS implement `VfsBackedPackResources` (including `VfsPackResourcesBridge` and `modelling`'s `KsgPackResource`), which `ScopedResourceManager` adapts before `PathPackResources` / `FilePackResources`. In `modelling`, `GeneratedShaderResourceProvider` serves generated shaders from `InMemoryVfs` via `VfsPackResourcesBridge`, and `LiveModelSync` reads `.kasuga-sync.json` / `pack.mcmeta` through `DirectoryVfs` and `ResourceSystem.mountClientScoped(...)`.
 
 ## Validation and diagnostic benchmarks
 
 Run the regression suites:
 
 ```sh
-./gradlew :modules:core:test :modules:scripting:test
+./gradlew :modules:core:test :modules:scripting:test :modules:modelling:modelUnitTest
 ```
 
-The reported validation has 103 core tests and 69 scripting tests passing with no failures, errors or skips. An additional deterministic before/after probe compared 4,600 memory/directory operation states, including rejected transactions, trees, contents and polling results. Windows host execution and full Minecraft GUI performance have not been measured locally.
+The reported validation has 106 core tests and 70 scripting tests passing with no failures, errors or skips, along with the `modelling` unit suite (`GeneratedShaderResourceProviderTest` and `LiveModelSyncStateTest` passing with 0 failures/errors/skips; 1196 total `modelUnitTest` tests with 0 failures/errors and 8 pre-existing skipped environment/asset tests). An additional deterministic before/after probe compared 4,600 memory/directory operation states, including rejected transactions, trees, contents and polling results. Windows host execution and full Minecraft GUI performance have not been measured locally.
 
 Build classes and run the checked-in diagnostic harness with the same JDK for each checkout:
 

@@ -1,32 +1,45 @@
 package lib.kasuga.core.vfs;
 
+import lib.kasuga.core.resource.ResourceSystem;
+import lib.kasuga.core.resource.ScopedResourceManager;
 import lib.kasuga.core.resource.pack.ScopedPackResources;
 import lib.kasuga.core.resource.pack.ScopedVanillaFileResourcePack;
 import lib.kasuga.core.resource.pack.ScopedVanillaPathResourcePack;
+import lib.kasuga.core.resource.pack.VfsBackedPackResources;
 import lib.kasuga.core.resource.pack.VfsPackResourcesBridge;
+import lib.kasuga.core.resource.pack.VfsScopedPackResourcesAdapter;
+import lib.kasuga.core.vfs.VirtualFileSystem;
 import lib.kasuga.core.vfs.backend.*;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.dedicated.DedicatedServer;
 import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.PathPackResources;
 import net.minecraft.server.packs.metadata.pack.PackMetadataSection;
 import net.minecraft.server.packs.repository.PackSource;
 import net.minecraft.server.packs.resources.ResourceFilterSection;
+import net.minecraft.server.packs.resources.ResourceManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -322,6 +335,136 @@ class VfsReviewRegressionTest {
             Files.delete(root.resolve("new"));
             assertDirectoryChange(dir, "new", VfsChangeEvent.ChangeKind.DELETED);
             assertTrue(dir.pollExternalChanges().isEmpty());
+        }
+    }
+
+    @Test
+    void vfsAndZipScopedPacksAcceptDotWorkspacePathsAndRejectEmptyOrTraversalSegments() throws IOException {
+        Path zipPath = tempDir.resolve("dot-workspace.zip");
+        try (var out = new ZipOutputStream(Files.newOutputStream(zipPath))) {
+            for (var entry : List.of(
+                    Map.entry("scripts/package.toml", "name='root'"),
+                    Map.entry("scripts/packages/child/package.toml", "name='child'")
+            )) {
+                out.putNextEntry(new ZipEntry(entry.getKey()));
+                out.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+        }
+        try (var zipFile = new ZipFile(zipPath.toFile()); var memory = new InMemoryVfs("mem")) {
+            memory.writeString(p("scripts/package.toml"), "name='root'");
+            memory.writeString(p("scripts/packages/child/package.toml"), "name='child'");
+            var packs = List.of(
+                    new ScopedVanillaFileResourcePack(zipFile),
+                    new VfsScopedPackResourcesAdapter(memory)
+            );
+            for (var scoped : packs) {
+                assertEquals(List.of("child"), scoped.list("scripts", "./packages"));
+                assertTrue(scoped.exists("scripts/./packages/child", "./package.toml"));
+                try (var in = scoped.open("scripts/./packages/child", "./package.toml")) {
+                    assertEquals("name='child'", new String(in.readAllBytes(), StandardCharsets.UTF_8));
+                }
+                List<String> entries = scoped.listEntries("./scripts").toList();
+                assertTrue(entries.contains("packages/child/package.toml"));
+                assertThrows(IllegalArgumentException.class, () -> scoped.exists("scripts", ".//a"));
+                assertThrows(IllegalArgumentException.class, () -> scoped.exists("scripts", "./../outside"));
+            }
+        }
+        assertThrows(IllegalArgumentException.class, () -> ScopedPackResources.safeResolve(tempDir, ".//a"));
+        assertThrows(IllegalArgumentException.class, () -> ScopedPackResources.safeResolve(tempDir, "a//."));
+    }
+
+    @Test
+    void resourceSystemIsolatesServerScopedMountsAndCloseablesFromClientAndOtherServers() throws Exception {
+        ResourceSystem resourceSystem = new ResourceSystem();
+        Field unsafeField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+        unsafeField.setAccessible(true);
+        sun.misc.Unsafe unsafe = (sun.misc.Unsafe) unsafeField.get(null);
+        MinecraftServer server1 = (MinecraftServer) unsafe.allocateInstance(DedicatedServer.class);
+        MinecraftServer server2 = (MinecraftServer) unsafe.allocateInstance(DedicatedServer.class);
+
+        InMemoryVfs server1Vfs = new InMemoryVfs("s1");
+        InMemoryVfs server2Vfs = new InMemoryVfs("s2");
+        InMemoryVfs clientVfs = new InMemoryVfs("client");
+        server1Vfs.writeString(p("a.txt"), "s1");
+        server2Vfs.writeString(p("b.txt"), "s2");
+        clientVfs.writeString(p("c.txt"), "client");
+
+        AtomicBoolean s1Closed = new AtomicBoolean();
+        AtomicBoolean s2Closed = new AtomicBoolean();
+        AtomicBoolean clientClosed = new AtomicBoolean();
+
+        resourceSystem.registerManagedCloseable(server1, () -> s1Closed.set(true));
+        resourceSystem.registerManagedCloseable(server2, () -> s2Closed.set(true));
+        resourceSystem.registerClientManagedCloseable(() -> clientClosed.set(true));
+
+        resourceSystem.mountScoped(server1, p("s1"), server1Vfs, true);
+        resourceSystem.mountScoped(server2, p("s2"), server2Vfs, true);
+        resourceSystem.mountClientScoped(p("client"), clientVfs, true);
+
+        MountTableVfs unified = resourceSystem.getUnifiedVfs();
+        assertEquals("s1", unified.readString(p("s1/a.txt")));
+        assertEquals("s2", unified.readString(p("s2/b.txt")));
+        assertEquals("client", unified.readString(p("client/c.txt")));
+
+        resourceSystem.closeManagedResources(server1);
+        assertTrue(s1Closed.get());
+        assertFalse(unified.exists(p("s1/a.txt")));
+        assertThrows(IOException.class, () -> server1Vfs.writeString(p("closed.txt"), "x"));
+
+        assertFalse(s2Closed.get());
+        assertFalse(clientClosed.get());
+        assertEquals("s2", unified.readString(p("s2/b.txt")));
+        assertEquals("client", unified.readString(p("client/c.txt")));
+
+        resourceSystem.closeClientManagedResources();
+        assertTrue(clientClosed.get());
+        assertFalse(unified.exists(p("client/c.txt")));
+        assertThrows(IOException.class, () -> clientVfs.writeString(p("closed.txt"), "x"));
+        assertFalse(s2Closed.get());
+        assertEquals("s2", unified.readString(p("s2/b.txt")));
+
+        resourceSystem.closeManagedResources(server2);
+        assertTrue(s2Closed.get());
+        assertFalse(unified.exists(p("s2/b.txt")));
+        assertThrows(IOException.class, () -> server2Vfs.writeString(p("closed.txt"), "x"));
+    }
+
+    @Test
+    void scopedResourceManagerAdaptsVfsBackedPackResourcesBeforePathPackResources() throws IOException {
+        InMemoryVfs vfs = new InMemoryVfs("vfs-backed-dummy-path");
+        vfs.writeString(p("assets/demo/hello.txt"), "world");
+        PackLocationInfo info = new PackLocationInfo("demo_pack", Component.literal("Demo"), PackSource.BUILT_IN, Optional.empty());
+
+        class DummyPathVfsPack extends PathPackResources implements VfsBackedPackResources {
+            DummyPathVfsPack() {
+                super(info, Path.of("dummy-nonexistent-path"));
+            }
+
+            @Override
+            public VirtualFileSystem getVfs() {
+                return vfs;
+            }
+        }
+
+        try (DummyPathVfsPack pack = new DummyPathVfsPack()) {
+            ResourceManager proxyRm = (ResourceManager) Proxy.newProxyInstance(
+                    ResourceManager.class.getClassLoader(),
+                    new Class<?>[]{ResourceManager.class},
+                    (proxy, method, args) -> method.getName().equals("listPacks") ? Stream.of(pack) : null
+            );
+            ScopedResourceManager scopedRm = new ScopedResourceManager(proxyRm);
+            scopedRm.reload(proxyRm);
+
+            assertEquals(1, scopedRm.getPackResources().size());
+            ScopedPackResources adapted = scopedRm.getPackResources().getFirst();
+            assertTrue(adapted instanceof VfsScopedPackResourcesAdapter);
+            assertTrue(adapted.exists("assets/demo", "hello.txt"));
+            try (var in = adapted.open("assets/demo", "hello.txt")) {
+                assertEquals("world", new String(in.readAllBytes(), StandardCharsets.UTF_8));
+            }
+        } finally {
+            vfs.close();
         }
     }
 

@@ -8,6 +8,7 @@ import jakarta.annotation.Nullable;
 import jakarta.inject.Inject;
 import lib.kasuga.core.resource.pack.HierarchicalScopedPackResources;
 import lib.kasuga.core.resource.pack.ScopedPackResources;
+import lib.kasuga.core.vfs.VfsInvalidPathException;
 import lib.kasuga.scripting.ScriptEngineRegistry;
 import lib.kasuga.scripting.ScriptEngineType;
 import lib.kasuga.scripting.module.DuplicatePackageException;
@@ -119,9 +120,16 @@ public class PackageSystem {
             : workspaceGlob;
 
         try {
+            globPattern = ScopedPackResources.toLogicalPath(globPattern).asString();
+        } catch (VfsInvalidPathException e) {
+            addLoadingError(new PackageLoadingError(e));
+            return result;
+        }
+
+        try {
             List<String> entries = hierarchical.list(prefix, globPattern);
             for (String entry : entries) {
-                String subPath = globPattern + "/" + entry;
+                String subPath = globPattern.isEmpty() ? entry : globPattern + "/" + entry;
                 if (!hierarchical.isDirectory(prefix, subPath)) continue;
 
                 ResolvedPackage subPkg = tryResolve(packResource, prefix + "/" + subPath);

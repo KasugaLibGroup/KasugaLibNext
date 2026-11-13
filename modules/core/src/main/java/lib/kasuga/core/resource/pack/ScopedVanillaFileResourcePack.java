@@ -1,5 +1,6 @@
 package lib.kasuga.core.resource.pack;
 
+import lib.kasuga.core.vfs.VirtualFileSystem;
 import lib.kasuga.core.vfs.backend.ZipVfs;
 
 import java.io.IOException;
@@ -15,6 +16,14 @@ public class ScopedVanillaFileResourcePack implements FlattenScopedPackResources
     public ScopedVanillaFileResourcePack(ZipFile zipFile) {
         this.zipFile = zipFile;
         this.delegate = new VfsScopedPackResourcesAdapter(new ZipVfs(zipFile.getName(), zipFile, false));
+    }
+
+    public VirtualFileSystem vfs() {
+        return delegate.vfs();
+    }
+
+    public VfsScopedPackResourcesAdapter asScopedAdapter() {
+        return delegate;
     }
 
     @Override

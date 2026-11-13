@@ -4,7 +4,7 @@ import lib.kasuga.core.holder.Holder;
 import lib.kasuga.core.resource.pack.ScopedPackResources;
 import lib.kasuga.core.resource.pack.ScopedVanillaFileResourcePack;
 import lib.kasuga.core.resource.pack.ScopedVanillaPathResourcePack;
-import lib.kasuga.core.resource.pack.VfsPackResourcesBridge;
+import lib.kasuga.core.resource.pack.VfsBackedPackResources;
 import lib.kasuga.mixins.*;
 import net.minecraft.server.packs.CompositePackResources;
 import net.minecraft.server.packs.FilePackResources;
@@ -55,12 +55,12 @@ public class ScopedResourceManager implements ResourceManagerReloadListener {
             for (PackResources resources : ((CompositePackResourcesAccess) composite).getPackResourcesStack()) {
                 adapt(resources);
             }
+        } else if(next instanceof VfsBackedPackResources vfsBacked) {
+            packResources.add(vfsBacked.asScopedPackResources());
         } else if(next instanceof PathPackResources path) {
             packResources.add(new ScopedVanillaPathResourcePack(((PathPackResourcesMixin) path).getRoot(), path));
         } else if(next instanceof FilePackResources file) {
             packResources.add(new ScopedVanillaFileResourcePack(((SharedZipFileAccessAccess)((FilePackResourcesMixin)file).getZipFileAccess()).invokeGetOrCreateZipFile()));
-        } else if(next instanceof VfsPackResourcesBridge vfsBridge) {
-            packResources.add(vfsBridge.asScopedPackResources());
         }
     }
 
