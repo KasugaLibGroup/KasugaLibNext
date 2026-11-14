@@ -70,6 +70,13 @@ public class BackendInstance implements AutoCloseable {
         this.cpuSkinning = cpuSkinning;
         this.nativeOnly = nativeOnly;
 
+        // Direct factory/preview callers may bypass Backend.add. A transform-only rig must
+        // never allocate even a bone TBO, regardless of the route used to construct this object.
+        if (!instance.getModel().isRenderable()) {
+            this.tbo = null;
+            return;
+        }
+
         Map<VertexFormatElement, Integer> bufOffsets =
                 FlatModelData.genVertexFormat(RenderState.UML_VERTEX_FORMAT);
         this.tbo = cpuSkinning ? null : new BoneTransformTBO(instance.getSkeletonInstance());

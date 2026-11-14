@@ -39,6 +39,41 @@ The same callback can be attached to several Anchors, and duplicate bindings to 
 Old callback interfaces are released after the model is unmounted, reloaded or switched, and are reconfigured for the new instance through `onInstanceChanged`.
 Precision-sensitive rendering uses the relative interface, subtracting the origin in double first and then converting to float; there is no need to obtain a float world position first.
 
+## Dummy model groups
+
+`DummyModelInstance` owns a private rig with one identity root and no vertices, meshes, materials or textures.
+Its asset returns false from `Model.isRenderable()`: backends skip it before creating a render context,
+and direct MC GPU instance construction skips the bone TBO as well. Anchors can be created and moved at runtime.
+
+```java
+DummyModelInstance group = McDummyModels.create(); // Automatic client frame updates; no resource ID or backend mount.
+group.defineAnchor("left", new Transform().translate(-1, 0, 0));
+group.defineAnchor("right", new Transform().translate(1, 0, 0));
+
+// Both handles have already mounted successfully.
+var left = group.attach("left", leftHandle.instance());
+var right = group.attach("right", rightHandle.instance(), new Transform().scale(.5f, .5f, .5f));
+group.getSkeletonInstance().transformRoot(new Transform().translate(10, 64, 10).rotate(0, 45, 0, true));
+group.setAnchorTransform("right", new Transform().translate(2, 0, 0));
+left.setOffset(new Transform().rotate(0, 90, 0, true));
+
+left.close();  // Detach and keep the child's last world pose.
+group.close(); // Host removal/world unload: unregister and detach remaining children.
+```
+
+Child roots use `parent root * anchor local transform * child local offset`; internal child animation is preserved.
+Children can themselves be dummies. The automatic runtime evaluates ancestor groups first, independently of visibility.
+Offsets are copied and several children may share an anchor. Cycles, multiple parents and children with an existing
+root driver or scope-owned animation render port are rejected. Floating-origin composition retains the double origin.
+
+Use `Attachment.close()` or `group.detach(child)` to unbind. Closing a child also removes its attachment.
+Closing a parent does not close children; callers close nested groups separately. After a child's resource reload,
+its retired instance detaches; use `McModelHandle.onInstanceChanged` to attach the replacement instance.
+
+For manual/non-Minecraft hosts, construct `new DummyModelInstance()` and evaluate ancestors before children
+with `evaluateFrame(partialTick, deltaSeconds)`, or use `tick(deltaSeconds)` for procedural updates while the host
+owns animation time. All mutations and cleanup run on the instance's owning thread.
+
 ## McModelEquipment
 
 ```java
