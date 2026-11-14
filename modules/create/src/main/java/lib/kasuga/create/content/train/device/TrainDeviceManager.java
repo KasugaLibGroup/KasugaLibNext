@@ -7,6 +7,8 @@ import com.simibubi.create.content.trains.entity.CarriageContraptionEntity;
 import com.simibubi.create.content.trains.entity.Train;
 import com.simibubi.create.content.trains.graph.TrackNode;
 import com.simibubi.create.content.trains.signal.TrackEdgePoint;
+import lib.kasuga.create.compat.createconsist.TrainAssemblies;
+import lib.kasuga.create.compat.createconsist.TrainAssemblyChanged;
 import lib.kasuga.create.content.train.device.sync.TrainDeviceSyncManager;
 import lib.kasuga.structure.Pair;
 import net.createmod.catnip.data.Couple;
@@ -39,6 +41,7 @@ public class TrainDeviceManager {
     public TrainDeviceManager(Train train) {
         this.train = train;
         this.systems.putAll(TrainDeviceRegistry.createInitialContextDevices(this));
+        this.baselineCarriageIds = TrainAssemblies.carriageIds(train);
     }
 
     private boolean cachedCancelSlowdown = false;
@@ -81,6 +84,12 @@ public class TrainDeviceManager {
     /** 认不出类型、或类型当前未注册的存档条目，原样保留并在下次写档时回写。 */
     private final List<CompoundTag> foreignSystems = new ArrayList<>();
 
+    /** 上一次已知的编组（车厢 UUID 序列），用于下一 tick 开头的重映射。 */
+    private List<UUID> baselineCarriageIds = List.of();
+
+    /** 编组变化信号（世界事件里只置位，动作推到下一 tick）。 */
+    private boolean consistDirty = false;
+
     /** 异常日志限流器：同一设备同一回调的重复异常不会刷屏。 */
     private final DeviceFailureLog failureLog = new DeviceFailureLog(FAILURE_LOG_INTERVAL_MILLIS);
 
@@ -104,6 +113,7 @@ public class TrainDeviceManager {
                 this.systems.put(type, existing.getOrDefault(type, type.create(this)));
             }
             LOGGER.info("列车 {} 的存档中没有设备数据，已重建 {} 个上下文设备", describeTrain(), this.systems.size());
+            resetConsistBaseline();
             updateCache();
             return;
         }
@@ -149,6 +159,7 @@ public class TrainDeviceManager {
 
         this.foreignSystems.clear();
         this.foreignSystems.addAll(foreign);
+        resetConsistBaseline();
         updateCache();
     }
 
@@ -309,6 +320,10 @@ public class TrainDeviceManager {
     }
 
     public void earlyTick(Level level) {
+        // 编组重映射只在下一次 tick 开头生效，绝不在 setTrain / read 等世界事件里改状态。
+        if (level != null && !level.isClientSide) {
+            remapConsistIfNeeded();
+        }
         for (Map.Entry<TrainDeviceSystemType<?>, TrainDeviceSystem> entry : this.systems.entrySet()) {
             TrainDeviceSystem system = entry.getValue();
             safeInvoke(entry.getKey(), "earlyTick", () -> system.earlyTick(level));
@@ -351,6 +366,54 @@ public class TrainDeviceManager {
     /** 只读视图，供同步管理器按注册 id 序列化。 */
     public Map<TrainDeviceSystemType<?>, TrainDeviceSystem> systemsView() {
         return Collections.unmodifiableMap(this.systems);
+    }
+
+    // ------------------------------------------------------------------
+    // 编组变化（I-05）
+    // ------------------------------------------------------------------
+
+    /** 世界事件（setTrain / addTrain / removeTrain / relocate）里只置位，不动状态。 */
+    public void markConsistDirty() {
+        this.consistDirty = true;
+    }
+
+    /** 上一轮已知的编组，供诊断与单测。 */
+    public List<UUID> getBaselineCarriageIds() {
+        return List.copyOf(baselineCarriageIds);
+    }
+
+    /** 编组是否与基线一致；不一致时的重映射动作推到下一 tick 开头。 */
+    public boolean isConsistDirty() {
+        return consistDirty;
+    }
+
+    /**
+     * 编组重映射：幂等。序列与基线一致时什么都不做，因此重复读档、多维度 tick 都不会重复触发。
+     */
+    public void remapConsistIfNeeded() {
+        if (train == null) {
+            return;
+        }
+        List<UUID> current = TrainAssemblies.carriageIds(train);
+        if (!consistDirty && current.equals(baselineCarriageIds)) {
+            return;
+        }
+        TrainAssemblyChanged change = TrainAssemblyChanged.of(train.id, baselineCarriageIds, current);
+        baselineCarriageIds = List.copyOf(current);
+        consistDirty = false;
+        if (change.isNoop()) {
+            return;
+        }
+        LOGGER.debug("列车 {} 编组变化：{}", describeTrain(), change);
+        for (Map.Entry<TrainDeviceSystemType<?>, TrainDeviceSystem> entry : this.systems.entrySet()) {
+            TrainDeviceSystem system = entry.getValue();
+            safeInvoke(entry.getKey(), "onConsistChanged", () -> system.onConsistChanged(change));
+        }
+    }
+
+    private void resetConsistBaseline() {
+        this.baselineCarriageIds = TrainAssemblies.carriageIds(train);
+        this.consistDirty = false;
     }
 
     // ------------------------------------------------------------------

@@ -74,6 +74,16 @@ public class GlobalRailwayManagerMixin {
         TrainDeviceSyncManager.get().tick(level);
     }
 
+    /** 列车注册（组装/读档完成）：只置编组脏标记，重映射推到下一 tick。 */
+    @Inject(method = "addTrain", at=@At("TAIL"), require = 0)
+    public void onAddTrain(Train train, CallbackInfo ci){
+        if(!(train instanceof TrainDeviceProvider provider))
+            return;
+        TrainDeviceManager manager = provider.kasugaLib$getDeviceManager();
+        if(manager != null)
+            manager.markConsistDirty();
+    }
+
     /** 列车注销（拆解/重定位替换）：通知客户端清掉镜像。 */
     @Inject(method = "removeTrain", at=@At("TAIL"), require = 0)
     public void onRemoveTrain(UUID trainId, CallbackInfo ci){

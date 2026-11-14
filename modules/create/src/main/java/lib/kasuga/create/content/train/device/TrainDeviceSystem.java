@@ -3,6 +3,7 @@ package lib.kasuga.create.content.train.device;
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.content.trains.graph.TrackNode;
 import com.simibubi.create.content.trains.signal.TrackEdgePoint;
+import lib.kasuga.create.compat.createconsist.TrainAssemblyChanged;
 import lib.kasuga.structure.Pair;
 import net.createmod.catnip.data.Couple;
 import net.minecraft.core.BlockPos;
@@ -160,6 +161,18 @@ public class TrainDeviceSystem {
         if (manager != null) {
             manager.markSyncDirty(this);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 编组变化（I-05）
+    // ------------------------------------------------------------------
+
+    /**
+     * 列车编组发生变化时回调（已在服务端 tick 开头统一重映射之后）。默认无操作；
+     * 设备可以按 {@link TrainAssemblyChanged#oldToNewIndex()} 重写自己按
+     * {@link TrainDeviceLocation} 索引的状态表，按 {@code movedOut/movedIn} 决定设备归属。
+     */
+    public void onConsistChanged(TrainAssemblyChanged change) {
     }
 
     private String describeType() {
