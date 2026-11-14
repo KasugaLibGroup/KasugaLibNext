@@ -9,8 +9,15 @@ import lib.kasuga.registration.data_driven.context.BuildContext;
 import lib.kasuga.registration.data_driven.context.JsonRegistryGroup;
 import lib.kasuga.registration.data_driven.context.RegBuildContext;
 import lib.kasuga.registration.data_driven.dedup.EffectiveId;
+import lib.kasuga.registration.data_driven.pipeline.DefinitionKey;
+import lib.kasuga.registration.data_driven.pipeline.HandlerCapability;
+import lib.kasuga.registration.data_driven.pipeline.RegistryClaim;
+import lib.kasuga.registration.data_driven.validation.ValidationContext;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
+
+import java.util.List;
+import java.util.Set;
 
 public abstract class RegTypeHandler<T> implements TypeHandler<T> {
 
@@ -35,6 +42,18 @@ public abstract class RegTypeHandler<T> implements TypeHandler<T> {
 
     protected ResourceLocation resolveCreativeTab(T definition) { return null; }
 
+    protected ValidationContext.FactoryType factoryType() {
+        return ValidationContext.FactoryType.BLOCK;
+    }
+
+    protected String claimRegistry(T definition) {
+        return switch (getTypeName()) {
+            case "blocks" -> "minecraft:block";
+            case "items" -> "minecraft:item";
+            default -> null;
+        };
+    }
+
     protected String resolveNamespace(String rawId) {
         String[] parts = rawId.split(":", 2);
         return parts.length > 1 ? parts[0] : "minecraft";
@@ -56,13 +75,81 @@ public abstract class RegTypeHandler<T> implements TypeHandler<T> {
      */
     @Override
     public String resolveIdentity(String modId, T definition) {
-        return EffectiveId.of(modId, resolveRawId(definition));
+        return EffectiveId.ofLegacy(modId, resolveRawId(definition));
+    }
+
+    @Override
+    public String resolveIdentity(String modId, T definition, boolean strict) {
+        return strict
+                ? EffectiveId.of(modId, resolveRawId(definition))
+                : resolveIdentity(modId, definition);
+    }
+
+    @Override
+    public Set<HandlerCapability> capabilities() {
+        return Set.of(
+                HandlerCapability.STRICT_PREFLIGHT,
+                HandlerCapability.REGISTRY_CLAIMS
+        );
+    }
+
+    @Override
+    public void validate(T definition, ValidationContext context) {
+        String rawId = resolveRawId(definition);
+        int namespaceSeparator = rawId == null ? -1 : rawId.indexOf(':');
+        if (rawId == null || namespaceSeparator <= 0
+                || namespaceSeparator == rawId.length() - 1
+                || ResourceLocation.tryParse(rawId) == null) {
+            context.error(
+                    lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.INVALID_IDENTITY,
+                    "/id",
+                    "Id '" + rawId + "' must be an explicit, valid namespace-qualified resource location",
+                    "Write the id as '<namespace>:<path>'."
+            );
+        }
+
+        String factory = resolveType(definition);
+        if (factory == null || factory.isBlank()
+                || !context.factoryAvailable(factoryType(), factory)) {
+            context.error(
+                    lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.UNKNOWN_FACTORY,
+                    "/type",
+                    "No " + factoryType() + " factory is registered as '" + factory + "'",
+                    "Register the factory before starting strict preparation."
+            );
+        }
+
+        String registryGroup = resolveRegistryGroup(definition);
+        DefinitionKey groupKey = registryGroup == null
+                ? null
+                : new DefinitionKey("registry_groups", registryGroup);
+        if (groupKey != null && context.find(groupKey).isEmpty()) {
+            context.error(
+                    lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.UNKNOWN_REGISTRY_GROUP,
+                    "/registry_group",
+                    "Unknown registry group '" + registryGroup + "'",
+                    "Define the group in registry_groups or remove registry_group."
+            );
+        } else if (groupKey != null) {
+            context.requireDefinition(groupKey, "/registry_group");
+        }
+    }
+
+    @Override
+    public List<RegistryClaim> claims(T definition, ValidationContext context) {
+        String registry = claimRegistry(definition);
+        if (registry == null) return List.of();
+        ResourceLocation id = ResourceLocation.tryParse(
+                context.currentDefinition().key().id()
+        );
+        if (id == null) return List.of();
+        return List.of(context.claim(registry, id));
     }
 
     @Override
     public void apply(T definition, BuildContext baseContext) {
+        RegBuildContext context = (RegBuildContext) baseContext;
         try {
-            RegBuildContext context = (RegBuildContext) baseContext;
             String rawId = resolveRawId(definition);
             String path = resolvePath(rawId);
             String namespace = resolveNamespace(rawId);
@@ -73,7 +160,7 @@ public abstract class RegTypeHandler<T> implements TypeHandler<T> {
                 return;
             }
 
-            if (!namespace.equals("minecraft")) {
+            if (rawId.indexOf(':') >= 0 && (context.isStrict() || !namespace.equals("minecraft"))) {
                 reg.withProperty(ResourceLocation.class,
                     loc -> ResourceLocation.fromNamespaceAndPath(namespace, loc.getPath()));
             }
@@ -104,7 +191,8 @@ public abstract class RegTypeHandler<T> implements TypeHandler<T> {
                         + "of through the data-driven loader", rawId, getTypeName());
             }
             context.putReg(getTypeName(), rawId, reg);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
+            if (context.isStrict()) throw e;
             LOGGER.warn("Failed to apply registration for '{}': {}",
                 resolveRawId(definition), e.getMessage());
             LOGGER.debug("Full stack trace", e);

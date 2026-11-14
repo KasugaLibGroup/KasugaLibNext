@@ -75,6 +75,10 @@ public abstract class MinecraftDeferRegistryReg<S extends Reg<S, T>, R, T extend
         return holder;
     }
 
+    public String getRegistryKey() {
+        return entryKey.location().toString();
+    }
+
     public ResourceLocation getResourceLocation() {
         return resourceLocation;
     }

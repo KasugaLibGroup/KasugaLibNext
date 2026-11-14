@@ -2,8 +2,13 @@ package lib.kasuga.registration.data_driven;
 
 import com.google.gson.JsonObject;
 import lib.kasuga.registration.data_driven.context.BuildContext;
+import lib.kasuga.registration.data_driven.pipeline.DefinitionKey;
+import lib.kasuga.registration.data_driven.pipeline.HandlerCapability;
+import lib.kasuga.registration.data_driven.pipeline.RegistryClaim;
+import lib.kasuga.registration.data_driven.validation.ValidationContext;
 
 import java.util.List;
+import java.util.Set;
 
 public interface TypeHandler<T> {
 
@@ -29,6 +34,38 @@ public interface TypeHandler<T> {
     T parse(JsonObject json);
 
     void apply(T definition, BuildContext context);
+
+    /**
+     * Capabilities declared to strict multi-source preparation. Existing handlers retain their
+     * historical behavior by declaring none; strict callers reject those handlers before apply.
+     */
+    default Set<HandlerCapability> capabilities() {
+        return Set.of();
+    }
+
+    /**
+     * Performs side-effect-free validation against the complete prepared definition directory.
+     * Handlers that support strict preparation must implement this method.
+     */
+    default void validate(T definition, ValidationContext context) {
+    }
+
+    /**
+     * Declares every final Minecraft registry entry produced by this definition.
+     * The return value is empty for configuration handlers and may be empty for a registration
+     * handler whose factory creates no direct registry entry in this session.
+     */
+    default List<RegistryClaim> claims(T definition, ValidationContext context) {
+        return List.of();
+    }
+
+    /**
+     * Returns the definition that must be applied before this one. This is used for stable parent
+     * ordering and cycle detection inside a handler phase.
+     */
+    default DefinitionKey parentDefinition(T definition) {
+        return null;
+    }
 
     /**
      * Top-level JSON field whose entries carry this handler's data as a nested object. An embedded
@@ -62,4 +99,12 @@ public interface TypeHandler<T> {
      * @return the normalized identity, or {@code null} to opt out of duplicate detection
      */
     default String resolveIdentity(String modId, T definition) { return null; }
+
+    /**
+     * Policy-aware identity used by the strict multi-source pipeline. Legacy handlers keep their
+     * previous behavior unless they opt into the distinction explicitly.
+     */
+    default String resolveIdentity(String modId, T definition, boolean strict) {
+        return resolveIdentity(modId, definition);
+    }
 }

@@ -17,6 +17,10 @@ public class RegBuildContext extends BuildContext {
         super(modId, rootGroup);
     }
 
+    public RegBuildContext(String modId, JsonRegistryGroup rootGroup, boolean strict) {
+        super(modId, rootGroup, strict);
+    }
+
     // --- RegistryGroup ---
 
     public void putRegistryGroup(String id, JsonRegistryGroup group) {

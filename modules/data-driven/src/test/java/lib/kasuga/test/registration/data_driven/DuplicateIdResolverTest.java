@@ -156,9 +156,14 @@ class DuplicateIdResolverTest {
     @Test
     void normalizedNamespaceSpellingsCollide() {
         String modId = "mymod";
-        Candidate bare = candidate("blocks", EffectiveId.of(modId, "foo"), "a.json", "bare");
+        Candidate bare = candidate("blocks", EffectiveId.ofLegacy(modId, "foo"), "a.json", "bare");
         Candidate explicitMinecraft =
-                candidate("blocks", EffectiveId.of(modId, "minecraft:foo"), "b.json", "minecraft");
+                candidate(
+                        "blocks",
+                        EffectiveId.ofLegacy(modId, "minecraft:foo"),
+                        "b.json",
+                        "minecraft"
+                );
 
         Result result = DuplicateIdResolver.resolve(List.of(bare, explicitMinecraft));
 

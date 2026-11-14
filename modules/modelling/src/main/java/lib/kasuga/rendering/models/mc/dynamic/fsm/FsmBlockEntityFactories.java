@@ -50,7 +50,11 @@ public final class FsmBlockEntityFactories {
 
     /** Register (or re-register) the built-in factories; idempotent. */
     public static void registerBuiltin() {
-        FactoryRegistry.register("fsm_block", (id, params) -> blockWithItem(id, FsmBlock::new));
+        FactoryRegistry.register(
+                "fsm_block",
+                (id, params) -> blockWithItem(id, FsmBlock::new),
+                true
+        );
         FactoryRegistry.registerBlockEntity("fsm_be", FsmBlockEntityFactories::createFsmBeReg);
     }
 

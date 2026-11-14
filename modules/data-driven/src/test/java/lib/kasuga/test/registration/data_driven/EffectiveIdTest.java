@@ -10,11 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  * Table test for {@link EffectiveId}, the pure normalization used to detect duplicate ids before any
  * registration side effect.
  *
- * <p>Rule: an id with no namespace, or with the {@code minecraft} namespace, resolves under the
- * owning mod's namespace ({@code <modId>:<path>}); any other explicit namespace is kept verbatim.
- * This is exactly what the registration pipeline does ({@code JsonTreeBuilder} maps the root group to
- * {@code <modId>:<path>} and {@code RegTypeHandler} only overrides it for a non-{@code minecraft}
- * namespace, with {@code Reg.applyProperties} resolving the parent chain first).
+ * <p>Strict mode prefixes only unnamespaced ids. The legacy JAR loader retains its historical
+ * treatment of {@code minecraft:} as a host-local id.
  */
 class EffectiveIdTest {
 
@@ -33,10 +30,14 @@ class EffectiveIdTest {
     }
 
     @Test
-    void explicitMinecraftNamespaceResolvesToTheOwningMod() {
-        // Blind spot fixed by rule B: "foo" and "minecraft:foo" register the same location.
-        assertEquals("mymod:foo", EffectiveId.of(MOD, "minecraft:foo"));
-        assertEquals(EffectiveId.of(MOD, "foo"), EffectiveId.of(MOD, "minecraft:foo"));
+    void strictAndLegacyModesHandleExplicitMinecraftNamespaceDifferently() {
+        // Legacy compatibility: "foo" and "minecraft:foo" used to register the same location.
+        assertEquals("mymod:foo", EffectiveId.ofLegacy(MOD, "minecraft:foo"));
+        assertEquals(
+                EffectiveId.ofLegacy(MOD, "foo"),
+                EffectiveId.ofLegacy(MOD, "minecraft:foo")
+        );
+        assertEquals("minecraft:foo", EffectiveId.of(MOD, "minecraft:foo"));
     }
 
     @Test
@@ -51,7 +52,8 @@ class EffectiveIdTest {
 
     @Test
     void onlyTheFirstColonSeparatesNamespaceFromPath() {
-        assertEquals("mymod:foo:bar", EffectiveId.of(MOD, "minecraft:foo:bar"));
+        assertEquals("minecraft:foo:bar", EffectiveId.of(MOD, "minecraft:foo:bar"));
+        assertEquals("mymod:foo:bar", EffectiveId.ofLegacy(MOD, "minecraft:foo:bar"));
         assertEquals("a:b:c", EffectiveId.of(MOD, "a:b:c"));
         assertEquals("mymod:a:b", EffectiveId.of(MOD, "mymod:a:b"));
     }

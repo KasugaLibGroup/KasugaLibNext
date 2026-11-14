@@ -54,7 +54,7 @@ public class JsonTreeBuilder {
      */
     private static final Map<String, List<Throwable>> loadingErrorsByMod = new ConcurrentHashMap<>();
 
-    private static synchronized void ensureHandlersRegistered() {
+    public static synchronized void ensureHandlersRegistered() {
         if (handlersRegistered) return;
         handlersRegistered = true;
         DataDrivenBlockFactory.registerIfAbsent();

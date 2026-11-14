@@ -35,6 +35,7 @@ public class FactoryRegistry {
     }
 
     private static final Map<String, BlockFactory> BLOCK_REGISTRY = new ConcurrentHashMap<>();
+    private static final Set<String> BLOCK_ITEM_FACTORIES = ConcurrentHashMap.newKeySet();
     private static final Map<String, ItemFactory> ITEM_REGISTRY = new ConcurrentHashMap<>();
     private static final Map<String, BlockEntityFactory> BLOCK_ENTITY_REGISTRY = new ConcurrentHashMap<>();
     private static final Map<String, GenericFactory> GENERIC_REGISTRY = new ConcurrentHashMap<>();
@@ -42,7 +43,23 @@ public class FactoryRegistry {
     // --- Block ---
 
     public static void register(String type, BlockFactory factory) {
+        register(type, factory, false);
+    }
+
+    /**
+     * Registers a block factory and records whether it creates a same-id block item.
+     */
+    public static void register(
+            String type,
+            BlockFactory factory,
+            boolean createsBlockItem
+    ) {
         BLOCK_REGISTRY.put(type, factory);
+        if (createsBlockItem) {
+            BLOCK_ITEM_FACTORIES.add(type);
+        } else {
+            BLOCK_ITEM_FACTORIES.remove(type);
+        }
     }
 
     public static BlockFactory get(String type) {
@@ -51,6 +68,10 @@ public class FactoryRegistry {
 
     public static boolean contains(String type) {
         return BLOCK_REGISTRY.containsKey(type);
+    }
+
+    public static boolean createsBlockItem(String type) {
+        return BLOCK_ITEM_FACTORIES.contains(type);
     }
 
     // --- Item ---

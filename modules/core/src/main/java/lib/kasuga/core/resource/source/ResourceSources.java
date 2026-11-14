@@ -7,9 +7,14 @@ import lib.kasuga.core.vfs.backend.DirectoryVfs;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -32,7 +37,33 @@ public final class ResourceSources {
 
     /** Accepts a mod's findResource("") path, whether an expanded directory or an ordinary JAR. */
     public static ResourceSource mod(ResourceSourceDescriptor descriptor, Path root, InputPolicy policy) throws IOException {
-        return Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) ? directory(descriptor, root, policy) : archive(descriptor, root, policy);
+        if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) {
+            return archive(descriptor, root, policy);
+        }
+        FileSystem fileSystem = root.getFileSystem();
+        if (fileSystem.provider() == FileSystems.getDefault().provider()) {
+            return directory(descriptor, root, policy);
+        }
+        return readOnlyDirectory(descriptor, root, policy);
+    }
+
+    /**
+     * Captures a read-only directory tree whose provider does not support creating directories,
+     * such as NeoForge's union filesystem for an expanded mod artifact.
+     */
+    public static ResourceSource readOnlyDirectory(
+            ResourceSourceDescriptor descriptor,
+            Path root,
+            InputPolicy policy
+    ) throws IOException {
+        Objects.requireNonNull(descriptor, "descriptor");
+        Objects.requireNonNull(policy, "policy");
+        Path normalized = root.toAbsolutePath().normalize();
+        if (!Files.isDirectory(normalized, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(normalized)) {
+            throw new IOException("SAFE_PATH: expected a non-link directory");
+        }
+        return new ReadOnlyNioSource(descriptor, normalized, policy);
     }
 
     public static ResourceSource archive(ResourceSourceDescriptor descriptor, Path archive, InputPolicy policy) throws IOException {
@@ -54,6 +85,36 @@ public final class ResourceSources {
             }
             @Override public synchronized void close() { closed = true; }
         };
+    }
+
+    /**
+     * Captures a live source once and returns a source whose later captures are reprojected from
+     * the original bytes. The supplied source is closed after capture.
+     */
+    public static ResourceSource fixed(
+            ResourceSourceDescriptor descriptor,
+            ResourceSource source,
+            InputPolicy policy
+    ) throws IOException {
+        Objects.requireNonNull(descriptor, "descriptor");
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(policy, "policy");
+        ResourceSnapshot baseline;
+        try {
+            baseline = source.capture();
+        } finally {
+            source.close();
+        }
+        return fixed(descriptor, baseline, policy);
+    }
+
+    /** Wraps an existing immutable snapshot and takes ownership of it. */
+    public static ResourceSource fixed(
+            ResourceSourceDescriptor descriptor,
+            ResourceSnapshot baseline,
+            InputPolicy policy
+    ) {
+        return new FixedResourceSource(descriptor, baseline, policy);
     }
 
     private static ResourceSnapshot copiedArchive(ResourceSourceDescriptor descriptor, Path archive, InputPolicy policy) throws IOException {
@@ -164,6 +225,106 @@ public final class ResourceSources {
     private static int readShort(RandomAccessFile file) throws IOException { return Short.toUnsignedInt(Short.reverseBytes(file.readShort())); }
     private static long readInt(RandomAccessFile file) throws IOException { return Integer.toUnsignedLong(Integer.reverseBytes(file.readInt())); }
     @FunctionalInterface private interface Validator { void validate() throws IOException; }
+
+    private static final class ReadOnlyNioSource implements ResourceSource {
+        private final ResourceSourceDescriptor descriptor;
+        private final Path root;
+        private final InputPolicy policy;
+        private boolean closed;
+
+        private ReadOnlyNioSource(
+                ResourceSourceDescriptor descriptor,
+                Path root,
+                InputPolicy policy
+        ) {
+            this.descriptor = descriptor;
+            this.root = root;
+            this.policy = policy;
+        }
+
+        @Override
+        public ResourceSourceDescriptor descriptor() {
+            return descriptor;
+        }
+
+        @Override
+        public synchronized ResourceSnapshot capture() throws IOException {
+            if (closed) {
+                throw new IOException("SOURCE_UNAVAILABLE: mod root source closed");
+            }
+            for (int attempt = 0; attempt < 3; attempt++) {
+                try (ResourceSnapshot first = captureOnce()) {
+                    ResourceSnapshot second = captureOnce();
+                    if (first.files().stream()
+                            .map(ResourceSnapshot.LocatedResourceFile::descriptor)
+                            .toList()
+                            .equals(second.files().stream()
+                                    .map(ResourceSnapshot.LocatedResourceFile::descriptor)
+                                    .toList())) {
+                        return second;
+                    }
+                    second.close();
+                }
+            }
+            throw new IOException("SOURCE_UNAVAILABLE: mod root changed during capture");
+        }
+
+        private ResourceSnapshot captureOnce() throws IOException {
+            List<Path> files = new ArrayList<>();
+            Files.walkFileTree(root, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult preVisitDirectory(
+                        Path directory,
+                        BasicFileAttributes attributes
+                ) throws IOException {
+                    if ((!directory.equals(root) && attributes.isSymbolicLink())
+                            || Files.isSymbolicLink(directory)) {
+                        throw new IOException("UNSAFE_PATH: symbolic link in mod root");
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attributes)
+                        throws IOException {
+                    if (attributes.isSymbolicLink() || Files.isSymbolicLink(file)) {
+                        throw new IOException("UNSAFE_PATH: symbolic link in mod root");
+                    }
+                    if (!attributes.isRegularFile()) {
+                        throw new IOException("UNSAFE_PATH: special file in mod root");
+                    }
+                    files.add(file);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+            Map<Path, String> logicalPaths = new LinkedHashMap<>();
+            for (Path file : files) {
+                logicalPaths.put(file, relative(file));
+            }
+            files.sort(Comparator.comparing(logicalPaths::get));
+            try (ResourceSnapshot.Builder builder = new ResourceSnapshot.Builder(descriptor, policy)) {
+                for (Path file : files) {
+                    String path = logicalPaths.get(file);
+                    builder.add(path, path, () -> Files.newInputStream(file));
+                }
+                return builder.build();
+            }
+        }
+
+        private String relative(Path file) throws IOException {
+            String value = root.relativize(file).toString().replace('\\', '/');
+            try {
+                return ResourcePaths.path(value, false);
+            } catch (IllegalArgumentException exception) {
+                throw new IOException("UNSAFE_PATH: invalid mod root path: " + value, exception);
+            }
+        }
+
+        @Override
+        public synchronized void close() {
+            closed = true;
+        }
+    }
 
     private static final class VfsSource implements ResourceSource {
         private final ResourceSourceDescriptor descriptor;

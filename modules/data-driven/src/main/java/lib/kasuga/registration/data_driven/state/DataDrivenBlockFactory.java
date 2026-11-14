@@ -13,7 +13,11 @@ public final class DataDrivenBlockFactory {
 
     public static void registerIfAbsent() {
         if (!FactoryRegistry.contains(TYPE)) {
-            FactoryRegistry.register(TYPE, (StatefulBlockFactory) (id, params, properties) -> create(id, properties));
+            FactoryRegistry.register(
+                    TYPE,
+                    (StatefulBlockFactory) (id, params, properties) -> create(id, properties),
+                    true
+            );
         }
     }
 

@@ -7,13 +7,17 @@ import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.data_driven.context.BuildContext;
 import lib.kasuga.registration.data_driven.context.JsonRegistryGroup;
 import lib.kasuga.registration.data_driven.context.RegBuildContext;
+import lib.kasuga.registration.data_driven.pipeline.DefinitionKey;
+import lib.kasuga.registration.data_driven.pipeline.HandlerCapability;
 import lib.kasuga.registration.data_driven.property.JsonItemParser;
 import lib.kasuga.registration.data_driven.property.JsonPropertyParser;
+import lib.kasuga.registration.data_driven.validation.ValidationContext;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 
 public class RegistryGroupHandler extends MetaTypeHandler<RegistryGroupDef> {
@@ -23,6 +27,14 @@ public class RegistryGroupHandler extends MetaTypeHandler<RegistryGroupDef> {
 
     @Override
     public int getPhase() { return PHASE_GROUPS; }
+
+    @Override
+    public Set<HandlerCapability> capabilities() {
+        return Set.of(
+                HandlerCapability.STRICT_PREFLIGHT,
+                HandlerCapability.NON_REGISTRATION
+        );
+    }
 
     @Override
     public RegistryGroupDef parse(JsonObject json) {
@@ -48,6 +60,47 @@ public class RegistryGroupHandler extends MetaTypeHandler<RegistryGroupDef> {
     @Override
     public String resolveIdentity(String modId, RegistryGroupDef definition) {
         return definition.id();
+    }
+
+    @Override
+    public void validate(RegistryGroupDef definition, ValidationContext context) {
+        if (definition.parent() != null) {
+            context.requireDefinition(
+                    new DefinitionKey(getTypeName(), definition.parent()),
+                    "/parent"
+            );
+        }
+        if (definition.properties() != null) {
+            try {
+                JsonPropertyParser.getInstance().parseBlockProperties(definition.properties());
+            } catch (RuntimeException failure) {
+                context.error(
+                        lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.CONTENT_INVALID,
+                        "/properties",
+                        "Invalid registry group block properties: " + failure.getMessage(),
+                        "Fix the property names and value shapes."
+                );
+            }
+        }
+        if (definition.itemProperties() != null) {
+            try {
+                JsonItemParser.INSTANCE.parseItemProperties(definition.itemProperties());
+            } catch (RuntimeException failure) {
+                context.error(
+                        lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.CONTENT_INVALID,
+                        "/item_properties",
+                        "Invalid registry group item properties: " + failure.getMessage(),
+                        "Fix the property names and value shapes."
+                );
+            }
+        }
+    }
+
+    @Override
+    public DefinitionKey parentDefinition(RegistryGroupDef definition) {
+        return definition.parent() == null
+                ? null
+                : new DefinitionKey(getTypeName(), definition.parent());
     }
 
     @SuppressWarnings("unchecked")

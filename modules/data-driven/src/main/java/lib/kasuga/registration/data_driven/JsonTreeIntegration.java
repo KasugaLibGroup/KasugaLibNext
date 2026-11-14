@@ -22,6 +22,15 @@ public class JsonTreeIntegration {
         // Build the per-mod JSON tree lazily on first registry dispatch, after all
         // @Context static initializers have registered their factory types.
         registry.register(RegisterContextRegistry.Side.COMMON, (modRegistry, eventBus) -> {
+            DataDrivenRegistrationProvider provider =
+                    DataDrivenRegistrationProviders.find(modRegistry.getModId()).orElse(null);
+            if (provider != null) {
+                JsonRegistryGroup jsonRoot = provider.build(modRegistry.getModId());
+                if (jsonRoot != null) {
+                    modRegistry.addChild(jsonRoot);
+                }
+                return;
+            }
             try {
                 JsonRegistryGroup jsonRoot = JsonTreeBuilder.buildForMod(modRegistry.getModId());
                 if (jsonRoot != null) {

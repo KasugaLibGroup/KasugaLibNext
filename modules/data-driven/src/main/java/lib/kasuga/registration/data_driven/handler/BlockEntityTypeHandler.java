@@ -9,11 +9,17 @@ import lib.kasuga.registration.data_driven.TypeHandler;
 import lib.kasuga.registration.data_driven.context.BuildContext;
 import lib.kasuga.registration.data_driven.context.RegBuildContext;
 import lib.kasuga.registration.data_driven.dedup.EffectiveId;
+import lib.kasuga.registration.data_driven.pipeline.DefinitionKey;
+import lib.kasuga.registration.data_driven.pipeline.HandlerCapability;
+import lib.kasuga.registration.data_driven.pipeline.RegistryClaim;
+import lib.kasuga.registration.data_driven.validation.ValidationContext;
 import lib.kasuga.registration.factory.FactoryRegistry;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 import org.slf4j.Logger;
 
 import java.util.List;
+import java.util.Set;
 
 public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
 
@@ -24,6 +30,14 @@ public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
 
     @Override
     public int getPhase() { return PHASE_EMBEDDED; }
+
+    @Override
+    public Set<HandlerCapability> capabilities() {
+        return Set.of(
+                HandlerCapability.STRICT_PREFLIGHT,
+                HandlerCapability.REGISTRY_CLAIMS
+        );
+    }
 
     @Override
     public String getParentTypeName() { return "blocks"; }
@@ -66,7 +80,52 @@ public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
      */
     @Override
     public String resolveIdentity(String modId, BlockEntityDef definition) {
-        return EffectiveId.of(modId, definition.parentBlockId());
+        return EffectiveId.ofLegacy(modId, definition.parentBlockId());
+    }
+
+    @Override
+    public String resolveIdentity(String modId, BlockEntityDef definition, boolean strict) {
+        return strict
+                ? EffectiveId.of(modId, definition.parentBlockId())
+                : resolveIdentity(modId, definition);
+    }
+
+    @Override
+    public void validate(BlockEntityDef definition, ValidationContext context) {
+        String parent = definition.parentBlockId();
+        if (parent.indexOf(':') <= 0 || ResourceLocation.tryParse(parent) == null) {
+            context.error(
+                    lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.INVALID_IDENTITY,
+                    "/id",
+                    "Parent block id '" + parent + "' must be an explicit namespace-qualified resource location",
+                    "Write the parent block id as '<namespace>:<path>'."
+            );
+        }
+        context.requireDefinition(
+                new DefinitionKey("blocks", EffectiveId.of(context.hostModId(), parent)),
+                ""
+        );
+        if (!context.factoryAvailable(ValidationContext.FactoryType.BLOCK_ENTITY, definition.beType())) {
+            context.error(
+                    lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.UNKNOWN_FACTORY,
+                    "/type",
+                    "No block entity factory is registered as '" + definition.beType() + "'",
+                    "Register the block entity factory before starting strict preparation."
+            );
+        }
+    }
+
+    @Override
+    public List<RegistryClaim> claims(BlockEntityDef definition, ValidationContext context) {
+        ResourceLocation parent = ResourceLocation.tryParse(
+                EffectiveId.of(context.hostModId(), definition.parentBlockId())
+        );
+        if (parent == null) return List.of();
+        ResourceLocation id = ResourceLocation.fromNamespaceAndPath(
+                parent.getNamespace(),
+                parent.getPath() + "_be"
+        );
+        return List.of(context.claim("minecraft:block_entity_type", id));
     }
 
     @Override
@@ -95,7 +154,8 @@ public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
             blockReg.addChild(beReg);
             context.putReg(getTypeName(), parentBlockId, beReg);
             LOGGER.debug("Attached block entity '{}' to block '{}'", beName, parentBlockId);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
+            if (context.isStrict()) throw e;
             LOGGER.warn("Failed to apply block entity for '{}': {}",
                 parentBlockId, e.getMessage());
             LOGGER.debug("Full stack trace", e);

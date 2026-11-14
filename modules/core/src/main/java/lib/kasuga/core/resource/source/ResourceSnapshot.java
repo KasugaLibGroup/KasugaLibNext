@@ -170,6 +170,7 @@ public final class ResourceSnapshot implements AutoCloseable {
         }
 
         public ResourceSnapshot build() { if (built) throw new IllegalStateException("Already built"); built = true; return snapshot; }
+        public Set<String> logicalPaths() { return Set.copyOf(logicalPaths); }
         @Override public void close() throws IOException { if (!built) snapshot.close(); }
     }
 }

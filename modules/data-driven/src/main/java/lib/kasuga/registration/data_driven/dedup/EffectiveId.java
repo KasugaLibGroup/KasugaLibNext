@@ -17,7 +17,7 @@ package lib.kasuga.registration.data_driven.dedup;
  * last, so the two cases above combine to:
  * <pre>
  *   "foo"             -&gt; "&lt;modId&gt;:foo"
- *   "minecraft:foo"   -&gt; "&lt;modId&gt;:foo"
+ *   "minecraft:foo"   -&gt; "minecraft:foo"
  *   "kasuga_lib:foo"  -&gt; "kasuga_lib:foo"
  * </pre>
  *
@@ -37,6 +37,21 @@ public final class EffectiveId {
      * @return the effective id, or {@code null} when {@code rawId} is {@code null}
      */
     public static String of(String modId, String rawId) {
+        if (rawId == null) {
+            return null;
+        }
+        int colon = rawId.indexOf(':');
+        if (colon < 0) {
+            return modId + ":" + rawId;
+        }
+        return rawId;
+    }
+
+    /**
+     * Historical normalization used by the legacy JAR loader. It maps an explicit
+     * {@code minecraft:} namespace under the host mod as an old compatibility quirk.
+     */
+    public static String ofLegacy(String modId, String rawId) {
         if (rawId == null) {
             return null;
         }

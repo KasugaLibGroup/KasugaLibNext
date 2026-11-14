@@ -56,7 +56,7 @@ public class FanDataDrivenFactories {
     @PostConstruct
     public void init() {
         FactoryRegistry.register(BLOCK_TYPE, (id, params) -> blockWithItem(id,
-                props -> new FanBlock(props, () -> BuiltInRegistries.BLOCK_ENTITY_TYPE.get(BE_ID))));
+                props -> new FanBlock(props, () -> BuiltInRegistries.BLOCK_ENTITY_TYPE.get(BE_ID))), true);
         FactoryRegistry.registerBlockEntity(BE_TYPE, FanDataDrivenFactories::createFanBeReg);
     }
 
