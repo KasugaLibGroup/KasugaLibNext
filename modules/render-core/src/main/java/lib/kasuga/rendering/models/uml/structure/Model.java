@@ -49,6 +49,11 @@ public class Model {
     private final MeshMode meshMode;
     private final AnimationLibrary animations = new AnimationLibrary();
 
+    /** Whether this asset may create render resources. Transform-only rigs opt out. */
+    public boolean isRenderable() {
+        return true;
+    }
+
 
     public Model(Vertex[] vertices,
                  Mesh[] meshes,

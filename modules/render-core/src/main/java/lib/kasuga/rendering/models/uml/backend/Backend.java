@@ -38,6 +38,10 @@ public abstract class Backend<T extends Bridge<R>, R, Q, E>
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(bridge, "bridge");
         Objects.requireNonNull(instance, "instance");
+        if (!instance.getModel().isRenderable()) {
+            remove(key);
+            return;
+        }
         BackendContext<T, R, Q, E> context = Objects.requireNonNull(createContext(bridge, instance), "context");
         try {
             context.apply();

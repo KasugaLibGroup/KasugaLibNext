@@ -1,8 +1,13 @@
 package lib.kasuga.rendering.models.mc.api;
 
 import com.mojang.logging.LogUtils;
+import com.mojang.blaze3d.platform.NativeImage;
 import lib.kasuga.KasugaLib;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.DummyModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
+import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
+import lib.kasuga.rendering.models.mc.dynamic.MinecraftModelRuntime;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.uml.structure.Model;
 import lib.kasuga.rendering.models.uml.structure.basic.Mesh;
@@ -47,6 +52,7 @@ public final class AnchorEquipmentSmokeTest {
     private static McModelEquipment equipment;
     private static CameraHandle camera;
     private static GearOwner owner;
+    private static DummyModelInstance group, nested;
     private static byte[] baseline;
     private static int warmup, frames, rendered, changedPixels, phase;
     private static boolean finished;
@@ -55,6 +61,13 @@ public final class AnchorEquipmentSmokeTest {
         if (!ENABLED || finished) return;
         var mc = Minecraft.getInstance();
         if (System.nanoTime() - START > 120_000_000_000L) { finish(new IllegalStateException("Equipment test timed out")); return; }
+        if (mc.getOverlay() == null && mc.screen instanceof net.minecraft.client.gui.screens.BackupConfirmScreen screen) {
+            String proceed = net.minecraft.network.chat.Component.translatable("selectWorld.backupJoinConfirmButton").getString();
+            for (var child : screen.children()) {
+                if (child instanceof net.minecraft.client.gui.components.Button button
+                        && button.getMessage().getString().equals(proceed)) { button.onPress(); return; }
+            }
+        }
         if (mc.player == null || mc.level == null || mc.getOverlay() != null || ++warmup < 60) return;
         try {
             if (camera == null) {
@@ -62,6 +75,21 @@ public final class AnchorEquipmentSmokeTest {
                 var origin = mc.player.position().add(0, 40, 0);
                 ModelInstance instance = rig();
                 instance.getSkeletonInstance().enableFloatingOrigin(new Vector3d(origin.x, origin.y, origin.z));
+                group = McDummyModels.create();
+                group.getSkeletonInstance().enableFloatingOrigin(new Vector3d(origin.x, origin.y, origin.z));
+                nested = McDummyModels.create();
+                group.defineAnchor("nested", new Transform().translate(.1f, 0, 0));
+                nested.defineAnchor("actor", new Transform().translate(-.1f, 0, 0));
+                group.attach("nested", nested);
+                nested.attach("actor", instance);
+                MinecraftModelRuntime.register(instance);
+                ModelPoseBinding.install(group, new PoseDriver() {
+                    @Override public void sample(float partialTick) {
+                        group.getSkeletonInstance().transformRoot(new Transform()
+                                .translate((float) Math.sin(frames * .05) * .25f, 0, 0)
+                                .rotate(0, (float) Math.sin(frames * .04) * 20f, 0, true));
+                    }
+                });
                 handle = McModelHandle.custom(ResourceLocation.parse("test:equipment"), null, ResourceLocation.parse("test:equipment_actor"),
                         root -> instance, ignored -> null);
                 handle.mount();
@@ -86,6 +114,7 @@ public final class AnchorEquipmentSmokeTest {
                             if (delta > 50) different++;
                         }
                         changedPixels = Math.max(changedPixels, different);
+                        if (frames == 45 || frames == 90) capture(rgba, 320, 180, frames);
                     }
                 });
             }
@@ -108,6 +137,11 @@ public final class AnchorEquipmentSmokeTest {
     @SubscribeEvent public static void after(RenderFrameEvent.Post event) {
         if (!ENABLED || finished || camera == null) return;
         if (GL11.glGetError() != GL11.GL_NO_ERROR) { finish(new IllegalStateException("Equipment GL error")); return; }
+        var actor = handle.instance().getSkeletonInstance();
+        var expected = nested.getSkeletonInstance().anchorTransformRelative("actor", actor.getWorldOrigin());
+        if (expected == null || !expected.transform().equals(actor.getTransform().transform(), 1e-4f)) {
+            finish(new IllegalStateException("Dummy group child did not follow in the same frame")); return;
+        }
         if (frames >= 100) {
             if (rendered < 150 || changedPixels < 50) finish(new IllegalStateException("Items did not reach the rendered view: " + rendered + "/" + changedPixels));
             else finish(null);
@@ -131,14 +165,28 @@ public final class AnchorEquipmentSmokeTest {
         GearOwner(net.minecraft.world.level.Level level) { super(level, 0, 0, 0); }
         @Override public HumanoidArm getMainArm() { return left ? HumanoidArm.LEFT : HumanoidArm.RIGHT; }
     }
+    private static void capture(byte[] rgba, int width, int height, int frame) {
+        try (NativeImage image = new NativeImage(width, height, false)) {
+            for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
+                int i = (y * width + x) * 4;
+                image.setPixelRGBA(x, y, (rgba[i] & 255) | ((rgba[i + 1] & 255) << 8)
+                        | ((rgba[i + 2] & 255) << 16) | ((rgba[i + 3] & 255) << 24));
+            }
+            var path = Minecraft.getInstance().gameDirectory.toPath().resolve("debug/dummy-group-" + frame + ".png");
+            Files.createDirectories(path.getParent()); image.writeToFile(path);
+        } catch (java.io.IOException failure) { throw new IllegalStateException("Cannot capture dummy group", failure); }
+    }
     private static void finish(Exception failure) {
         if (finished) return; finished = true;
         var mc = Minecraft.getInstance();
         try {
             if (equipment != null) equipment.close(); if (camera != null) camera.close();
-            if (handle != null) { var instance = handle.instance(); handle.destroy(); if (instance != null) instance.close(); }
+            if (group != null) group.close(); if (nested != null) nested.close();
+            if (handle != null) { var instance = handle.instance(); handle.destroy(); if (instance != null) {
+                MinecraftModelRuntime.unregister(instance); instance.close();
+            } }
             var report = mc.gameDirectory.toPath().resolve("debug/anchor-equipment.json"); Files.createDirectories(report.getParent());
-            Files.writeString(report, "{\"passed\":" + (failure == null) + ",\"frames\":" + frames + ",\"itemsRendered\":" + rendered + ",\"changedPixels\":" + changedPixels + "}");
+            Files.writeString(report, "{\"passed\":" + (failure == null) + ",\"dummyGroups\":2,\"frames\":" + frames + ",\"itemsRendered\":" + rendered + ",\"changedPixels\":" + changedPixels + "}");
             if (failure == null) LogUtils.getLogger().info("ANCHOR_EQUIPMENT_SMOKE_PASS {}", report);
             else LogUtils.getLogger().error("ANCHOR_EQUIPMENT_SMOKE_FAIL", failure);
         } catch (Exception cleanup) { LogUtils.getLogger().error("Equipment smoke cleanup failed", cleanup); }

@@ -39,6 +39,45 @@ skeleton.defineAnchor("head", skeleton.getBoneMap().get("head"), new Transform()
 旧回调接口在模型卸载、重载或切换后释放，通过 `onInstanceChanged` 为新实例重新配置。
 精度敏感的渲染使用 relative 接口，先在 double 中减去原点，再转换为 float；无需先取得 float 世界位置。
 
+## Dummy 模型分组
+
+`DummyModelInstance` 是只有一个恒等根骨骼的独立模型实例，不含顶点、面、材质或纹理。
+它的 `Model.isRenderable()` 为 false；后端在创建渲染上下文之前跳过它，直接创建 MC GPU 实例的路径也不分配骨骼 TBO。
+每个 dummy 都拥有自己的骨架，所以可以在运行时新增、移动锚点。
+
+```java
+// 客户端宿主创建一次；自动逐帧更新，不需要模型文件、资源 ID 或后端挂载。
+DummyModelInstance group = McDummyModels.create();
+group.defineAnchor("left", new Transform().translate(-1, 0, 0));
+group.defineAnchor("right", new Transform().translate(1, 0, 0));
+
+// leftHandle / rightHandle 已成功 mount；子模型仍使用各自的渲染调度。
+var left = group.attach("left", leftHandle.instance());
+var right = group.attach("right", rightHandle.instance(), new Transform().scale(.5f, .5f, .5f));
+
+group.getSkeletonInstance().transformRoot(new Transform()
+        .translate(10, 64, 10).rotate(0, 45, 0, true));
+group.setAnchorTransform("right", new Transform().translate(2, 0, 0));
+left.setOffset(new Transform().rotate(0, 90, 0, true));
+
+left.close();   // 解绑，保留子模型最后的世界姿态。
+group.close();  // 宿主移除/世界卸载时调用；注销自动更新并解绑其余子模型。
+```
+
+子根变换为 `父根 × 锚点局部变换 × 子局部 offset`；子模型原有骨骼动画继续工作。
+`group.attach` 的子模型也可以是另一个 dummy，形成嵌套分组；自动调度先求值父组再求值子组，
+不依赖 dummy 可见性。输入 offset 在绑定/修改时复制；同一锚点可以挂多个子模型。
+循环挂载、重复父级、已有 root driver 或 Scope-owned animation port 的子模型会被拒绝，避免两个来源同时写根变换。
+远坐标使用已有浮动原点与相对锚点接口组合，保留 double 原点。
+
+`Attachment.close()` 和 `group.detach(child)` 解除挂载；子模型关闭时也会从父组移除。
+关闭父组不关闭子模型；嵌套 dummy 仍由其创建者分别关闭。子模型资源重载后，旧实例关闭并解绑，
+宿主应通过 `McModelHandle.onInstanceChanged` 把新实例重新挂载。
+
+不使用 Minecraft 自动调度时，可直接 `new DummyModelInstance()`，按父先子后的顺序调用
+`evaluateFrame(partialTick, deltaSeconds)`；仅逻辑更新也可调用 `tick(deltaSeconds)`，由宿主推进动画时钟。
+所有创建、变换、挂载和释放操作在实例所属线程执行。
+
 ## McModelEquipment
 
 ```java

@@ -4,6 +4,7 @@ import lib.kasuga.rendering.models.uml.backend.Backend;
 import lib.kasuga.rendering.models.uml.backend.BackendContext;
 import lib.kasuga.rendering.models.uml.bridge.Bridge;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.dynamic.DummyModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPublicationBatch;
@@ -40,6 +41,25 @@ import java.util.concurrent.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BackendContractTest {
+    @Test
+    void replacingRenderableWithDummyReleasesOldContextWithoutAllocatingAnother() throws Exception {
+        Resource resource = new Resource();
+        Adapter adapter = new Adapter(instance -> resource);
+        try (var ordinary = instance(); var dummy = new DummyModelInstance(); var backend = new TestBackend()) {
+            backend.add("slot", adapter, ordinary);
+            Context old = backend.lastCreated;
+            adapter.factory = instance -> { throw new AssertionError("dummy allocated render resources"); };
+            backend.add("slot", adapter, dummy);
+            assertSame(old, backend.lastCreated);
+            assertTrue(old.isClosed());
+            assertEquals(1, resource.closes);
+            assertEquals(List.of(ordinary), backend.released);
+            assertFalse(backend.contains("slot"));
+            assertFalse(ordinary.isClosed());
+            assertFalse(dummy.isClosed());
+        }
+    }
+
     @Test
     void backendCreatesContextsWithoutBridgeRegistryAndReleasesReplacement() throws Exception {
         Resource first = new Resource(), second = new Resource();
