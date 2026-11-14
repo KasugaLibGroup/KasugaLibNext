@@ -7,6 +7,7 @@ import com.simibubi.create.content.trains.entity.CarriageContraptionEntity;
 import com.simibubi.create.content.trains.entity.Train;
 import com.simibubi.create.content.trains.graph.TrackNode;
 import com.simibubi.create.content.trains.signal.TrackEdgePoint;
+import lib.kasuga.create.content.train.device.sync.TrainDeviceSyncManager;
 import lib.kasuga.structure.Pair;
 import net.createmod.catnip.data.Couple;
 import net.minecraft.core.BlockPos;
@@ -262,6 +263,10 @@ public class TrainDeviceManager {
         }
         T system = type.create(this);
         this.systems.put(type, system);
+        if(system.isSyncEnabled()) {
+            // 玩家可能已经订阅了这列车：新设备要补一次 FULL。
+            markSyncDirty(system);
+        }
         updateCache();
         return system;
     }
@@ -315,6 +320,37 @@ public class TrainDeviceManager {
             TrainDeviceSystem system = entry.getValue();
             safeInvoke(entry.getKey(), "onSegmentUpdated", () -> system.onSegmentUpdated(segmentType));
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 状态同步（I-02）
+    // ------------------------------------------------------------------
+
+    /** 设备调用 {@link TrainDeviceSystem#markSyncDirty()} 后落到这里：只置脏，不发包。 */
+    public void markSyncDirty(TrainDeviceSystem system) {
+        if (system == null || !system.isSyncEnabled()) {
+            return;
+        }
+        TrainDeviceSystemType<?> type = system.getType();
+        if (type == null) {
+            return;
+        }
+        TrainDeviceSyncManager.get().markDirty(this, TrainDeviceRegistry.getKey(type));
+    }
+
+    /** 是否有任何设备声明了同步；没有时同步通道整个跳过（零开销）。 */
+    public boolean hasSyncSystems() {
+        for (TrainDeviceSystem system : this.systems.values()) {
+            if (system.isSyncEnabled()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 只读视图，供同步管理器按注册 id 序列化。 */
+    public Map<TrainDeviceSystemType<?>, TrainDeviceSystem> systemsView() {
+        return Collections.unmodifiableMap(this.systems);
     }
 
     // ------------------------------------------------------------------

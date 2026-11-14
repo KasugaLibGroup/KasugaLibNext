@@ -135,6 +135,33 @@ public class TrainDeviceSystem {
 
     public void onSegmentUpdated(ResourceLocation segmentType) {}
 
+    // ------------------------------------------------------------------
+    // 状态同步（I-02）：默认不参与同步，通道对默认设备零开销
+    // ------------------------------------------------------------------
+
+    /**
+     * 是否把状态同步到客户端。默认 {@code false}：同步管理器不会序列化、订阅、发包，
+     * 这条路径对不声明同步的设备完全不产生开销。
+     */
+    public boolean isSyncEnabled() {
+        return false;
+    }
+
+    /** 只写要同步给客户端的字段（白名单）。服务端在状态变化后调用。 */
+    public void writeSyncTag(CompoundTag tag) {
+    }
+
+    /** 客户端解析同步状态；{@code version} 是服务端快照里的 schema 版本。 */
+    public void readSyncTag(CompoundTag tag, int version) {
+    }
+
+    /** 状态变化后调用（服务端）。不声明同步的设备调用它是无操作。 */
+    protected final void markSyncDirty() {
+        if (manager != null) {
+            manager.markSyncDirty(this);
+        }
+    }
+
     private String describeType() {
         TrainDeviceSystemType<?> current = type;
         if (current == null) {
