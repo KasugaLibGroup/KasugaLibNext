@@ -315,14 +315,16 @@ public final class ReloadOrchestrator implements ScopedResourceManagerConsumer, 
         for (Map.Entry<ResourceLocation, List<Resource>> entry : new TreeMap<>(found).entrySet()) {
             ResourceLocation loc = entry.getKey();
             List<Resource> managed = entry.getValue().stream()
-                    .filter(resource -> ManagedReloadAllowlist.isManaged(resource.sourcePackId()))
+                    .filter(resource -> ManagedReloadAllowlist.isManaged(
+                            sourcePackId(resource)))
                     .filter(resource -> ManagedReloadAllowlist.allowsIndex(
-                            resource.sourcePackId(), loc))
+                            sourcePackId(resource), loc))
                     .sorted(Comparator.comparingInt(resource ->
-                            ManagedReloadAllowlist.priority(resource.sourcePackId())))
+                            ManagedReloadAllowlist.priority(sourcePackId(resource))))
                     .toList();
             boolean anyManaged = entry.getValue().stream()
-                    .anyMatch(resource -> ManagedReloadAllowlist.isManaged(resource.sourcePackId()));
+                    .anyMatch(resource -> ManagedReloadAllowlist.isManaged(
+                            sourcePackId(resource)));
             if (anyManaged && managed.isEmpty()) continue;
             List<Resource> selected = anyManaged
                     ? managed
@@ -372,7 +374,7 @@ public final class ReloadOrchestrator implements ScopedResourceManagerConsumer, 
                 }
                 Resource legacy = entry.getValue().stream()
                         .filter(resource -> !ManagedReloadAllowlist.isManaged(
-                                resource.sourcePackId()))
+                                sourcePackId(resource)))
                         .findFirst()
                         .orElse(null);
                 if (legacy == null) continue;
@@ -415,14 +417,16 @@ public final class ReloadOrchestrator implements ScopedResourceManagerConsumer, 
                 continue;
             }
             List<Resource> managed = stack.stream()
-                    .filter(resource -> ManagedReloadAllowlist.isManaged(resource.sourcePackId()))
+                    .filter(resource -> ManagedReloadAllowlist.isManaged(
+                            sourcePackId(resource)))
                     .filter(resource -> ManagedReloadAllowlist.allowsContent(
-                            resource.sourcePackId(), loc))
+                            sourcePackId(resource), loc))
                     .sorted(Comparator.comparingInt(resource ->
-                            ManagedReloadAllowlist.priority(resource.sourcePackId())))
+                            ManagedReloadAllowlist.priority(sourcePackId(resource))))
                     .toList();
             boolean anyManaged = stack.stream()
-                    .anyMatch(resource -> ManagedReloadAllowlist.isManaged(resource.sourcePackId()));
+                    .anyMatch(resource -> ManagedReloadAllowlist.isManaged(
+                            sourcePackId(resource)));
             if (anyManaged && managed.isEmpty()) {
                 reportError(namespace, "Managed reload source is not authorized by an index: "
                         + loc);
@@ -442,6 +446,10 @@ public final class ReloadOrchestrator implements ScopedResourceManagerConsumer, 
                 );
             }
         }
+    }
+
+    private static String sourcePackId(Resource resource) {
+        return resource.source() == null ? null : resource.sourcePackId();
     }
 
     /**

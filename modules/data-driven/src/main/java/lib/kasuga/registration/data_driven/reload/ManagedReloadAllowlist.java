@@ -94,7 +94,8 @@ public final class ManagedReloadAllowlist {
     }
 
     public static synchronized boolean isManaged(String sourcePackId) {
-        return POLICIES.values().stream().anyMatch(policy -> policy.managedSource(sourcePackId));
+        return sourcePackId != null
+                && POLICIES.values().stream().anyMatch(policy -> policy.managedSource(sourcePackId));
     }
 
     public static synchronized boolean allowsIndex(String sourcePackId, ResourceLocation location) {
