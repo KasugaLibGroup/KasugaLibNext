@@ -9,6 +9,7 @@ import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.signal.TrackEdgePoint;
 import lib.kasuga.create.content.train.device.TrainDeviceManager;
 import lib.kasuga.create.content.train.device.TrainDeviceProvider;
+import lib.kasuga.create.content.train.device.sync.TrainDeviceSyncManager;
 import lib.kasuga.structure.Pair;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -139,6 +140,7 @@ public abstract class TrainMixin implements TrainDeviceProvider {
         if(this.kasuga$manager != null) {
             this.kasuga$manager.notifyDisassemble(assemblyDirection, pos);
         }
+        TrainDeviceSyncManager.get().clearTrain(((Train) (Object) this).id);
     }
 
     @Inject(method= "collectInitiallyOccupiedSignalBlocks", at=@At("RETURN"))

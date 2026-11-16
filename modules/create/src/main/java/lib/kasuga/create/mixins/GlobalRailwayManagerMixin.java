@@ -4,8 +4,12 @@ import com.simibubi.create.Create;
 import com.simibubi.create.content.trains.GlobalRailwayManager;
 import com.simibubi.create.content.trains.graph.TrackEdge;
 import com.simibubi.create.content.trains.graph.TrackGraph;
+import com.simibubi.create.content.trains.entity.Train;
 import com.simibubi.create.content.trains.graph.TrackNode;
 import lib.kasuga.KasugaLib;
+import lib.kasuga.create.content.train.device.TrainDeviceManager;
+import lib.kasuga.create.content.train.device.TrainDeviceProvider;
+import lib.kasuga.create.content.train.device.sync.TrainDeviceSyncManager;
 import lib.kasuga.create.content.train.graph.RailwayManager;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.Level;
@@ -60,5 +64,29 @@ public class GlobalRailwayManagerMixin {
         if(level.dimension() != Level.OVERWORLD)
             return;
         railwayManager.get().getData().onEarlyGlobalTick(level);
+    }
+
+    /** 设备状态同步：订阅扫描 + 脏标记 flush，只在服务端 level tick 里跑。 */
+    @Inject(method = "tick", at=@At("HEAD"), require = 0)
+    public void onTickDevices(Level level, CallbackInfo ci){
+        if(level.isClientSide)
+            return;
+        TrainDeviceSyncManager.get().tick(level);
+    }
+
+    /** 列车注册（组装/读档完成）：只置编组脏标记，重映射推到下一 tick。 */
+    @Inject(method = "addTrain", at=@At("TAIL"), require = 0)
+    public void onAddTrain(Train train, CallbackInfo ci){
+        if(!(train instanceof TrainDeviceProvider provider))
+            return;
+        TrainDeviceManager manager = provider.kasugaLib$getDeviceManager();
+        if(manager != null)
+            manager.markConsistDirty();
+    }
+
+    /** 列车注销（拆解/重定位替换）：通知客户端清掉镜像。 */
+    @Inject(method = "removeTrain", at=@At("TAIL"), require = 0)
+    public void onRemoveTrain(UUID trainId, CallbackInfo ci){
+        TrainDeviceSyncManager.get().clearTrain(trainId);
     }
 }

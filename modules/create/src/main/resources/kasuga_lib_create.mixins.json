@@ -4,6 +4,7 @@
   "plugin": "lib.kasuga.create.compat.CreateMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "CarriageDeviceMixin",
     "EdgeDataMixin",
     "GlobalRailwayManagerMixin",
     "SignalPropagatorMixin",

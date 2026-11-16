@@ -2,29 +2,99 @@ package lib.kasuga.create.content.train.device;
 
 import com.simibubi.create.content.trains.graph.TrackNode;
 import com.simibubi.create.content.trains.signal.TrackEdgePoint;
+import lib.kasuga.create.compat.createconsist.TrainAssemblyChanged;
 import lib.kasuga.structure.Pair;
 import net.createmod.catnip.data.Couple;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 
+import javax.annotation.Nullable;
 import java.util.Optional;
 
 public class TrainDeviceSystem {
 
+    /** 设备状态当前的存档 schema 版本。设备覆写 {@link #schemaVersion()} 表示自己升到了更高版本。 */
+    public static final int CURRENT_SCHEMA_VERSION = 1;
+
+    /** 没有 {@code SchemaVersion} 键的旧档按 0 处理。 */
+    public static final int LEGACY_SCHEMA_VERSION = 0;
+
+    protected static final String TAG_SCHEMA_VERSION = "SchemaVersion";
+    protected static final String TAG_DATA = "Data";
+
     protected final TrainDeviceManager manager;
     private boolean initialized = false;
+    private TrainDeviceSystemType<?> type;
 
     public TrainDeviceSystem(TrainDeviceManager manager) {
         this.manager = manager;
     }
-    public void write(CompoundTag systemTag) {}
-    public void read(CompoundTag systemTag) {}
+
+    /** 由 {@link TrainDeviceSystemType#create(TrainDeviceManager)} 回填，用于日志与迁移表查找。 */
+    @Nullable
+    public TrainDeviceSystemType<?> getType() {
+        return type;
+    }
+
+    void attachType(@Nullable TrainDeviceSystemType<?> type) {
+        if (this.type != null && this.type != type) {
+            throw new IllegalStateException("TrainDeviceSystem 已被绑定到 " + this.type + "，不能重新绑定到 " + type);
+        }
+        this.type = type;
+    }
+
+    /**
+     * 当前设备状态的 schema 版本。字段改名/增删时提升它，并在
+     * {@link TrainDeviceSystemType#addMigration(int, java.util.function.Consumer)} 里登记迁移。
+     */
+    public int schemaVersion() {
+        return CURRENT_SCHEMA_VERSION;
+    }
+
+    /**
+     * 写档。默认把设备字段放进 {@code Data} 子 tag，并写入 {@code SchemaVersion}，因此即使设备什么都不存，
+     * 存档里也会留下版本号，为将来的迁移留下依据。
+     */
+    public void write(CompoundTag systemTag) {
+        systemTag.putInt(TAG_SCHEMA_VERSION, schemaVersion());
+        CompoundTag data = new CompoundTag();
+        writeData(data);
+        systemTag.put(TAG_DATA, data);
+    }
+
+    /**
+     * 读档。缺 {@code Data} 键时把整个 tag 当成设备数据（旧档字段平铺在根上），版本按 0 处理，
+     * 因此升级前的存档不需要额外迁移脚本就能读。
+     */
+    public void read(CompoundTag systemTag) {
+        int version = systemTag.contains(TAG_SCHEMA_VERSION) ? systemTag.getInt(TAG_SCHEMA_VERSION) : LEGACY_SCHEMA_VERSION;
+        CompoundTag data = systemTag.contains(TAG_DATA, Tag.TAG_COMPOUND) ? systemTag.getCompound(TAG_DATA) : systemTag;
+        if (version > schemaVersion()) {
+            // 高版本存档里有本实现不认识的字段：读下去再写回就是静默改数据，宁可让这一条读档失败，
+            // 由 TrainDeviceManager 把原始条目原样保留。
+            throw new IllegalStateException("设备 " + describeType() + " 的存档 schema 版本 " + version
+                    + " 高于当前实现 " + schemaVersion() + "，拒绝按低版本读取（原始条目会原样保留）");
+        }
+        if (type != null) {
+            type.migrate(data, version);
+        }
+        readData(data, version);
+    }
+
+    /** 设备状态的写入覆盖点。{@code data} 是 {@code Data} 子 tag（旧档迁移后同样指向设备数据）。 */
+    protected void writeData(CompoundTag data) {
+    }
+
+    /** 设备状态的读取覆盖点。{@code version} 是写档时的 schema 版本（旧档为 0）。 */
+    protected void readData(CompoundTag data, int version) {
+    }
 
     public void tick(Level level) {
-        if(!initialized && !level.isClientSide){
+        if (!initialized && !level.isClientSide) {
             initializeServer(level);
             initialized = true;
         }
@@ -63,4 +133,52 @@ public class TrainDeviceSystem {
     public void earlyTick(Level level) {}
 
     public void onSegmentUpdated(ResourceLocation segmentType) {}
+
+    // ------------------------------------------------------------------
+    // 状态同步（I-02）：默认不参与同步，通道对默认设备零开销
+    // ------------------------------------------------------------------
+
+    /**
+     * 是否把状态同步到客户端。默认 {@code false}：同步管理器不会序列化、订阅、发包，
+     * 这条路径对不声明同步的设备完全不产生开销。
+     */
+    public boolean isSyncEnabled() {
+        return false;
+    }
+
+    /** 只写要同步给客户端的字段（白名单）。服务端在状态变化后调用。 */
+    public void writeSyncTag(CompoundTag tag) {
+    }
+
+    /** 客户端解析同步状态；{@code version} 是服务端快照里的 schema 版本。 */
+    public void readSyncTag(CompoundTag tag, int version) {
+    }
+
+    /** 状态变化后调用（服务端）。不声明同步的设备调用它是无操作。 */
+    protected final void markSyncDirty() {
+        if (manager != null) {
+            manager.markSyncDirty(this);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 编组变化（I-05）
+    // ------------------------------------------------------------------
+
+    /**
+     * 列车编组发生变化时回调（已在服务端 tick 开头统一重映射之后）。默认无操作；
+     * 设备可以按 {@link TrainAssemblyChanged#oldToNewIndex()} 重写自己按
+     * {@link TrainDeviceLocation} 索引的状态表，按 {@code movedOut/movedIn} 决定设备归属。
+     */
+    public void onConsistChanged(TrainAssemblyChanged change) {
+    }
+
+    private String describeType() {
+        TrainDeviceSystemType<?> current = type;
+        if (current == null) {
+            return getClass().getName();
+        }
+        ResourceLocation id = current.id();
+        return id == null ? getClass().getName() : id.toString();
+    }
 }
