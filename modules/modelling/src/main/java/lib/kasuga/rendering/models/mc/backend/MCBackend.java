@@ -9,6 +9,7 @@ import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
 import lib.kasuga.rendering.models.mc.util.RotHelper;
 import lib.kasuga.rendering.models.uml.backend.Backend;
 import lib.kasuga.rendering.models.uml.backend.BackendContext;
+import lib.kasuga.rendering.models.uml.backend.DepthBias;
 import lib.kasuga.rendering.models.uml.bridge.Bridge;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.FrameInputSnapshot;
@@ -166,7 +167,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
             if (prepared != null) {
                 if (instance.prepareDraw(pass)) {
                     prepared.add(new PreparedModelDraw(instance, poseStack.last().copy(),
-                            emissive, ambientLightEnhancement));
+                            emissive, ambientLightEnhancement, model.getDepthBias()));
                 }
             } else if (pass != ModelRenderPass.TRANSLUCENT && globalBatcher.isCollecting()
                     && globalBatcher.submit(instance, pass, poseStack.last().pose(), poseStack.last().normal(),
@@ -196,7 +197,8 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
     }
 
     record PreparedModelDraw(BackendInstance instance, PoseStack.Pose pose,
-                             float emissive, float ambientLightEnhancement) {
+                             float emissive, float ambientLightEnhancement,
+                             DepthBias depthBias) {
         void draw(MCBackendContext context, int mode) {
             draw(context, RenderState.getRenderType(false, ModelRenderPass.OPAQUE), mode);
         }
@@ -204,7 +206,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
         void draw(MCBackendContext context, RenderType renderType, int mode) {
             instance.drawPreparedBuffer(ModelRenderPass.TRANSLUCENT, pose, renderType,
                     context.getModelViewMatrix(), context.getProjectionMatrix(),
-                    emissive, ambientLightEnhancement, mode);
+                    emissive, ambientLightEnhancement, mode, depthBias);
         }
     }
 

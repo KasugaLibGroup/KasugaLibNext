@@ -10,6 +10,8 @@ import lib.kasuga.rendering.models.uml.backend.gpu.TextureUploadRing;
 import lib.kasuga.rendering.models.mc.backend.vbuffer.FencedVertexBuffer;
 import lib.kasuga.rendering.models.uml.util.ModelProfiler;
 import lib.kasuga.rendering.models.uml.backend.FrameResourceCache;
+import lib.kasuga.rendering.models.uml.backend.DepthBias;
+import lib.kasuga.rendering.models.uml.backend.gpu.PolygonOffsetScope;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
@@ -77,7 +79,7 @@ final class GlobalModelBatcher implements AutoCloseable {
         if (!canBatch(instance, pass)) return false;
         BatchKey key = new BatchKey(pass, instance.getMeshMode(pass),
                 Float.floatToIntBits(emissiveStrength),
-                Float.floatToIntBits(ambientLightEnhancement));
+                Float.floatToIntBits(ambientLightEnhancement), instance.getModel().getDepthBias());
         submissions.computeIfAbsent(key, ignored -> new ArrayList<>())
                 .add(new BatchItem(instance, new Matrix4f(pose), new Matrix3f(normal)));
         return true;
@@ -163,7 +165,7 @@ final class GlobalModelBatcher implements AutoCloseable {
     }
 
     static record BatchKey(ModelRenderPass pass, VertexFormat.Mode mode,
-                            int emissiveBits, int ambientLightEnhancementBits) {
+                            int emissiveBits, int ambientLightEnhancementBits, DepthBias depthBias) {
         float emissiveStrength() {
             return Float.intBitsToFloat(emissiveBits);
         }
@@ -414,7 +416,9 @@ final class GlobalModelBatcher implements AutoCloseable {
                 BufferUploader.reset();
                 vertexBuffer.current().bind();
                 if (rasterizerDiscard) GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);
-                try { vertexBuffer.current().draw(); }
+                try (var ignored = PolygonOffsetScope.apply(key.depthBias())) {
+                    vertexBuffer.current().draw();
+                }
                 finally {
                     vertexBuffer.markSubmitted();
                     instanceBuffers.markSubmitted();

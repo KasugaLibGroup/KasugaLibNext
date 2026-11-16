@@ -70,6 +70,8 @@ public final class StandaloneRenderHarness {
             run(results, "world-ui-canvas", WorldUiCanvasRegression::run);
             run(results, "depth-precision", suite::depthPrecision);
             run(results, "depth-handoff", suite::depthHandoff);
+            run(results, "model-depth-bias-pixels", PolygonOffsetRegression::pixels);
+            run(results, "polygon-offset-state", PolygonOffsetRegression::state);
             run(results, "conditional-peel-loop", suite::conditionalPeel);
             run(results, "production-program-links", suite::productionPrograms);
             run(results, "production-alpha-passes", suite::alphaPasses);
