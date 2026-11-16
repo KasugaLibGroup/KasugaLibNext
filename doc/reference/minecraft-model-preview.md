@@ -38,6 +38,19 @@ minecraft.setScreen(new MinecraftModelPreviewScreen(Component.literal("末地城
 | Create 已加载的蓝图模板 | `CreateModelSources.schematic(level, StructureTemplate)` |
 | 本机 Create 结构 NBT | `CreateModelSources.schematic(level, Path)` |
 
+方块模型可以读取紧凑的非空气方块尺寸；`length` 对应 X、`width` 对应 Z、`height` 对应 Y，
+三个值都是方块格数量：
+
+```java
+var size = source.dimensions().orElseThrow();
+int length = size.length();
+int width = size.width();
+int height = size.height();
+```
+
+`BlockModelSource.dimensions()` 在 source 构造时计算并缓存，不依赖相机、显示变换或分层爆炸。
+空 source 返回 `Optional.empty()`。文件声明尺寸与最外层非空气方块不同；本接口返回后者。
+
 Create 工厂位于可选的 `modules/create`，包名为 `lib.kasuga.create.client.model`。公共建模模块
 不直接依赖 Create。完整 Contraption 使用 Create 自己的 `ContraptionRenderInfo` 几何与
 `MovementBehaviour.renderInContraption`；完整蓝图使用 Create `SchematicRenderer`。

@@ -83,10 +83,20 @@ public final class MinecraftPreviewClientSmoke {
                 mc.options.pauseOnLostFocus = false; mc.setWindowActive(true);
             }
             if (preview == null) {
+                String name = SCENARIOS.get(scenario).name();
                 source = SCENARIOS.get(scenario).factory().create();
+                if (source instanceof BlockModelSource blocks) {
+                    var size = blocks.dimensions().orElseThrow(() -> new IllegalStateException(
+                            name + " exposed no block dimensions"));
+                    REPORT.put(name + "-dimensions", java.util.Map.of(
+                            "length", size.length(), "width", size.width(), "height", size.height()));
+                    if (name.equals("fluid-section-boundary"))
+                        check(size.equals(new BlockDimensions(2, 1, 2)),
+                                "Block dimensions disagreed with the fixture: " + size);
+                }
                 var bounds = source.snapshot(LayerLayout.ASSEMBLED, 0).bounds();
                 preview = new GuiModelPreview(source);
-                mc.setScreen(new MinecraftModelPreviewScreen(Component.literal(SCENARIOS.get(scenario).name() + " / 模型分层测试"), preview,
+                mc.setScreen(new MinecraftModelPreviewScreen(Component.literal(name + " / 模型分层测试"), preview,
                         (int) Math.floor(bounds.minY()), (int) Math.ceil(bounds.maxY()) - 1));
                 stage = 0; wait = 0;
             }
