@@ -10,16 +10,18 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * I-03：设备状态默认能存住；读档不清空上下文设备；缺键补建；未知类型保留；迁移表生效。
+ * I-03：设备状态默认能存住；读档不清空上下文设备；缺键补建；未知/坏条目原样保留；迁移表生效。
  */
 class TrainDevicePersistTest {
 
     static class ValueDevice extends TrainDeviceSystem {
         int value;
         boolean failOnRead;
+        boolean failOnWrite;
 
         ValueDevice(TrainDeviceManager manager) {
             super(manager);
@@ -27,6 +29,9 @@ class TrainDevicePersistTest {
 
         @Override
         protected void writeData(CompoundTag data) {
+            if (failOnWrite) {
+                throw new IllegalStateException("cannot write");
+            }
             data.putInt("Value", value);
         }
 
@@ -37,6 +42,18 @@ class TrainDevicePersistTest {
             }
             value = data.getInt("Value");
         }
+    }
+
+    /** 在写出的存档里按 Type 找条目。 */
+    private static CompoundTag findByType(CompoundTag tag, ResourceLocation id) {
+        ListTag list = tag.getList("TrainDeviceSystems", Tag.TAG_COMPOUND);
+        for (int i = 0; i < list.size(); i++) {
+            CompoundTag entry = list.getCompound(i);
+            if (id.toString().equals(entry.getString("Type"))) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     private static int counter;
@@ -153,7 +170,7 @@ class TrainDevicePersistTest {
     }
 
     @Test
-    void oneBrokenEntryDoesNotBreakTheOthers() {
+    void oneBrokenEntryIsPreservedVerbatimAndTheOthersStillRead() {
         TrainDeviceSystemType<ValueDevice> brokenType = register("broken", false);
         TrainDeviceSystemType<ValueDevice> healthyType = register("healthy", false);
 
@@ -177,9 +194,56 @@ class TrainDevicePersistTest {
         assertDoesNotThrow(() -> manager.read(tag));
 
         assertEquals(9, manager.getSystem(healthyType).value, "坏掉的那条不能影响其它设备");
-        assertNotNull(manager.getSystem(brokenFactory), "读失败的条目应重置为默认实例而不是消失");
-        assertEquals(0, manager.getSystem(brokenFactory).value);
+        assertNull(manager.getSystem(brokenFactory), "读失败的条目不能被默认实例顶掉（那是丢数据）");
         assertNull(manager.getSystem(brokenType));
+
+        // 原始条目必须原字节回写，坏条目的数据一个都不能少。
+        CompoundTag out = new CompoundTag();
+        manager.write(out);
+        CompoundTag preserved = findByType(out, TrainDeviceRegistry.getKey(brokenFactory));
+        assertNotNull(preserved, "读失败的条目必须在写档时原样回写");
+        assertEquals(1, preserved.getInt("Value"), "保留的必须是原始数据，不是默认值");
+    }
+
+    @Test
+    void failedWriteFallsBackToTheOriginalTagInsteadOfDroppingTheEntry() {
+        TrainDeviceSystemType<ValueDevice> type = register("write_fail", false);
+        CompoundTag payload = new CompoundTag();
+        payload.putInt("Value", 21);
+
+        TrainDeviceManager manager = new TrainDeviceManager(null);
+        manager.read(tagWith(entry(TrainDeviceRegistry.getKey(type), payload)));
+
+        ValueDevice device = manager.getSystem(type);
+        assertNotNull(device);
+        device.value = 99;
+        device.failOnWrite = true;
+
+        CompoundTag out = new CompoundTag();
+        assertDoesNotThrow(() -> manager.write(out), "有原始 NBT 可回退时不能抛异常，也不能丢条目");
+
+        CompoundTag written = findByType(out, TrainDeviceRegistry.getKey(type));
+        assertNotNull(written, "写失败的条目必须回写原始 NBT，不能从存档里消失");
+        assertEquals(21, written.getInt("Value"), "回写的必须是读档时的原始值");
+    }
+
+    @Test
+    void readFailureBlocksReplacingThatEntryWithAFreshInstance() {
+        TrainDeviceSystemType<ValueDevice> type = TrainDeviceSystemType.of(manager -> {
+            ValueDevice device = new ValueDevice(manager);
+            device.failOnRead = true;
+            return device;
+        });
+        TrainDeviceRegistry.register(ResourceLocation.fromNamespaceAndPath("kasuga_tds_persist", "blocked"), type);
+
+        CompoundTag payload = new CompoundTag();
+        payload.putInt("Value", 4);
+
+        TrainDeviceManager manager = new TrainDeviceManager(null);
+        manager.read(tagWith(entry(TrainDeviceRegistry.getKey(type), payload)));
+
+        assertThrows(IllegalStateException.class, () -> manager.getOrCreateSystem(type),
+                "原条目还没回写时，不允许用新实例把它顶掉");
     }
 
     @Test
@@ -199,7 +263,7 @@ class TrainDevicePersistTest {
     }
 
     @Test
-    void newerStoredVersionStillReadsWithoutThrowing() {
+    void newerStoredVersionIsRejectedAndTheEntryIsPreservedVerbatim() {
         TrainDeviceSystemType<ValueDevice> type = register("future", false);
         CompoundTag payload = new CompoundTag();
         payload.putInt("Value", 11);
@@ -207,6 +271,14 @@ class TrainDevicePersistTest {
 
         TrainDeviceManager manager = new TrainDeviceManager(null);
         assertDoesNotThrow(() -> manager.read(tagWith(entry(TrainDeviceRegistry.getKey(type), payload))));
-        assertEquals(11, manager.getSystem(type).value, "更高版本的存档按当前实现尽力读取");
+        assertNull(manager.getSystem(type), "高版本存档不能被低版本实现读进来再写回去（那是静默改数据）");
+
+        CompoundTag out = new CompoundTag();
+        manager.write(out);
+        CompoundTag preserved = findByType(out, TrainDeviceRegistry.getKey(type));
+        assertNotNull(preserved, "高版本条目必须原样保留");
+        assertEquals(11, preserved.getInt("Value"));
+        assertEquals(TrainDeviceSystem.CURRENT_SCHEMA_VERSION + 5, preserved.getInt("SchemaVersion"),
+                "版本号也要原样保留，不能被改写成当前版本");
     }
 }

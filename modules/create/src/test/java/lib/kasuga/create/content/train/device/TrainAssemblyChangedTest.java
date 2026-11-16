@@ -9,10 +9,11 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * I-05：按车厢 UUID 重映射的索引语义（拆分 / 合并 / 重排 / 幂等）。
+ * I-05：按车厢 UUID 重映射的索引语义（拆分 / 合并 / 重排 / 幂等），以及身份缺失时拒绝猜映射。
  */
 class TrainAssemblyChangedTest {
 
@@ -78,10 +79,16 @@ class TrainAssemblyChangedTest {
     }
 
     @Test
-    void duplicatedIdsAreMatchedOnceInsteadOfTwice() {
-        TrainAssemblyChanged change = TrainAssemblyChanged.of(TRAIN, List.of(A, A), List.of(A));
+    void missingCarriageIdentityIsRejectedInsteadOfGuessed() {
+        assertThrows(IllegalArgumentException.class,
+                () -> TrainAssemblyChanged.of(TRAIN, List.of(A), java.util.Arrays.asList(B, null)),
+                "有车厢没有身份时必须拒绝重映射，不能猜一个 UUID 出来");
+    }
 
-        assertEquals(0, change.oldToNewIndex()[0], "重复 id 只匹配第一次出现");
-        assertEquals(-1, change.oldToNewIndex()[1], "第二条重复 id 视为消失，不会被映射到同一节车厢");
+    @Test
+    void duplicatedIdentitiesAreRejectedInsteadOfSilentlyMerged() {
+        assertThrows(IllegalArgumentException.class,
+                () -> TrainAssemblyChanged.of(TRAIN, List.of(A, A), List.of(A)),
+                "两节车厢身份相同说明身份有问题，直接拒绝，不允许把状态串到一起");
     }
 }

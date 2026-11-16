@@ -79,21 +79,17 @@ class TrainDeviceRegistrationGuardTest {
     }
 
     @Test
-    void writeSkipsUnregisteredSystemsInsteadOfThrowing() {
+    void writeFailsFastOnUnregisteredSystemsInsteadOfSilentlyDroppingThem() {
         TrainDeviceManager manager = new TrainDeviceManager(null);
         TrainDeviceSystemType<DummyDevice> unregistered = unregistered("smuggled");
         // 下游理论上可以绕过 getOrCreateSystem 直接塞进容器（字段是 protected）。
         manager.systems.put(unregistered, unregistered.create(manager));
 
         CompoundTag tag = new CompoundTag();
-        assertDoesNotThrow(() -> manager.write(tag));
-
-        ListTag list = tag.getList("TrainDeviceSystems", Tag.TAG_COMPOUND);
-        for (int i = 0; i < list.size(); i++) {
-            assertTrue(!list.getCompound(i).getString("Type").contains("smuggled")
-                            && !list.getCompound(i).getString("Type").isEmpty(),
-                    "未注册类型不能写进存档，也不能抛出 NPE");
-        }
+        assertThrows(IllegalStateException.class, () -> manager.write(tag),
+                "写下去必然丢数据时要中止写档，不能静默跳过");
+        assertTrue(tag.getList("TrainDeviceSystems", Tag.TAG_COMPOUND).isEmpty(),
+                "抛异常时不能留下半份存档");
     }
 
     @Test

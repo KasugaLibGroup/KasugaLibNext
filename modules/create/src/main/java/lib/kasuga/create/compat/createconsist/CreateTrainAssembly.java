@@ -3,7 +3,6 @@ package lib.kasuga.create.compat.createconsist;
 import com.simibubi.create.content.trains.entity.Carriage;
 import com.simibubi.create.content.trains.entity.Train;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -11,6 +10,9 @@ import java.util.UUID;
 /**
  * Create 侧的编组访问实现。这里是<b>唯一</b>直接碰 {@code Carriage} 的地方；
  * Create 改内部结构时只需要改这个类。
+ *
+ * <p>身份缺失（{@code CarriageIdentity} 没挂上，或车厢没有 id）时这里返回 {@code null} 元素，
+ * <b>不合成替代 UUID</b>：调用方必须按「身份未知」处理。</p>
  */
 public final class CreateTrainAssembly implements TrainAssembly {
 
@@ -25,19 +27,9 @@ public final class CreateTrainAssembly implements TrainAssembly {
             return List.of();
         }
         List<UUID> ids = new ArrayList<>(train.carriages.size());
-        int index = 0;
         for (Carriage carriage : train.carriages) {
-            ids.add(carriageId(carriage, index++));
+            ids.add(carriage instanceof CarriageIdentity identity ? identity.kasuga$carriageId() : null);
         }
         return ids;
-    }
-
-    private static UUID carriageId(Carriage carriage, int index) {
-        if (carriage instanceof CarriageIdentity identity) {
-            return identity.kasuga$carriageId();
-        }
-        // mixin 没挂上（极少见）时退化成会话内稳定的伪 UUID，至少不会把不同车厢混成一个。
-        return UUID.nameUUIDFromBytes(("kasuga-carriage:" + index + ':' + System.identityHashCode(carriage))
-                .getBytes(StandardCharsets.UTF_8));
     }
 }

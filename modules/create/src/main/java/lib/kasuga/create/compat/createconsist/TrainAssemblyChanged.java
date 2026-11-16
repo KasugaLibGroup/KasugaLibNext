@@ -32,9 +32,18 @@ public record TrainAssemblyChanged(
         movedIn = movedIn == null ? List.of() : List.copyOf(movedIn);
     }
 
+    /**
+     * 构造一次编组变化。
+     *
+     * <p>身份必须完整且唯一：有 {@code null}（车厢没有身份）或重复 UUID 时直接抛异常 —— 这类输入
+     * 无法得到确定的映射，硬算只会把两节车厢的状态串到一起。调用方应当在构造之前就按「身份未知」
+     * 放弃重映射（见 {@code TrainDeviceManager#remapConsistIfNeeded()}）。</p>
+     */
     public static TrainAssemblyChanged of(UUID trainId, List<UUID> before, List<UUID> after) {
         List<UUID> safeBefore = before == null ? List.of() : before;
         List<UUID> safeAfter = after == null ? List.of() : after;
+        requireCompleteIdentities("before", safeBefore);
+        requireCompleteIdentities("after", safeAfter);
 
         Map<UUID, Integer> beforeIndex = new HashMap<>();
         for (int i = 0; i < safeBefore.size(); i++) {
@@ -45,8 +54,7 @@ public record TrainAssemblyChanged(
             afterIndex.putIfAbsent(safeAfter.get(i), i);
         }
 
-        // 一个目标索引只允许被认领一次：出现重复 UUID 时，第二次出现视为「已消失 / 新增」，
-        // 避免两节车厢的状态被映射到同一个槽位。
+        // 一个目标索引只允许被认领一次（重复 UUID 已在入口处拒绝，这里的 claimed 只是防御性检查）。
         int[] oldToNew = new int[safeBefore.size()];
         Arrays.fill(oldToNew, -1);
         boolean[] claimedAfter = new boolean[safeAfter.size()];
@@ -87,6 +95,24 @@ public record TrainAssemblyChanged(
     /** 编组完全没变（含「从未初始化 → 仍是空」的情况）。 */
     public boolean isNoop() {
         return before.equals(after);
+    }
+
+    /**
+     * 车厢身份必须完整：出现 {@code null}（车厢没有 id）或重复 UUID 时抛异常，
+     * 不允许「猜一个映射」把状态串到别的车厢上。
+     */
+    private static void requireCompleteIdentities(String side, List<UUID> ids) {
+        Set<UUID> seen = new HashSet<>();
+        for (int i = 0; i < ids.size(); i++) {
+            UUID id = ids.get(i);
+            if (id == null) {
+                throw new IllegalArgumentException(side + " 的第 " + i + " 节车厢没有身份（KasugaCarriageId 缺失），"
+                        + "不能重映射");
+            }
+            if (!seen.add(id)) {
+                throw new IllegalArgumentException(side + " 的第 " + i + " 节车厢身份重复（" + id + "），不能重映射");
+            }
+        }
     }
 
     @Override

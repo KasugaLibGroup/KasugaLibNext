@@ -78,8 +78,10 @@ public class TrainDeviceSystem {
         int version = systemTag.contains(TAG_SCHEMA_VERSION) ? systemTag.getInt(TAG_SCHEMA_VERSION) : LEGACY_SCHEMA_VERSION;
         CompoundTag data = systemTag.contains(TAG_DATA, Tag.TAG_COMPOUND) ? systemTag.getCompound(TAG_DATA) : systemTag;
         if (version > schemaVersion()) {
-            LOGGER.warn("设备 {} 的存档 schema 版本 {} 高于当前实现 {}，按当前版本尽力读取",
-                    describeType(), version, schemaVersion());
+            // 高版本存档里有本实现不认识的字段：读下去再写回就是静默改数据，宁可让这一条读档失败，
+            // 由 TrainDeviceManager 把原始条目原样保留。
+            throw new IllegalStateException("设备 " + describeType() + " 的存档 schema 版本 " + version
+                    + " 高于当前实现 " + schemaVersion() + "，拒绝按低版本读取（原始条目会原样保留）");
         }
         if (type != null) {
             type.migrate(data, version);
