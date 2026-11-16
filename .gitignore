@@ -69,3 +69,6 @@ logs/
 
 # Local agent instructions and skills
 /.agents/
+
+# Local planning documents
+/plan_detailed*/

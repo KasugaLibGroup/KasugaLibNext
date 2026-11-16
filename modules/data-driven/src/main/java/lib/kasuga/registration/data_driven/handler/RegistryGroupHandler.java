@@ -37,6 +37,11 @@ public class RegistryGroupHandler extends MetaTypeHandler<RegistryGroupDef> {
     }
 
     @Override
+    public boolean strictValidationImplemented() {
+        return true;
+    }
+
+    @Override
     public RegistryGroupDef parse(JsonObject json) {
         RegistryGroupDef definition = DataJson.GSON.fromJson(json, RegistryGroupDef.class);
         Objects.requireNonNull(definition.id(), "id");
@@ -71,26 +76,22 @@ public class RegistryGroupHandler extends MetaTypeHandler<RegistryGroupDef> {
             );
         }
         if (definition.properties() != null) {
-            try {
-                JsonPropertyParser.getInstance().parseBlockProperties(definition.properties());
-            } catch (RuntimeException failure) {
+            for (var issue : JsonPropertyParser.getInstance().validateStrict(definition.properties())) {
                 context.error(
                         lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.CONTENT_INVALID,
-                        "/properties",
-                        "Invalid registry group block properties: " + failure.getMessage(),
-                        "Fix the property names and value shapes."
+                        "/properties" + issue.relativeJsonPointer(),
+                        issue.message(),
+                        "Fix the registry group block property according to the strict schema."
                 );
             }
         }
         if (definition.itemProperties() != null) {
-            try {
-                JsonItemParser.INSTANCE.parseItemProperties(definition.itemProperties());
-            } catch (RuntimeException failure) {
+            for (var issue : JsonItemParser.INSTANCE.validateStrict(definition.itemProperties())) {
                 context.error(
                         lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.CONTENT_INVALID,
-                        "/item_properties",
-                        "Invalid registry group item properties: " + failure.getMessage(),
-                        "Fix the property names and value shapes."
+                        "/item_properties" + issue.relativeJsonPointer(),
+                        issue.message(),
+                        "Fix the registry group item property according to the strict schema."
                 );
             }
         }

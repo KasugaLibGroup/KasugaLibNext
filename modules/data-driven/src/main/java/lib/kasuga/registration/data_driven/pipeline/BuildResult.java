@@ -14,8 +14,19 @@ public record BuildResult(
         Status status,
         @Nullable JsonRegistryGroup rootGroup,
         List<BuildDiagnostic> diagnostics,
-        List<Object> finalizerResults
+        List<Object> finalizerResults,
+        @Nullable Throwable cause
 ) {
+    public BuildResult(
+            String hostModId,
+            Status status,
+            @Nullable JsonRegistryGroup rootGroup,
+            List<BuildDiagnostic> diagnostics,
+            List<Object> finalizerResults
+    ) {
+        this(hostModId, status, rootGroup, diagnostics, finalizerResults, null);
+    }
+
     public BuildResult {
         Objects.requireNonNull(hostModId, "hostModId");
         Objects.requireNonNull(status, "status");
@@ -28,7 +39,7 @@ public record BuildResult(
     }
 
     public boolean applied() {
-        return status != Status.REJECTED;
+        return status == Status.APPLIED;
     }
 
     public enum Status {

@@ -19,11 +19,41 @@ public record PreparedContent(
         List<LocatedDefinition<?>> allDefinitions,
         List<LocatedContentPath> registerFiles,
         List<LocatedContentPath> reloadFiles,
+        List<LocatedIndexPath> indexFiles,
         List<RegistryClaim> claims,
         List<BuildDiagnostic> diagnostics,
         Map<String, Set<String>> dependencies,
         Set<String> reservedSymbols
 ) {
+    public PreparedContent(
+            String hostModId,
+            BuildOptions options,
+            List<SourceDescriptor> sources,
+            List<LocatedDefinition<?>> definitions,
+            List<LocatedDefinition<?>> allDefinitions,
+            List<LocatedContentPath> registerFiles,
+            List<LocatedContentPath> reloadFiles,
+            List<RegistryClaim> claims,
+            List<BuildDiagnostic> diagnostics,
+            Map<String, Set<String>> dependencies,
+            Set<String> reservedSymbols
+    ) {
+        this(
+                hostModId,
+                options,
+                sources,
+                definitions,
+                allDefinitions,
+                registerFiles,
+                reloadFiles,
+                List.of(),
+                claims,
+                diagnostics,
+                dependencies,
+                reservedSymbols
+        );
+    }
+
     public PreparedContent {
         Objects.requireNonNull(hostModId, "hostModId");
         Objects.requireNonNull(options, "options");
@@ -32,6 +62,7 @@ public record PreparedContent(
         allDefinitions = List.copyOf(allDefinitions);
         registerFiles = List.copyOf(registerFiles);
         reloadFiles = List.copyOf(reloadFiles);
+        indexFiles = List.copyOf(indexFiles);
         claims = List.copyOf(claims);
         diagnostics = List.copyOf(diagnostics);
         dependencies = immutableCopy(dependencies);

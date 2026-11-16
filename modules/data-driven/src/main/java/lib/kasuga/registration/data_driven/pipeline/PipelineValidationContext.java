@@ -24,6 +24,7 @@ final class PipelineValidationContext implements ValidationContext {
     private final Map<DefinitionKey, List<LocatedDefinition<?>>> candidates;
     private final Map<DefinitionKey, LocatedDefinition<?>> effective;
     private final Map<String, Set<String>> dependencies;
+    private final Set<String> sharedAssetOwners;
     private final Set<String> reservedSymbols;
     private final DiagnosticCollector diagnostics;
 
@@ -34,6 +35,7 @@ final class PipelineValidationContext implements ValidationContext {
             Map<DefinitionKey, List<LocatedDefinition<?>>> candidates,
             Map<DefinitionKey, LocatedDefinition<?>> effective,
             Map<String, Set<String>> dependencies,
+            Set<String> sharedAssetOwners,
             Set<String> reservedSymbols,
             DiagnosticCollector diagnostics
     ) {
@@ -43,6 +45,7 @@ final class PipelineValidationContext implements ValidationContext {
         this.candidates = candidates;
         this.effective = effective;
         this.dependencies = dependencies;
+        this.sharedAssetOwners = sharedAssetOwners;
         this.reservedSymbols = reservedSymbols;
         this.diagnostics = diagnostics;
     }
@@ -74,7 +77,8 @@ final class PipelineValidationContext implements ValidationContext {
 
     @Override
     public Optional<LocatedDefinition<?>> find(DefinitionKey key) {
-        return Optional.ofNullable(effective.get(key));
+        List<LocatedDefinition<?>> visible = visible(key);
+        return visible.size() == 1 ? Optional.of(visible.getFirst()) : Optional.empty();
     }
 
     @Override
@@ -119,7 +123,30 @@ final class PipelineValidationContext implements ValidationContext {
             );
             return false;
         }
+        List<LocatedDefinition<?>> visible = visible(key);
+        if (visible.size() > 1) {
+            error(
+                    BuildDiagnostic.Code.REFERENCE_AMBIGUOUS,
+                    relativeJsonPointer,
+                    "Referenced definition " + key + " is ambiguous across "
+                            + visible.stream()
+                            .map(definition -> definition.source().ownerId())
+                            .distinct()
+                            .toList(),
+                    "Resolve the registry claim conflict before referencing this definition."
+            );
+            return false;
+        }
         return true;
+    }
+
+    private List<LocatedDefinition<?>> visible(DefinitionKey key) {
+        Set<String> visibleOwners = new LinkedHashSet<>();
+        visibleOwners.add(current.source().ownerId());
+        visibleOwners.addAll(directDependencies());
+        return findAll(key).stream()
+                .filter(definition -> visibleOwners.contains(definition.source().ownerId()))
+                .toList();
     }
 
     @Override
@@ -127,6 +154,9 @@ final class PipelineValidationContext implements ValidationContext {
         Set<String> visibleOwners = new LinkedHashSet<>();
         visibleOwners.add(current.source().ownerId());
         visibleOwners.addAll(directDependencies());
+        if (domain == ResourceDomain.ASSETS) {
+            visibleOwners.addAll(sharedAssetOwners);
+        }
         String prefix = domain == ResourceDomain.ASSETS ? "assets/" : "data/";
         LogicalPath path;
         try {
@@ -181,6 +211,15 @@ final class PipelineValidationContext implements ValidationContext {
 
     @Override
     public RegistryClaim claim(String registry, ResourceLocation id) {
+        return claimAt(registry, id, null);
+    }
+
+    @Override
+    public RegistryClaim claimAt(
+            String registry,
+            ResourceLocation id,
+            String relativeJsonPointer
+    ) {
         if (current.key() == null) {
             throw new IllegalStateException("a registry claim requires a definition identity");
         }
@@ -191,7 +230,7 @@ final class PipelineValidationContext implements ValidationContext {
                 current.sourceOrder(),
                 current.key(),
                 current.logicalPath(),
-                current.jsonPointer()
+                JsonPointers.append(current.jsonPointer(), relativeJsonPointer)
         );
     }
 
@@ -224,9 +263,6 @@ final class PipelineValidationContext implements ValidationContext {
     }
 
     static String appendPointer(String base, String relative) {
-        Objects.requireNonNull(base, "base");
-        if (relative == null || relative.isEmpty()) return base;
-        if (relative.startsWith("/")) return base + relative;
-        return base + "/" + relative;
+        return JsonPointers.append(base, relative);
     }
 }

@@ -94,6 +94,11 @@ public abstract class RegTypeHandler<T> implements TypeHandler<T> {
     }
 
     @Override
+    public boolean strictValidationImplemented() {
+        return true;
+    }
+
+    @Override
     public void validate(T definition, ValidationContext context) {
         String rawId = resolveRawId(definition);
         int namespaceSeparator = rawId == null ? -1 : rawId.indexOf(':');

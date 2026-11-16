@@ -536,6 +536,49 @@ class DataDrivenBuildPipelineTest {
         }
     }
 
+    @Test
+    void sharedAssetOwnerIsVisibleWithoutGrantingItsDataResources() throws Exception {
+        Path runtime = Files.createDirectories(temporaryDirectory.resolve("runtime"));
+        write(runtime, "assets/example/models/block/shared.obj", "model");
+        write(runtime, "data/example/shared.json", "{}");
+        Path pack = sourceWithRegister(
+                "asset_pack",
+                "pack",
+                "resource_probes.json",
+                """
+                        {"resource_probes":[
+                          {
+                            "id":"example:probe",
+                            "asset":"example:models/block/shared.obj",
+                            "data":"example:shared.json"
+                          }
+                        ]}
+                        """
+        );
+        ResourceProbeHandler handler = new ResourceProbeHandler();
+
+        try (ContentSource runtimeSource = open(runtime, "runtime", "runtime");
+             ContentSource packSource = open(pack, "pack-source", "pack")) {
+            var prepared = new DataDrivenBuildPipeline(
+                    "example",
+                    List.of(handler),
+                    List.of()
+            ).prepare(
+                    List.of(runtimeSource, packSource),
+                    BuildOptions.STRICT,
+                    Map.of(),
+                    Set.of("runtime")
+            );
+
+            assertTrue(prepared.diagnostics().stream()
+                            .noneMatch(diagnostic -> "/asset".equals(diagnostic.jsonPointer())),
+                    prepared.diagnostics().toString());
+            assertTrue(prepared.diagnostics().stream()
+                            .anyMatch(diagnostic -> diagnostic.jsonPointer().endsWith("/data")),
+                    prepared.diagnostics().toString());
+        }
+    }
+
     private Path source(String sourceName, String owner, String content) throws IOException {
         return sourceWithRegister(sourceName, owner, "probes.json", content);
     }
@@ -580,12 +623,27 @@ class DataDrivenBuildPipelineTest {
     record PlainDefinition(String id) {
     }
 
+    record ResourceProbeDefinition(String id, String asset, String data) {
+    }
+
     private static final class RecordingHandler implements TypeHandler<ProbeDefinition> {
         private final List<String> applied = new ArrayList<>();
 
         @Override
         public Set<HandlerCapability> capabilities() {
             return Set.of(HandlerCapability.STRICT_PREFLIGHT, HandlerCapability.NON_REGISTRATION);
+        }
+
+        @Override
+        public boolean strictValidationImplemented() {
+            return true;
+        }
+
+        @Override
+        public void validate(
+                ProbeDefinition definition,
+                lib.kasuga.registration.data_driven.validation.ValidationContext context
+        ) {
         }
 
         @Override
@@ -614,6 +672,72 @@ class DataDrivenBuildPipelineTest {
         }
     }
 
+    private static final class ResourceProbeHandler implements TypeHandler<ResourceProbeDefinition> {
+        @Override
+        public Set<HandlerCapability> capabilities() {
+            return Set.of(HandlerCapability.STRICT_PREFLIGHT, HandlerCapability.NON_REGISTRATION);
+        }
+
+        @Override
+        public boolean strictValidationImplemented() {
+            return true;
+        }
+
+        @Override
+        public String getTypeName() {
+            return "resource_probes";
+        }
+
+        @Override
+        public int getPhase() {
+            return PHASE_CONTENT;
+        }
+
+        @Override
+        public ResourceProbeDefinition parse(JsonObject json) {
+            return new ResourceProbeDefinition(
+                    json.get("id").getAsString(),
+                    json.get("asset").getAsString(),
+                    json.get("data").getAsString()
+            );
+        }
+
+        @Override
+        public String resolveIdentity(String hostModId, ResourceProbeDefinition definition) {
+            return definition.id();
+        }
+
+        @Override
+        public void validate(ResourceProbeDefinition definition, ValidationContext context) {
+            if (!context.resourceExists(
+                    ValidationContext.ResourceDomain.ASSETS,
+                    ResourceLocation.parse(definition.asset())
+            )) {
+                context.error(
+                        BuildDiagnostic.Code.MISSING_REFERENCE,
+                        "/asset",
+                        "Missing asset",
+                        "Provide the asset."
+                );
+            }
+            if (!context.resourceExists(
+                    ValidationContext.ResourceDomain.DATA,
+                    ResourceLocation.parse(definition.data())
+            )) {
+                context.error(
+                        BuildDiagnostic.Code.MISSING_REFERENCE,
+                        "/data",
+                        "Missing data",
+                        "Provide the data."
+                );
+            }
+        }
+
+        @Override
+        public void apply(ResourceProbeDefinition definition, BuildContext context) {
+        }
+    }
+
     private static class ClaimHandler implements TypeHandler<ClaimDefinition> {
         private final String typeName;
         private final List<String> applied = new ArrayList<>();
@@ -625,6 +749,11 @@ class DataDrivenBuildPipelineTest {
         @Override
         public Set<HandlerCapability> capabilities() {
             return Set.of(HandlerCapability.STRICT_PREFLIGHT, HandlerCapability.REGISTRY_CLAIMS);
+        }
+
+        @Override
+        public boolean strictValidationImplemented() {
+            return true;
         }
 
         @Override
@@ -673,6 +802,11 @@ class DataDrivenBuildPipelineTest {
         @Override
         public Set<HandlerCapability> capabilities() {
             return Set.of(HandlerCapability.STRICT_PREFLIGHT, HandlerCapability.NON_REGISTRATION);
+        }
+
+        @Override
+        public boolean strictValidationImplemented() {
+            return true;
         }
 
         @Override
@@ -758,6 +892,18 @@ class DataDrivenBuildPipelineTest {
         @Override
         public Set<HandlerCapability> capabilities() {
             return Set.of(HandlerCapability.STRICT_PREFLIGHT, HandlerCapability.NON_REGISTRATION);
+        }
+
+        @Override
+        public boolean strictValidationImplemented() {
+            return true;
+        }
+
+        @Override
+        public void validate(
+                PlainDefinition definition,
+                lib.kasuga.registration.data_driven.validation.ValidationContext context
+        ) {
         }
 
         @Override

@@ -40,6 +40,11 @@ public class BlockEntityTypeHandler implements TypeHandler<BlockEntityDef> {
     }
 
     @Override
+    public boolean strictValidationImplemented() {
+        return true;
+    }
+
+    @Override
     public String getParentTypeName() { return "blocks"; }
 
     @Override

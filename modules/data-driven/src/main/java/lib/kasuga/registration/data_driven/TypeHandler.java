@@ -44,6 +44,17 @@ public interface TypeHandler<T> {
     }
 
     /**
+     * Whether this handler explicitly implements its strict preflight contract.
+     *
+     * <p>Declaring {@link HandlerCapability#STRICT_PREFLIGHT} is not enough: strict callers require
+     * this separate opt-in so a handler cannot inherit the historical no-op validation default and
+     * accidentally pass a strict session. Legacy callers do not inspect this method.
+     */
+    default boolean strictValidationImplemented() {
+        return false;
+    }
+
+    /**
      * Performs side-effect-free validation against the complete prepared definition directory.
      * Handlers that support strict preparation must implement this method.
      */

@@ -23,7 +23,7 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.charset.CodingErrorAction;
@@ -124,9 +124,27 @@ public final class DataDrivenBuildPipeline {
             BuildOptions options,
             Map<String, ? extends Collection<String>> dependencies
     ) {
+        return prepare(sources, options, dependencies, Set.of());
+    }
+
+    /**
+     * Discovers and validates all sources while exposing selected owners' assets to every source.
+     *
+     * @param sources            sources in ascending priority order
+     * @param options            legacy or strict policy
+     * @param dependencies       direct owner dependencies, keyed by owner id
+     * @param sharedAssetOwners  owners whose ASSETS resources are available to every definition
+     */
+    public PreparedContent prepare(
+            Collection<? extends ContentSource> sources,
+            BuildOptions options,
+            Map<String, ? extends Collection<String>> dependencies,
+            Collection<String> sharedAssetOwners
+    ) {
         Objects.requireNonNull(sources, "sources");
         Objects.requireNonNull(options, "options");
         Objects.requireNonNull(dependencies, "dependencies");
+        Objects.requireNonNull(sharedAssetOwners, "sharedAssetOwners");
 
         List<PipelineSource> sourceViews = new ArrayList<>();
         int inputOrder = 0;
@@ -150,6 +168,8 @@ public final class DataDrivenBuildPipeline {
         for (PipelineSource source : sourceViews) {
             try {
                 prepareSource(source, options, data);
+            } catch (UncheckedIOException failure) {
+                throw failure;
             } catch (RuntimeException failure) {
                 SourceDescriptor descriptor = source.source().descriptor();
                 diagnostics.error(
@@ -171,7 +191,15 @@ public final class DataDrivenBuildPipeline {
         checkStrictCapabilities(options, data);
         List<LocatedDefinition<?>> selected = selectDefinitions(options, data.allDefinitions);
         DefinitionDirectory directory = DefinitionDirectory.from(data.allDefinitions);
-        collectValidationDiagnostics(options, selected, sourceViews, directory, dependencyView, data.diagnostics);
+        collectValidationDiagnostics(
+                options,
+                selected,
+                sourceViews,
+                directory,
+                dependencyView,
+                Set.copyOf(sharedAssetOwners),
+                data.diagnostics
+        );
         collectGroupCycleDiagnostics(options, selected, sourceViews, directory, dependencyView, data.diagnostics);
         List<RegistryClaim> claims =
                 collectClaims(options, selected, sourceViews, directory, dependencyView, data.diagnostics);
@@ -184,6 +212,7 @@ public final class DataDrivenBuildPipeline {
                 data.allDefinitions,
                 data.registerFiles,
                 data.reloadFiles,
+                data.indexFiles,
                 claims,
                 data.diagnostics.snapshot(),
                 dependencyView,
@@ -235,7 +264,14 @@ public final class DataDrivenBuildPipeline {
                     "Failed to create registration context: " + failure,
                     "Inspect the registration target lifecycle."
             ));
-            return new BuildResult(hostModId, BuildResult.Status.FAILED, root, diagnostics, List.of());
+            return new BuildResult(
+                    hostModId,
+                    BuildResult.Status.FAILED,
+                    root,
+                    diagnostics,
+                    List.of(),
+                    failure
+            );
         }
 
         Map<String, Integer> handlerOrder = handlerOrder();
@@ -250,7 +286,14 @@ public final class DataDrivenBuildPipeline {
                     "Failed to order definitions for apply: " + failure,
                     "Fix parentDefinition so it returns stable DefinitionKeys."
             ));
-            return new BuildResult(hostModId, BuildResult.Status.FAILED, root, diagnostics, List.of());
+            return new BuildResult(
+                    hostModId,
+                    BuildResult.Status.FAILED,
+                    root,
+                    diagnostics,
+                    List.of(),
+                    failure
+            );
         }
         for (LocatedDefinition<?> definition : applyOrder) {
             try {
@@ -263,7 +306,14 @@ public final class DataDrivenBuildPipeline {
                         "Failed to apply '" + definition.typeName() + "': " + failure,
                         "Fix the definition or handler before retrying startup."
                 ));
-                return new BuildResult(hostModId, BuildResult.Status.FAILED, root, diagnostics, List.of());
+                return new BuildResult(
+                        hostModId,
+                        BuildResult.Status.FAILED,
+                        root,
+                        diagnostics,
+                        List.of(),
+                        failure
+                );
             }
         }
 
@@ -284,7 +334,8 @@ public final class DataDrivenBuildPipeline {
                         BuildResult.Status.FAILED,
                         root,
                         diagnostics,
-                        finalizerResults
+                        finalizerResults,
+                        failure
                 );
             }
         }
@@ -410,6 +461,11 @@ public final class DataDrivenBuildPipeline {
         int registerStart = data.registerFiles.size();
         int reloadStart = data.reloadFiles.size();
         for (LocatedFile index : sourceView.source().indexes()) {
+            data.indexFiles.add(new LocatedIndexPath(
+                    sourceView.source().descriptor(),
+                    sourceView.order(),
+                    index.path()
+            ));
             String namespace = index.path().segments().get(1);
             ManifestResult manifest = readManifest(
                     sourceView,
@@ -456,7 +512,9 @@ public final class DataDrivenBuildPipeline {
         JsonElement document;
         try (InputStream input = sourceView.source().open(index.path()).orElseThrow()) {
             document = parseJson(input, options);
-        } catch (RuntimeException | IOException failure) {
+        } catch (IOException failure) {
+            throw new UncheckedIOException("Unable to read fixed source bytes", failure);
+        } catch (RuntimeException failure) {
             diagnostics.error(
                     source,
                     Stage.MANIFEST,
@@ -704,7 +762,9 @@ public final class DataDrivenBuildPipeline {
         JsonElement document;
         try (InputStream input = sourceView.source().open(contentFile.logicalPath()).orElseThrow()) {
             document = parseJson(input, options);
-        } catch (RuntimeException | IOException failure) {
+        } catch (IOException failure) {
+            throw new UncheckedIOException("Unable to read fixed content bytes", failure);
+        } catch (RuntimeException failure) {
             data.diagnostics.error(
                     contentFile.source(),
                     Stage.PARSE,
@@ -879,7 +939,9 @@ public final class DataDrivenBuildPipeline {
         JsonElement document;
         try (InputStream input = sourceView.source().open(contentFile.logicalPath()).orElseThrow()) {
             document = parseJson(input, options);
-        } catch (RuntimeException | IOException failure) {
+        } catch (IOException failure) {
+            throw new UncheckedIOException("Unable to read fixed reload bytes", failure);
+        } catch (RuntimeException failure) {
             diagnostics.error(
                     contentFile.source(),
                     Stage.PARSE,
@@ -1057,7 +1119,9 @@ public final class DataDrivenBuildPipeline {
             Set<HandlerCapability> capabilities = handler.capabilities();
             boolean hasRole = capabilities.contains(HandlerCapability.NON_REGISTRATION)
                     ^ capabilities.contains(HandlerCapability.REGISTRY_CLAIMS);
-            if (!capabilities.contains(HandlerCapability.STRICT_PREFLIGHT) || !hasRole) {
+            if (!capabilities.contains(HandlerCapability.STRICT_PREFLIGHT)
+                    || !handler.strictValidationImplemented()
+                    || !hasRole) {
                 data.diagnostics.error(
                         null,
                         Stage.VALIDATION,
@@ -1066,8 +1130,9 @@ public final class DataDrivenBuildPipeline {
                         null,
                         handler.getTypeName(),
                         "Handler '" + handler.getTypeName()
-                                + "' does not declare strict preflight and exactly one identity role",
-                        "Declare STRICT_PREFLIGHT plus NON_REGISTRATION or REGISTRY_CLAIMS."
+                                + "' lacks strict validation or exactly one identity role",
+                        "Implement strictValidationImplemented() and declare STRICT_PREFLIGHT "
+                                + "plus NON_REGISTRATION or REGISTRY_CLAIMS."
                 );
             }
         }
@@ -1115,6 +1180,7 @@ public final class DataDrivenBuildPipeline {
             List<PipelineSource> sources,
             DefinitionDirectory directory,
             Map<String, Set<String>> dependencies,
+            Set<String> sharedAssetOwners,
             DiagnosticCollector diagnostics
     ) {
         if (!options.isStrict()) return;
@@ -1128,6 +1194,7 @@ public final class DataDrivenBuildPipeline {
                     directory.candidates(),
                     directory.effective(),
                     dependencies,
+                    sharedAssetOwners,
                     reservedSymbols,
                     diagnostics
             );
@@ -1246,6 +1313,7 @@ public final class DataDrivenBuildPipeline {
                     directory.candidates(),
                     directory.effective(),
                     dependencies,
+                    Set.of(),
                     reservedSymbols,
                     diagnostics
             );
@@ -1504,6 +1572,7 @@ public final class DataDrivenBuildPipeline {
         private final List<LocatedDefinition<?>> allDefinitions = new ArrayList<>();
         private final List<LocatedContentPath> registerFiles = new ArrayList<>();
         private final List<LocatedContentPath> reloadFiles = new ArrayList<>();
+        private final List<LocatedIndexPath> indexFiles = new ArrayList<>();
         private int declarationOrder;
 
         private PreparationData(DiagnosticCollector diagnostics) {

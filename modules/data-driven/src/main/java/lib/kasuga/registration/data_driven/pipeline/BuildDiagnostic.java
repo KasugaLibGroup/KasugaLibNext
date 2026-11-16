@@ -65,6 +65,7 @@ public record BuildDiagnostic(
         UNKNOWN_REGISTRY_GROUP,
         MISSING_REFERENCE,
         REFERENCE_NOT_DECLARED,
+        REFERENCE_AMBIGUOUS,
         GROUP_CYCLE,
         VALIDATION_FAILED,
         CLAIM_CONFLICT,

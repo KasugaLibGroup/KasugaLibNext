@@ -2,8 +2,13 @@ package lib.kasuga.test.registration.data_driven;
 
 import lib.kasuga.registration.data_driven.diagnostics.Diagnostics;
 import lib.kasuga.registration.data_driven.reload.ReloadOrchestrator;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackResources;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.metadata.MetadataSectionSerializer;
+import net.minecraft.server.packs.repository.PackSource;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import org.junit.jupiter.api.AfterEach;
@@ -124,7 +129,58 @@ class ReloadDiagnosticsAccumulationTest {
         }
 
         private static Resource resource(String content) {
-            return new Resource(null, () -> new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
+            return new Resource(TEST_PACK, () -> new ByteArrayInputStream(
+                    content.getBytes(StandardCharsets.UTF_8)
+            ));
         }
     }
+
+    private static final PackResources TEST_PACK = new PackResources() {
+        private static final PackLocationInfo LOCATION = new PackLocationInfo(
+                "reload_accum_test",
+                Component.literal("Reload accumulation test"),
+                PackSource.BUILT_IN,
+                Optional.empty()
+        );
+
+        @Override
+        public net.minecraft.server.packs.resources.IoSupplier<java.io.InputStream>
+        getRootResource(String... elements) {
+            return null;
+        }
+
+        @Override
+        public net.minecraft.server.packs.resources.IoSupplier<java.io.InputStream>
+        getResource(PackType packType, ResourceLocation location) {
+            return null;
+        }
+
+        @Override
+        public void listResources(
+                PackType packType,
+                String namespace,
+                String path,
+                ResourceOutput resourceOutput
+        ) {
+        }
+
+        @Override
+        public Set<String> getNamespaces(PackType type) {
+            return Set.of();
+        }
+
+        @Override
+        public <T> T getMetadataSection(MetadataSectionSerializer<T> deserializer) {
+            return null;
+        }
+
+        @Override
+        public PackLocationInfo location() {
+            return LOCATION;
+        }
+
+        @Override
+        public void close() {
+        }
+    };
 }

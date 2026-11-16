@@ -70,26 +70,22 @@ public class BlockTypeHandler extends RegTypeHandler<BlockDef> {
     public void validate(BlockDef definition, ValidationContext context) {
         super.validate(definition, context);
         if (definition.properties() != null) {
-            try {
-                JsonPropertyParser.getInstance().parseBlockProperties(definition.properties());
-            } catch (RuntimeException failure) {
+            for (var issue : JsonPropertyParser.getInstance().validateStrict(definition.properties())) {
                 context.error(
                         lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.CONTENT_INVALID,
-                        "/properties",
-                        "Invalid block properties: " + failure.getMessage(),
-                        "Fix the property names and value shapes."
+                        "/properties" + issue.relativeJsonPointer(),
+                        issue.message(),
+                        "Fix the block property value according to the strict schema."
                 );
             }
         }
         if (definition.itemProperties() != null) {
-            try {
-                JsonItemParser.INSTANCE.parseItemProperties(definition.itemProperties());
-            } catch (RuntimeException failure) {
+            for (var issue : JsonItemParser.INSTANCE.validateStrict(definition.itemProperties())) {
                 context.error(
                         lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.CONTENT_INVALID,
-                        "/item_properties",
-                        "Invalid item properties: " + failure.getMessage(),
-                        "Fix the property names and value shapes."
+                        "/item_properties" + issue.relativeJsonPointer(),
+                        issue.message(),
+                        "Fix the item property value according to the strict schema."
                 );
             }
         }

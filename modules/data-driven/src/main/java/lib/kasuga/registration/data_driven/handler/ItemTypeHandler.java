@@ -59,14 +59,12 @@ public class ItemTypeHandler extends RegTypeHandler<ItemDef> {
     public void validate(ItemDef definition, ValidationContext context) {
         super.validate(definition, context);
         if (definition.properties() != null) {
-            try {
-                JsonItemParser.INSTANCE.parseItemProperties(definition.properties());
-            } catch (RuntimeException failure) {
+            for (var issue : JsonItemParser.INSTANCE.validateStrict(definition.properties())) {
                 context.error(
                         lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.CONTENT_INVALID,
-                        "/properties",
-                        "Invalid item properties: " + failure.getMessage(),
-                        "Fix the property names and value shapes."
+                        "/properties" + issue.relativeJsonPointer(),
+                        issue.message(),
+                        "Fix the item property value according to the strict schema."
                 );
             }
         }
