@@ -1,6 +1,5 @@
 package lib.kasuga.create.content.train.device;
 
-import com.mojang.logging.LogUtils;
 import com.simibubi.create.content.trains.graph.TrackNode;
 import com.simibubi.create.content.trains.signal.TrackEdgePoint;
 import lib.kasuga.create.compat.createconsist.TrainAssemblyChanged;
@@ -12,14 +11,11 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
-import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
 import java.util.Optional;
 
 public class TrainDeviceSystem {
-
-    private static final Logger LOGGER = LogUtils.getLogger();
 
     /** 设备状态当前的存档 schema 版本。设备覆写 {@link #schemaVersion()} 表示自己升到了更高版本。 */
     public static final int CURRENT_SCHEMA_VERSION = 1;
