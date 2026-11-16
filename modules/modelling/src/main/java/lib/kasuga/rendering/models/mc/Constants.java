@@ -279,7 +279,7 @@ public class Constants {
                         .setCullState(RenderStateShard.CULL)
                         .setLightmapState(RenderStateShard.LIGHTMAP)
                         .setOverlayState(RenderStateShard.OVERLAY)
-                        .setLayeringState(RenderStateShard.VIEW_OFFSET_Z_LAYERING)
+                        .setLayeringState(RenderStateShard.NO_LAYERING)
                         .setOutputState(RenderStateShard.MAIN_TARGET)
                         .setTexturingState(RenderStateShard.DEFAULT_TEXTURING)
                         .setWriteMaskState(translucent
@@ -305,7 +305,7 @@ public class Constants {
                         .setCullState(RenderStateShard.CULL)
                         .setLightmapState(RenderStateShard.LIGHTMAP)
                         .setOverlayState(RenderStateShard.OVERLAY)
-                        .setLayeringState(RenderStateShard.VIEW_OFFSET_Z_LAYERING)
+                        .setLayeringState(RenderStateShard.NO_LAYERING)
                         .setOutputState(RenderStateShard.MAIN_TARGET)
                         .setTexturingState(RenderStateShard.DEFAULT_TEXTURING)
                         .setWriteMaskState(translucent
@@ -328,7 +328,7 @@ public class Constants {
                         .setCullState(RenderStateShard.CULL)
                         .setLightmapState(RenderStateShard.LIGHTMAP)
                         .setOverlayState(RenderStateShard.OVERLAY)
-                        .setLayeringState(RenderStateShard.VIEW_OFFSET_Z_LAYERING)
+                        .setLayeringState(RenderStateShard.NO_LAYERING)
                         .setOutputState(RenderState.OIT_TARGET)
                         .setTexturingState(RenderStateShard.DEFAULT_TEXTURING)
                         // The copied scene depth is read-only for both OIT
@@ -351,7 +351,7 @@ public class Constants {
                         .setCullState(RenderStateShard.CULL)
                         .setLightmapState(RenderStateShard.LIGHTMAP)
                         .setOverlayState(RenderStateShard.OVERLAY)
-                        .setLayeringState(RenderStateShard.VIEW_OFFSET_Z_LAYERING)
+                        .setLayeringState(RenderStateShard.NO_LAYERING)
                         .setOutputState(RenderState.OIT_TARGET)
                         .setTexturingState(RenderStateShard.DEFAULT_TEXTURING)
                         .setWriteMaskState(RenderStateShard.COLOR_WRITE)

@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.uml.dynamic;
 
 import lib.kasuga.rendering.models.uml.dynamic.morph.MorphInstance;
+import lib.kasuga.rendering.models.uml.backend.DepthBias;
 import lib.kasuga.rendering.models.uml.dynamic.morph.MorphResult;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.AnimationRenderPort;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.RenderSampleContext;
@@ -31,6 +32,7 @@ import org.joml.Vector4f;
 
 import java.util.BitSet;
 import java.util.Map;
+import java.util.Objects;
 
 @Getter
 public class ModelInstance implements AutoCloseable {
@@ -54,6 +56,17 @@ public class ModelInstance implements AutoCloseable {
     private MeshMode meshMode;
 
     private float ambientLightEnhancement = DEFAULT_AMBIENT_LIGHT_ENHANCEMENT;
+
+    private DepthBias depthBias = DepthBias.NONE;
+
+    /**
+     * Sets an instance-local raster depth offset. Ordinary models keep {@link DepthBias#NONE};
+     * overlays may opt into {@link DepthBias#DECAL}. Set on the render thread before drawing.
+     * This does not change transforms, picking or collision, and is not persisted across reloads.
+     */
+    public void setDepthBias(DepthBias depthBias) {
+        this.depthBias = Objects.requireNonNull(depthBias, "depthBias");
+    }
 
     /**
      * Optional pose driver — the animation source that advances this instance's pose one tick at a time.

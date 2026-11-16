@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.mc.backend;
 
 import com.mojang.blaze3d.vertex.VertexFormat;
+import lib.kasuga.rendering.models.uml.backend.DepthBias;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -37,10 +38,22 @@ class GlobalModelBatcherTest {
     @Test
     void keepsOpaqueAndMaskSectionsInDifferentBatches() {
         GlobalModelBatcher.BatchKey opaque = new GlobalModelBatcher.BatchKey(
-                ModelRenderPass.OPAQUE, VertexFormat.Mode.QUADS, 0, 0);
+                ModelRenderPass.OPAQUE, VertexFormat.Mode.QUADS, 0, 0, DepthBias.NONE);
         GlobalModelBatcher.BatchKey mask = new GlobalModelBatcher.BatchKey(
-                ModelRenderPass.MASK, VertexFormat.Mode.QUADS, 0, 0);
+                ModelRenderPass.MASK, VertexFormat.Mode.QUADS, 0, 0, DepthBias.NONE);
 
         assertNotEquals(opaque, mask);
+    }
+
+    @Test
+    void separatesDepthPoliciesWithoutSplittingEquivalentPolicies() {
+        var plain = new GlobalModelBatcher.BatchKey(
+                ModelRenderPass.OPAQUE, VertexFormat.Mode.QUADS, 0, 0, DepthBias.NONE);
+        var overlay = new GlobalModelBatcher.BatchKey(
+                ModelRenderPass.OPAQUE, VertexFormat.Mode.QUADS, 0, 0, DepthBias.DECAL);
+        var equivalent = new GlobalModelBatcher.BatchKey(
+                ModelRenderPass.OPAQUE, VertexFormat.Mode.QUADS, 0, 0, new DepthBias(-1, -1));
+        assertNotEquals(plain, overlay, "a decal must not inherit a neighbouring object's depth policy");
+        assertEquals(overlay, equivalent);
     }
 }

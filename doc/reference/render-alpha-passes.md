@@ -15,6 +15,9 @@
 OPAQUE/MASK 可以继续进入 global batch，但 batch key 包含 alpha pass；BLEND 不进入
 global batch，避免把 OIT 两次几何提交和普通批处理状态混在一起。
 
+需要与另一表面共面的覆盖模型，可显式设置实例的 [深度偏移](model-depth-bias.md)；
+普通模型默认保持原深度。不同偏移策略会拆分批次，透明子 pass 重放同一策略。
+
 glTF 的 `alphaMode` 和 `alphaCutoff` 由 `GltfMaterialData` 传到后端。没有透明度
 contract 的旧 loader 默认使用 `OPAQUE`；PMX loader 根据 diffuse alpha 和纹理 alpha
 推断 OPAQUE/MASK/BLEND。

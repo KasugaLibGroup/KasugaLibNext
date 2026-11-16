@@ -13,6 +13,8 @@ import lib.kasuga.rendering.models.mc.backend.vbuffer.IrisVertexBuffer;
 import lib.kasuga.rendering.models.mc.backend.vbuffer.VanillaVertexBuffer;
 import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.backend.DepthBias;
+import lib.kasuga.rendering.models.uml.backend.gpu.PolygonOffsetScope;
 import lombok.Getter;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.RenderType;
@@ -193,6 +195,14 @@ public class BackendInstance implements AutoCloseable {
     void drawPreparedBuffer(ModelRenderPass pass, PoseStack.Pose pose, RenderType renderType,
                             Matrix4f modelViewMatrix, Matrix4f projectionMatrix,
                             float emissiveStrength, float ambientLightEnhancement, int oitMode) {
+        drawPreparedBuffer(pass, pose, renderType, modelViewMatrix, projectionMatrix,
+                emissiveStrength, ambientLightEnhancement, oitMode, model.getDepthBias());
+    }
+
+    void drawPreparedBuffer(ModelRenderPass pass, PoseStack.Pose pose, RenderType renderType,
+                            Matrix4f modelViewMatrix, Matrix4f projectionMatrix,
+                            float emissiveStrength, float ambientLightEnhancement, int oitMode,
+                            DepthBias depthBias) {
         RenderPart part = parts.get(pass);
         if (part == null) return;
 
@@ -217,7 +227,11 @@ public class BackendInstance implements AutoCloseable {
             // Every context's enter() sets default/custom uniforms, applies
             // the shader and binds the VAO (including Iris' skinned attributes).
             // Reapplying here repeats that work and can undo the OIT rebind.
-            try { buffer.getVertexBuffer().draw(); }
+            // Apply after shader setup (including Iris overrides), then restore before
+            // clearRenderState. Every replay of prepared transparency uses the same policy.
+            try (var ignored = PolygonOffsetScope.apply(depthBias)) {
+                buffer.getVertexBuffer().draw();
+            }
             finally {
                 buffer.markSubmitted();
                 if (tbo != null) tbo.markSubmitted();
