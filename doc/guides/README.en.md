@@ -12,3 +12,4 @@ This section holds recipes and examples for readers arriving with a concrete tas
 | [Data-Driven Getting Started](data-driven/intro.md) | From an empty directory to a block that moves: the two phases, the minimal path, and common errors |
 | [Path 1: Adding Content with Data-Driven Files](data-driven/guide-content.md) | Add blocks, items, groups, state machines, and animation clips with JSON alone, without writing Java |
 | [Extension Guide: What Only Java Can Do](data-driven/guide-extension.md) | Custom TypeHandlers and adding capabilities to data-driven |
+| [Multi-Bogey Train Carriages](create/multi-bogey-carriage.en.md) | Enabling the switch, building a multi-bogey structure, fallback behaviour, and changing the default from other mods |

@@ -13,3 +13,4 @@
 | [数据驱动上手](data-driven/intro.md) | 从空目录到方块动起来：两个时机、最小路径与常见错误 |
 | [路径 1：用数据驱动文件添加内容](data-driven/guide-content.md) | 不写 Java，只用 JSON 加方块、物品、分组、状态机与动画剪辑 |
 | [扩展指南：写 Java 才能做到的事](data-driven/guide-extension.md) | 自定义 TypeHandler 与给数据驱动加能力 |
+| [多转向架列车车厢](create/multi-bogey-carriage.md) | 开启开关、搭建多转向架结构、回退行为与其他模组修改默认值 |
