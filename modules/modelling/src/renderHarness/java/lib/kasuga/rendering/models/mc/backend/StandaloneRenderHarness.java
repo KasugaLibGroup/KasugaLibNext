@@ -68,6 +68,7 @@ public final class StandaloneRenderHarness {
             System.out.println("Standalone GL: " + report.get("renderer") + " / " + report.get("glVersion"));
             var suite = new RenderRegressionSuite(options.report.getParent());
             run(results, "world-ui-canvas", WorldUiCanvasRegression::run);
+            run(results, "world-space-lights", () -> WorldLightRegression.run(options.report.getParent()));
             run(results, "depth-precision", suite::depthPrecision);
             run(results, "depth-handoff", suite::depthHandoff);
             run(results, "model-depth-bias-pixels", PolygonOffsetRegression::pixels);
