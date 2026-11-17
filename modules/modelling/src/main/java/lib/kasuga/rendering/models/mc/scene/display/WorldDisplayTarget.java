@@ -12,6 +12,10 @@ import java.util.*;
  * Snapshots never advance time. A host ticks only the root; children use the same tick identity.
  */
 public abstract class WorldDisplayTarget implements MinecraftModelSource {
+    public record Light(WorldLightTarget target, lib.kasuga.rendering.lighting.LightSource source, Matrix4f transform) {
+        public Light { Objects.requireNonNull(target); Objects.requireNonNull(source); transform = new Matrix4f(transform); }
+        @Override public Matrix4f transform() { return new Matrix4f(transform); }
+    }
     public record Panel(Renderable view, Matrix4f transform) {
         public Panel { Objects.requireNonNull(view); transform = new Matrix4f(transform); }
         @Override public Matrix4f transform() { return new Matrix4f(transform); }
@@ -107,6 +111,16 @@ public abstract class WorldDisplayTarget implements MinecraftModelSource {
 
     protected abstract Snapshot contentSnapshot(LayerLayout layout, float partialTick);
     protected List<Panel> contentPanels() { return List.of(); }
+    protected List<Light> contentLights() { return List.of(); }
+    /** Current local light placements; sampling does not advance controllers or scene time. */
+    public final List<Light> lights() {
+        if (!visible()) return List.of();
+        List<Light> result = new ArrayList<>();
+        for (Light light : contentLights()) {
+            result.add(new Light(light.target(), light.source(), new Matrix4f(transform).mul(light.transform())));
+        }
+        return List.copyOf(result);
+    }
     protected abstract void closeContent();
     @Override public final Snapshot snapshot(LayerLayout layout, float partialTick) {
         if (!visible()) return null;

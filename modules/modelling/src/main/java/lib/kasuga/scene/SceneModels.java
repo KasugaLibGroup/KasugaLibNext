@@ -9,6 +9,13 @@ import lib.kasuga.rendering.effect.pipeline.RenderPipelineDescriptor;
 import lib.kasuga.rendering.models.mc.scene.LayerLayout;
 import lib.kasuga.rendering.models.mc.scene.MinecraftModelSource;
 import lib.kasuga.rendering.output.mc.MinecraftFrameOutputs;
+import lib.kasuga.rendering.output.mc.MinecraftWorldViews;
+import lib.kasuga.rendering.effect.EffectHandle;
+import lib.kasuga.rendering.effect.builtin.light.WorldLight;
+import lib.kasuga.rendering.effect.builtin.light.WorldLights;
+import lib.kasuga.rendering.lighting.LightFrame;
+import lib.kasuga.rendering.models.mc.scene.display.WorldDisplayTarget;
+import lib.kasuga.rendering.models.mc.scene.display.WorldLightTarget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -20,10 +27,13 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import org.joml.Matrix4fc;
+import org.joml.Matrix4d;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -84,7 +94,9 @@ public final class SceneModels implements AutoCloseable {
         return java.util.Optional.ofNullable(nearest);
     }
     private void render(WorldRenderPipelineContext context) {
-        if (closed || context.level() != level) return;
+        boolean sameWorld = context.level() == level || (MinecraftWorldViews.sourceLevel() == level
+                && context.level().dimension().equals(level.dimension()));
+        if (closed || !sameWorld) return;
         var camera = context.camera().getPosition();
         float partial = context.partialTick().getGameTimeDeltaPartialTick(false);
         long generation=lib.kasuga.rendering.models.mc.scene.ModelPreviewResources.generation();
@@ -151,6 +163,7 @@ public final class SceneModels implements AutoCloseable {
         private boolean visible = true;
         private boolean closed;
         private final Set<net.minecraft.client.gui.components.Renderable> mountedPanels = new LinkedHashSet<>();
+        private final Map<WorldLightTarget, EffectHandle<WorldLight>> mountedLights = new LinkedHashMap<>();
         Entry(SceneModels owner, MinecraftModelSource source, Vec3 position) {
             this.owner = owner; this.source = source; placement = new ScenePlacement(position);
         }
@@ -169,6 +182,7 @@ public final class SceneModels implements AutoCloseable {
             var pose = mainView ? placement.capture(partialTick) : placement.sample(partialTick);
             if (pose == null) { close(); return null; }
             if (!visible) return null;
+            syncLights(pose);
             var snapshot = source.snapshot(layout, partialTick);
             if (closed) return null;
             if (mainView) { lastSnapshot = snapshot; syncPanels(pose); }
@@ -182,13 +196,40 @@ public final class SceneModels implements AutoCloseable {
             return new Frame(placement.lastFrame(), lastSnapshot);
         }
         public Entry layers(LayerLayout value) { requireOpen(); layout = java.util.Objects.requireNonNull(value); return this; }
-        public Entry visible(boolean value) { requireOpen(); visible = value; if(!visible)removePanels(); return this; }
+        public Entry visible(boolean value) {
+            requireOpen(); visible = value;
+            if (!visible) { removePanels(); removeLights(); }
+            return this;
+        }
         private void requireOpen() { if (closed) throw new IllegalStateException("Scene entry is closed"); }
         @Override public void close() {
             if (closed) return;
             closed = true; placement.expire(); lastSnapshot = null;
             if (owner != null) owner.models.remove(this);
-            try { removePanels(); } finally { source.close(); }
+            try { removePanels(); } finally { try { removeLights(); } finally { source.close(); } }
+        }
+        private void removeLights() {
+            for (EffectHandle<WorldLight> handle : mountedLights.values()) handle.remove();
+            mountedLights.clear();
+        }
+        private void syncLights(ScenePose pose) {
+            if (!(source instanceof WorldDisplayTarget display)) return;
+            List<WorldDisplayTarget.Light> lights = display.lights();
+            Set<WorldLightTarget> current = new LinkedHashSet<>();
+            for (WorldDisplayTarget.Light light : lights) {
+                current.add(light.target());
+                EffectHandle<WorldLight> handle = mountedLights.get(light.target());
+                if (handle == null || !handle.isActive()) {
+                    handle = WorldLights.spawn(owner.level, light.source());
+                    mountedLights.put(light.target(), handle);
+                }
+                Matrix4d transform = new Matrix4d().translation(pose.origin().x, pose.origin().y, pose.origin().z)
+                        .mul(new Matrix4d(pose.transform())).mul(new Matrix4d(light.transform()));
+                handle.effect().frame(new LightFrame(light.source(), transform));
+            }
+            for (WorldLightTarget target : List.copyOf(mountedLights.keySet())) {
+                if (!current.contains(target)) mountedLights.remove(target).remove();
+            }
         }
         private void removePanels() {
             if (mountedPanels.isEmpty()) return;
