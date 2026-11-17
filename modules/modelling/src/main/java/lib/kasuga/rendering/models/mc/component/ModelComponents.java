@@ -8,6 +8,8 @@ import lib.kasuga.rendering.models.uml.dynamic.physics.core.Frames;
 import org.joml.Vector3f;
 import org.joml.Quaternionf;
 import org.joml.Vector4f;
+import lib.kasuga.rendering.lighting.LightColor;
+import lib.kasuga.rendering.lighting.LightSource;
 import java.util.*;
 
 /** Versioned authoring metadata in Blockbench model coordinates: pixels and degrees.
@@ -18,6 +20,7 @@ public final class ModelComponents {
     private final LinkedHashMap<String, JsonObject> definitions = new LinkedHashMap<>();
     private final Map<Integer, String> bindings = new HashMap<>();
     private final List<EmitterDefinition> emitters = new ArrayList<>();
+    private final List<LightDefinition> lights = new ArrayList<>();
     private ModelComponents(JsonObject source) {
         this.source = source;
         if (source == null) return;
@@ -81,6 +84,33 @@ public final class ModelComponents {
         }
         if (emitters.stream().mapToInt(EmitterDefinition::maxParticles).sum() > 16_384)
             throw error("emitters: total model particle budget exceeds 16384");
+        if (source.has("lights")) for (JsonElement value : array(source, "lights")) {
+            JsonObject light = value.getAsJsonObject();
+            String id = string(light, "id", "");
+            if (id.isBlank() || definitions.containsKey(id) || !emitterIds.add(id)) throw error("lights: duplicate or empty id");
+            String bone = nullableString(light, "bone");
+            if (bone != null) definition(bone);
+            String type = string(light, "type", "point");
+            LightSource.Builder builder = switch (type) {
+                case "point" -> LightSource.point(0, 0, 0);
+                case "area" -> LightSource.area(0, 0, 0,
+                        number(light, "width", 16, .001f, 1e6f) / 16,
+                        number(light, "height", 16, .001f, 1e6f) / 16);
+                case "volumetric" -> LightSource.volumetric(0, 0, 0);
+                default -> throw error("lights." + id + ".type");
+            };
+            String color = string(light, "color", "#ffffff");
+            if (!color.matches("#[0-9a-fA-F]{6}")) throw error("lights." + id + ".color");
+            int rgb = Integer.parseInt(color.substring(1), 16);
+            builder.color(LightColor.srgb((rgb >> 16 & 255) / 255f, (rgb >> 8 & 255) / 255f, (rgb & 255) / 255f));
+            if (light.has("temperature")) builder.temperature(number(light, "temperature", 6500, 1000, 40000));
+            builder.range(number(light, "range", 256, .001f, 1e6f) / 16)
+                    .intensity(number(light, "intensity", 4, 0, 1e6f))
+                    .twoSided(light.has("two_sided") && light.get("two_sided").getAsBoolean())
+                    .medium(number(light, "density", .08f, 0, 100), number(light, "anisotropy", 0, -.9f, .9f));
+            lights.add(new LightDefinition(id, bone, vector(light, "position", new Vector3f()),
+                    vector(light, "rotation", new Vector3f()), !light.has("enabled") || light.get("enabled").getAsBoolean(), builder.build()));
+        }
     }
     public static ModelComponents parse(JsonElement value) {
         if (value == null || value.isJsonNull()) return new ModelComponents(null);
@@ -90,6 +120,15 @@ public final class ModelComponents {
     public boolean isEmpty() { return source == null; }
 
     public List<EmitterDefinition> emitters() { return List.copyOf(emitters); }
+    public List<LightDefinition> lights() { return List.copyOf(lights); }
+
+    public record LightDefinition(String id, String boneId, Vector3f position, Vector3f rotation,
+                                  boolean enabled, LightSource source) {
+        public LightDefinition { position = new Vector3f(position); rotation = new Vector3f(rotation); }
+        @Override public Vector3f position() { return new Vector3f(position); }
+        @Override public Vector3f rotation() { return new Vector3f(rotation); }
+        public String anchorName() { return "kasuga_light:" + id; }
+    }
 
     public record EmitterDefinition(
             String id, String name, String boneId, Vector3f position, Vector3f rotation,
@@ -165,6 +204,12 @@ public final class ModelComponents {
             bones.put(entry.getKey(), skeleton.getBoneMap().get(name));
         }
         installEmitterAnchors(skeleton, bones);
+        for (LightDefinition light : lights) {
+            Bone bone = light.boneId() == null ? skeleton.getRoot() : resolve(bones, light.boneId());
+            Transform offset = new Transform().translate(light.position().div(16))
+                    .mul(lib.kasuga.rendering.models.uml.math.QuaternionHelper.fromZYXDegrees(light.rotation()));
+            if (skeleton.getAnchor(light.anchorName()) == null) skeleton.defineAnchor(light.anchorName(), bone, offset);
+        }
         List<SkeletonDynamics.IkChain> chains = new ArrayList<>();
         List<SkeletonDynamics.RigidBody> bodies = new ArrayList<>();
         List<SkeletonDynamics.Joint> joints = new ArrayList<>();

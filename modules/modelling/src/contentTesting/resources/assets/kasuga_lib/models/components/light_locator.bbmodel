@@ -1,0 +1,182 @@
+{
+  "meta": {
+    "format_version": "5.0",
+    "model_format": "bedrock",
+    "box_uv": true
+  },
+  "name": "lights",
+  "model_identifier": "light_locator_demo",
+  "visible_box": [
+    1,
+    1,
+    0
+  ],
+  "variable_placeholders": "",
+  "multi_file_ruleset": "",
+  "variable_placeholder_buttons": [],
+  "bedrock_animation_mode": "entity",
+  "timeline_setups": [],
+  "unhandled_root_fields": {},
+  "resolution": {
+    "width": 16,
+    "height": 16
+  },
+  "elements": [
+    {
+      "name": "light",
+      "position": [
+        32,
+        24,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        90
+      ],
+      "ignore_inherited_scale": false,
+      "visibility": true,
+      "locked": false,
+      "scope": 0,
+      "kasuga_emitter": {},
+      "kasuga_light": {
+        "type": "point",
+        "enabled": true,
+        "color": "#22aaff",
+        "intensity": 90,
+        "range": 240,
+        "width": 32,
+        "height": 16,
+        "two_sided": false,
+        "density": 0.08,
+        "anisotropy": 0,
+        "id": "2944345a-24de-bb9e-5fec-551fdb891428",
+        "name": "light",
+        "bone": "75be44b7-13f3-b07d-68da-e6004f370fb9",
+        "position": [
+          32,
+          8,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          90
+        ]
+      },
+      "uuid": "2944345a-24de-bb9e-5fec-551fdb891428",
+      "type": "locator"
+    }
+  ],
+  "groups": [
+    {
+      "name": "lamp_mount",
+      "uuid": "75be44b7-13f3-b07d-68da-e6004f370fb9",
+      "export": true,
+      "locked": false,
+      "scope": 0,
+      "selected": false,
+      "visibility": true,
+      "_static": {
+        "properties": {},
+        "temp_data": {}
+      },
+      "origin": [
+        0,
+        16,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "bedrock_binding": "",
+      "color": 0,
+      "kasuga_components": {},
+      "kasuga_bone": {
+        "id": "75be44b7-13f3-b07d-68da-e6004f370fb9",
+        "name": "lamp_mount",
+        "parent": null,
+        "pivot": [
+          0,
+          16,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "components": {}
+      },
+      "children": [],
+      "reset": false,
+      "shade": true,
+      "mirror_uv": false,
+      "autouv": 0,
+      "isOpen": true,
+      "primary_selected": false
+    }
+  ],
+  "outliner": [
+    {
+      "uuid": "75be44b7-13f3-b07d-68da-e6004f370fb9",
+      "isOpen": true,
+      "children": [
+        "2944345a-24de-bb9e-5fec-551fdb891428"
+      ]
+    }
+  ],
+  "textures": [],
+  "kasuga_lib": {
+    "version": 1,
+    "bones": [
+      {
+        "id": "75be44b7-13f3-b07d-68da-e6004f370fb9",
+        "name": "lamp_mount",
+        "parent": null,
+        "pivot": [
+          0,
+          16,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "components": {}
+      }
+    ],
+    "emitters": [],
+    "lights": [
+      {
+        "type": "point",
+        "enabled": true,
+        "color": "#22aaff",
+        "intensity": 90,
+        "range": 240,
+        "width": 32,
+        "height": 16,
+        "two_sided": false,
+        "density": 0.08,
+        "anisotropy": 0,
+        "id": "2944345a-24de-bb9e-5fec-551fdb891428",
+        "name": "light",
+        "bone": "75be44b7-13f3-b07d-68da-e6004f370fb9",
+        "position": [
+          32,
+          8,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          90
+        ]
+      }
+    ],
+    "bindings": []
+  }
+}

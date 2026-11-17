@@ -123,7 +123,7 @@ shader 文件位于 `assets/kasuga_lib/shaders/core/lighting/world_lights.{json,
 
 客户端每次会自动创建独立的 `world-light-demo-<时间戳>` 世界，在玩家出生点附近搭建测试房间，
 以 960×600 和 480×300 两个机位输出基线、暖/冷点光、强度、面光、体积光、组合、单灯移动、
-父 scene 移动、隐藏、恢复和关闭后的画面，共 24 张。
+父 scene 移动、隐藏、恢复、关闭，以及 Blockbench 导出光源、骨骼移动与模型关闭后的画面，共 30 张。
 图片及 `report.json` 写入指定运行目录的 `debug/world-lights/`，完成后自动退出。
 请使用专用运行目录；该 demo 会修改其测试世界。
 

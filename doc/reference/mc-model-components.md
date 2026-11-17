@@ -90,6 +90,29 @@ QJ 私有演示使用 `qj.running` 数值关键帧：轮转周期 2 秒，调速
 
 `stiffness` 与每骨骼 `gravity` 仅用于 Blockbench 的弹簧预览，后者单位像素/秒²。它用于观察次级骨骼惯性与阻尼，碰撞、父关节的精确响应以游戏为准；游戏重力由现有物理场景设置。
 
+## 光源
+
+Blockbench 的“Kasuga：放置光源”创建原生 Locator。光源保存在可选 `lights` 数组中，字段位置与 `emitters` 相同：
+
+```json
+"lights": [{
+  "id": "lamp-id", "name": "lamp", "bone": "tail-id",
+  "position": [0, 16, 0], "rotation": [0, 0, 0],
+  "type": "area", "enabled": true, "color": "#55aaff",
+  "intensity": 12, "range": 256, "width": 32, "height": 16,
+  "two_sided": false, "density": 0.08, "anisotropy": 0
+}]
+```
+
+类型为 `point`、`area`、`volumetric`。颜色为 sRGB HEX，加载时转换为线性 RGB。
+可选 `temperature` 为 1000–40000 K；存在时覆盖颜色，删除该字段后恢复 HEX 颜色。
+位置相对绑定骨骼，旋转使用局部 ZYX 度数；面光零旋转朝 +Z，矩形面位于 XY。
+`range`、`width`、`height` 使用像素（16 = 1 方块）。介质密度为每方块，各向异性范围 -0.9–0.9。
+
+模型实例自动安装光源模块，在现有 post-physics 附着点更新后采样骨骼变换，复用 `WorldLights`。
+光源随模型根位置和骨骼动画运动；卸载、资源重载、销毁及世界切换清理其 effect handle。
+无 `lights` 的旧模型保持原路径。表面光照和体积光的范围、遮挡与限制见 [世界空间光源](../guides/world-lights.md)。
+
 ## 粒子源
 
 粒子源是大纲中的原生 Locator 零体积定位点，可随父骨骼运动，导出不产生三角面。参数保存在扩展 `emitters`：

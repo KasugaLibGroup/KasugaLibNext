@@ -35,4 +35,13 @@ public record LightColor(float red, float green, float blue) {
         double value = Math.clamp(channel / 255, 0, 1);
         return (float) (value <= .04045 ? value / 12.92 : Math.pow((value + .055) / 1.055, 2.4));
     }
+
+    /** Converts conventional display RGB components in [0,1] to a linear light tint. */
+    public static LightColor srgb(float red, float green, float blue) {
+        if (!Float.isFinite(red) || !Float.isFinite(green) || !Float.isFinite(blue)
+                || red < 0 || green < 0 || blue < 0 || red > 1 || green > 1 || blue > 1) {
+            throw new IllegalArgumentException("sRGB components must be in [0,1]");
+        }
+        return new LightColor(linear(red * 255), linear(green * 255), linear(blue * 255));
+    }
 }
