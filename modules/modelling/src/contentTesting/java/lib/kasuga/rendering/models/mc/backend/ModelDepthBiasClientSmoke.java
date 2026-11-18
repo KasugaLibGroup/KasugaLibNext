@@ -28,7 +28,9 @@ import lib.kasuga.rendering.models.uml.structure.skeleton.Skeleton;
 import lib.kasuga.rendering.models.uml.util.MeshMode;
 import lib.kasuga.structure.Pair;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -107,13 +109,14 @@ public final class ModelDepthBiasClientSmoke {
                 REPORT.put("scenario-" + scenario + "-projection", perspective ? "perspective" : "orthographic");
                 if (scenario < 8) solid((scenario & 1) == 0, (scenario & 2) != 0,
                         (scenario & 4) == 0 ? ModelRenderPass.OPAQUE : ModelRenderPass.MASK);
-                else transparent((scenario & 1) == 0);
+                else if (scenario < 10) transparent((scenario & 1) == 0);
+                else instanced(scenario == 10 ? ModelRenderPass.OPAQUE : ModelRenderPass.MASK);
                 noError("scenario " + scenario);
             } finally {
                 nativeShader.setParallaxScale(nativeParallax); batchShader.setParallaxScale(batchParallax);
                 original.restore();
             }
-            if (++scenario == 10) finish(null);
+            if (++scenario == 12) finish(null);
         } catch (Throwable failure) { finish(failure); }
     }
 
@@ -205,6 +208,106 @@ public final class ModelDepthBiasClientSmoke {
         }
     }
 
+    private static void instanced(ModelRenderPass pass) throws Exception {
+        String name = "instanced-" + pass;
+        try (Quad left = quad(false, pass, -.22f, .22f, .28f, .3f, 1, 1, .8f);
+             Quad right = instance(left.instance.getModel(), false, pass);
+             Quad overlay = quad(false, pass, -.22f, .22f, .28f, .3f, 0, 1, .8f);
+             GlobalModelBatcher batcher = new GlobalModelBatcher()) {
+            right.instance.getSkeletonInstance().transformRoot(new Transform().translate(0, 0, .25f));
+            left.backend.updateLightData(LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, 1f);
+            right.backend.updateLightData(LightTexture.pack(8, 4), OverlayTexture.pack(0, true), 1f);
+            clear();
+            movePose(-.41f);
+            draw(left);
+            movePose(.41f);
+            draw(right);
+            Pixels direct = capture(name + "-direct");
+            check(direct.depth(LEFT) < 1f && direct.depth(RIGHT) < direct.depth(LEFT), "Missing independent bone poses");
+            check(direct.channel(LEFT, 1) != direct.channel(RIGHT, 1)
+                    || direct.channel(LEFT, 2) != direct.channel(RIGHT, 2), "Missing independent light/overlay");
+
+            // Follow the same cached draw through a vertex override and its removal.
+            for (int frame = 0; frame < 3; frame++) {
+                boolean different = frame == 1;
+                right.backend.getData(pass).setReadAlpha(!different);
+                clear();
+                batcher.begin(VIEW, projection);
+                try {
+                    submitRepeatedPair(batcher, left, right);
+                    GlobalModelBatcher.DrawStats stats = batcher.flush();
+                    check(stats.objects == 64 && stats.draws == 1 && stats.vertices == 256, "Unexpected draw count");
+                    check(stats.instancedDraws == (different ? 0 : 1)
+                            && stats.instancedObjects == (different ? 0 : 64)
+                            && stats.geometryVertices == (different ? 256 : 4), "Unexpected geometry sharing");
+                    REPORT.put(name + "-frame-" + frame, Map.of("draws", stats.draws, "objects", stats.objects,
+                            "instancedDraws", stats.instancedDraws, "geometryVertices", stats.geometryVertices));
+                } finally {
+                    batcher.endFrame();
+                }
+                if (!different) {
+                    Pixels batch = capture(name + "-batch-" + frame);
+                    checkInstancedPixels(batch, direct);
+                }
+            }
+
+            clear();
+            movePose(0f);
+            draw(overlay);
+            movePose(-.41f);
+            draw(left);
+            movePose(.41f);
+            draw(right);
+            movePose(-.41f);
+            draw(overlay);
+            Pixels mixedDirect = capture(name + "-mixed-direct");
+            check(mixedDirect.channel(LEFT, 0) < direct.channel(LEFT, 0), "Missing coplanar overlay in test fixture");
+            clear();
+            batcher.begin(VIEW, projection);
+            try {
+                movePose(0f);
+                submit(batcher, overlay);
+                submitRepeatedPair(batcher, left, right);
+                movePose(-.41f);
+                submit(batcher, overlay);
+                GlobalModelBatcher.DrawStats stats = batcher.flush();
+                check(stats.draws == 3 && stats.instancedDraws == 1 && stats.instancedObjects == 64
+                        && stats.geometryVertices == 12, "Mixed draws did not reuse geometry in submission order");
+                REPORT.put(name + "-mixed", Map.of("draws", stats.draws, "objects", stats.objects,
+                        "instancedDraws", stats.instancedDraws, "geometryVertices", stats.geometryVertices));
+            } finally {
+                batcher.endFrame();
+            }
+            checkInstancedPixels(capture(name + "-mixed-batch"), mixedDirect);
+        }
+    }
+
+    private static void checkInstancedPixels(Pixels batch, Pixels direct) {
+        for (int x : new int[]{LEFT, RIGHT, CENTER}) {
+            same(batch, x, direct, x, "Instanced and direct colors differ");
+            check(batch.depth(x) == direct.depth(x), "Instanced and direct depths differ at " + x);
+        }
+    }
+
+    private static void submitRepeatedPair(GlobalModelBatcher batcher, Quad left, Quad right) {
+        for (int i = 0; i < 32; i++) {
+            movePose(-.41f);
+            submit(batcher, left);
+            movePose(.41f);
+            submit(batcher, right);
+        }
+    }
+
+    private static void movePose(float x) {
+        pose.setIdentity();
+        pose.translate(x, 0, 0);
+    }
+
+    private static void submit(GlobalModelBatcher batcher, Quad quad) {
+        check(batcher.submit(quad.backend, quad.pass, pose.last().pose(), pose.last().normal(), 0, 4),
+                "Production batch rejected a quad");
+    }
+
     private static Pixels scene(String name, boolean batch, GlobalModelBatcher batcher, Quad... quads) throws Exception {
         clear();
         Offset before = Offset.read();
@@ -270,7 +373,12 @@ public final class ModelDepthBiasClientSmoke {
         }
         MaterialSet materials = new MaterialSet(texture, material);
         Model asset = new Model(vertices, new Mesh[]{mesh}, new Bone[]{root}, skeleton, materials, MeshMode.QUADS, null, null);
-        ModelInstance instance = new ModelInstance(asset, new Transform(), null, null, new MaterialSetInstance(materials), null);
+        return instance(asset, cpu, pass);
+    }
+
+    private static Quad instance(Model asset, boolean cpu, ModelRenderPass pass) {
+        ModelInstance instance = new ModelInstance(asset, new Transform(), null, null,
+                new MaterialSetInstance(asset.getMaterialSet()), null);
         check(instance.getDepthBias().equals(DepthBias.NONE), "New instance default is not NONE");
         instance.updateImmediate();
         return new Quad(instance, new BackendInstance(instance, ForkJoinPool.commonPool(), cpu, true), pass);

@@ -6,15 +6,16 @@ import com.mojang.blaze3d.vertex.VertexBuffer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import lib.kasuga.rendering.models.mc.backend.data_type.KasugaGlobalBatchShaderInstance;
 import lib.kasuga.rendering.models.mc.backend.transform.BoneTransformTBO;
-import lib.kasuga.rendering.models.uml.backend.gpu.TextureUploadRing;
 import lib.kasuga.rendering.models.mc.backend.vbuffer.FencedVertexBuffer;
-import lib.kasuga.rendering.models.uml.util.ModelProfiler;
-import lib.kasuga.rendering.models.uml.backend.FrameResourceCache;
 import lib.kasuga.rendering.models.uml.backend.DepthBias;
+import lib.kasuga.rendering.models.uml.backend.FrameResourceCache;
 import lib.kasuga.rendering.models.uml.backend.gpu.PolygonOffsetScope;
+import lib.kasuga.rendering.models.uml.backend.gpu.TextureUploadRing;
+import lib.kasuga.rendering.models.uml.util.ModelProfiler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
+import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
@@ -27,6 +28,7 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,13 +43,17 @@ final class GlobalModelBatcher implements AutoCloseable {
     private static final int FLOATS_PER_OBJECT = OBJECT_TEXELS * 4;
     private static final int FLOATS_PER_BONE = 36;
     private static final int MAX_MERGE_GAP = 64;
+    // Small runs inside a mixed batch would save little vertex data at the cost of extra draws.
+    private static final int MIN_MIXED_BATCH_BYTES_SAVED = 16 * 1024;
 
     private final Map<BatchKey, List<BatchItem>> submissions = new LinkedHashMap<>();
     private final FrameResourceCache<CacheKey, BatchBuffer> buffers = new FrameResourceCache<>(BatchBuffer::close);
+    private final Set<BackendInstance> preparedInstances = Collections.newSetFromMap(new IdentityHashMap<>());
 
     private Matrix4f modelViewMatrix;
     private Matrix4f projectionMatrix;
     private boolean collecting;
+    private boolean instancingAvailable;
     private int textureBufferLimitTexels;
 
     void beginFrame() {
@@ -60,13 +66,15 @@ final class GlobalModelBatcher implements AutoCloseable {
 
     void begin(Matrix4f modelViewMatrix, Matrix4f projectionMatrix) {
         RenderSystem.assertOnRenderThread();
-        if (!buffers.isFrameOpen()) buffers.beginFrame();
+        if (!buffers.isFrameOpen()) beginFrame();
         submissions.clear();
         this.modelViewMatrix = new Matrix4f(modelViewMatrix);
         this.projectionMatrix = new Matrix4f(projectionMatrix);
         if (textureBufferLimitTexels == 0) {
             textureBufferLimitTexels = GL11.glGetInteger(GL31.GL_MAX_TEXTURE_BUFFER_SIZE);
         }
+        instancingAvailable = RenderState.GLOBAL_BATCH_SHADER_INSTANCE instanceof KasugaGlobalBatchShaderInstance shader
+                && shader.getUniform("ksg_Instanced") != null;
         collecting = true;
     }
 
@@ -80,8 +88,10 @@ final class GlobalModelBatcher implements AutoCloseable {
         BatchKey key = new BatchKey(pass, instance.getMeshMode(pass),
                 Float.floatToIntBits(emissiveStrength),
                 Float.floatToIntBits(ambientLightEnhancement), instance.getModel().getDepthBias());
+        FlatModelData data = instance.getData(pass);
         submissions.computeIfAbsent(key, ignored -> new ArrayList<>())
-                .add(new BatchItem(instance, new Matrix4f(pose), new Matrix3f(normal)));
+                .add(new BatchItem(instance, new Matrix4f(pose), new Matrix3f(normal),
+                        data.getLightmap(), data.getOverlay(), data.getBrightness()));
         return true;
     }
 
@@ -99,42 +109,109 @@ final class GlobalModelBatcher implements AutoCloseable {
         return Math.multiplyExact(tbo.getBoneCount(), FLOATS_PER_BONE / 4);
     }
 
-    void flush() {
-        if (!collecting) return;
+    DrawStats flush() {
+        DrawStats stats = new DrawStats();
+        if (!collecting) return stats;
         collecting = false;
         long profileStart = ModelProfiler.start();
-        int objectCount = 0;
-        int drawCount = 0;
-        long submittedVertices = 0;
         try {
             for (Map.Entry<BatchKey, List<BatchItem>> entry : submissions.entrySet()) {
-                List<BatchItem> items = entry.getValue();
-                int chunk = 0;
-                for (int from = 0; from < items.size();) {
-                    int to = nextChunkEnd(items, from);
-                    CacheKey cacheKey = new CacheKey(entry.getKey(), chunk++);
-                    BatchBuffer buffer = buffers.acquire(cacheKey, BatchBuffer::new);
-                    buffer.draw(items.subList(from, to), entry.getKey(), modelViewMatrix, projectionMatrix);
-                    drawCount++;
-                    objectCount += to - from;
-                    for (int i = from; i < to; i++) {
-                        FlatModelData data = items.get(i).instance().getData(entry.getKey().pass());
-                        if (data != null) submittedVertices += data.getVertexCount();
-                    }
-                    from = to;
-                }
+                drawBatch(entry.getValue(), entry.getKey(), stats);
             }
         } finally {
             submissions.clear();
-            ModelProfiler.record("Rendering.globalBatch", profileStart,
-                    "objects=" + objectCount + ", draws=" + drawCount
-                            + ", vertices=" + submittedVertices + ", cachedBuffers=" + buffers.size());
+            if (profileStart != 0) {
+                ModelProfiler.record("Rendering.globalBatch", profileStart,
+                        "objects=" + stats.objects + ", draws=" + stats.draws
+                                + ", instancedObjects=" + stats.instancedObjects + ", instancedDraws=" + stats.instancedDraws
+                                + ", vertices=" + stats.vertices + ", geometryVertices=" + stats.geometryVertices
+                                + ", cachedBuffers=" + buffers.size());
+            }
+        }
+        return stats;
+    }
+
+    private void drawBatch(List<BatchItem> items, BatchKey key, DrawStats stats) {
+        items.removeIf(item -> !item.instance().hasPass(key.pass()));
+        try {
+            // The native shader takes packed light and overlay from the instance texture.
+            for (BatchItem item : items) {
+                if (preparedInstances.add(item.instance())) {
+                    item.instance().prepareForGlobalBatch(key.pass(), !instancingAvailable);
+                }
+            }
+
+            int chunk = 0;
+            int mergedStart = 0;
+            for (int start = 0; instancingAvailable && start + 1 < items.size();) {
+                int end = instanceRunEnd(items, key.pass(), start);
+                FlatModelData geometry = items.get(start).instance().getData(key.pass());
+                if (shouldInstance(end - start, items.size(), geometry.getBuffer().capacity())) {
+                    chunk = drawRange(items, key, mergedStart, start, chunk, null, stats);
+                    chunk = drawRange(items, key, start, end, chunk, geometry, stats);
+                    mergedStart = end;
+                }
+                start = end;
+            }
+            drawRange(items, key, mergedStart, items.size(), chunk, null, stats);
+            for (BackendInstance instance : preparedInstances) instance.clearBatchDirtyVertices(key.pass());
+        } finally {
+            preparedInstances.clear();
         }
     }
 
-    private int nextChunkEnd(List<BatchItem> items, int from) {
-        return nextChunkEnd(items.size(), from, textureBufferLimitTexels,
-                index -> requiredBoneTexels(items.get(index).instance()));
+    static boolean shouldInstance(int count, int itemCount, int meshBytes) {
+        if (count < 2) return false;
+        return count == itemCount || (long) (count - 1) * meshBytes >= MIN_MIXED_BATCH_BYTES_SAVED;
+    }
+
+    private static int instanceRunEnd(List<BatchItem> items, ModelRenderPass pass, int start) {
+        BackendInstance first = items.get(start).instance();
+        int end = start + 1;
+        if (first.usesCpuSkinning()) return end;
+        FlatModelData geometry = first.getData(pass);
+        // Preserve primitive order for coplanar OPAQUE/MASK draws within this batch.
+        while (end < items.size()) {
+            BackendInstance next = items.get(end).instance();
+            if (next.usesCpuSkinning() || next.getModel().getModel() != first.getModel().getModel()
+                    || !next.getData(pass).shareBatchGeometry(geometry)) break;
+            end++;
+        }
+        return end;
+    }
+
+    private int drawRange(List<BatchItem> items, BatchKey key, int from, int end, int chunk,
+                          @Nullable FlatModelData geometry, DrawStats stats) {
+        // Split the instance/bone textures at the hardware limit while reusing the first draw's VBO.
+        FencedVertexBuffer shared = null;
+        while (from < end) {
+            int to = nextChunkEnd(end, from, textureBufferLimitTexels,
+                    index -> requiredBoneTexels(items.get(index).instance()));
+            CacheKey cacheKey = new CacheKey(key, chunk++, geometry != null);
+            BatchBuffer buffer = buffers.acquire(cacheKey, BatchBuffer::new);
+            try {
+                if (geometry != null && shared == null) {
+                    shared = buffer.uploadSharedGeometry(geometry, key.mode());
+                }
+                buffer.draw(items.subList(from, to), key, shared, modelViewMatrix, projectionMatrix);
+            } catch (RuntimeException | Error failure) {
+                // A failed upload can leave only part of a cached draw initialized.
+                buffer.layout.clear();
+                throw failure;
+            }
+            int count = to - from;
+            stats.objects += count;
+            stats.draws++;
+            if (shared != null) {
+                stats.instancedObjects += count;
+                stats.instancedDraws++;
+            }
+            int vertices = buffer.vertexCount;
+            stats.geometryVertices += vertices;
+            stats.vertices += shared == null ? vertices : (long) vertices * count;
+            from = to;
+        }
+        return chunk;
     }
 
     static int nextChunkEnd(int itemCount, int from, int textureLimitTexels,
@@ -160,8 +237,11 @@ final class GlobalModelBatcher implements AutoCloseable {
 
     @Override
     public void close() {
-        buffers.close();
-        submissions.clear();
+        try {
+            buffers.close();
+        } finally {
+            submissions.clear();
+        }
     }
 
     static record BatchKey(ModelRenderPass pass, VertexFormat.Mode mode,
@@ -175,9 +255,19 @@ final class GlobalModelBatcher implements AutoCloseable {
         }
     }
 
-    private record CacheKey(BatchKey key, int chunk) {}
+    private record CacheKey(BatchKey key, int chunk, boolean instanced) {}
 
-    private record BatchItem(BackendInstance instance, Matrix4f pose, Matrix3f normal) {}
+    private record BatchItem(BackendInstance instance, Matrix4f pose, Matrix3f normal,
+                             int light, int overlay, float brightness) {}
+
+    static final class DrawStats {
+        int objects;
+        int draws;
+        int instancedObjects;
+        int instancedDraws;
+        long vertices;
+        long geometryVertices;
+    }
 
     private static final class BatchBuffer implements AutoCloseable {
 
@@ -185,10 +275,12 @@ final class GlobalModelBatcher implements AutoCloseable {
         private final List<Integer> vertexOffsets = new ArrayList<>();
         private final List<Integer> boneOffsets = new ArrayList<>();
         private final IdentityHashMap<BackendInstance, Long> boneVersions = new IdentityHashMap<>();
+        private long[] contentVersions;
 
         private FencedVertexBuffer vertexBuffer;
         private ByteBuffer mergedVertices;
         private int vertexCount;
+        private Object sharedGeometry;
 
         private final TextureUploadRing instanceBuffers = new TextureUploadRing();
         private int instanceTextureId;
@@ -200,22 +292,38 @@ final class GlobalModelBatcher implements AutoCloseable {
         private final float[] matrix4 = new float[16];
         private final float[] matrix3 = new float[9];
         private final BitSet mergedDirty = new BitSet();
-        private final Set<BackendInstance> clearedInstances =
-                java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 
-        void draw(List<BatchItem> items, BatchKey key,
+        FencedVertexBuffer uploadSharedGeometry(FlatModelData data, VertexFormat.Mode mode) {
+            Object geometry = data.getBatchGeometry();
+            if (vertexBuffer == null) {
+                vertexBuffer = new FencedVertexBuffer(RenderState.UML_VERTEX_FORMAT, mode, MAX_MERGE_GAP);
+            }
+            if (sharedGeometry != geometry) {
+                vertexBuffer.upload(data.getBuffer().duplicate().clear(), null, true);
+                sharedGeometry = geometry;
+            }
+            return vertexBuffer;
+        }
+
+        void draw(List<BatchItem> items, BatchKey key, @Nullable FencedVertexBuffer shared,
                   Matrix4f modelViewMatrix, Matrix4f projectionMatrix) {
             RenderSystem.assertOnRenderThread();
             this.entryPass = key.pass();
-            for (BatchItem item : items) item.instance().prepareForGlobalBatch(key.pass());
 
             boolean rebuilt = !matchesLayout(items);
-            if (rebuilt) rebuild(items, key.mode());
-            else updateDirtyVertices(items);
+            if (rebuilt) rebuildLayout(items);
+            if (shared != null) {
+                vertexCount = items.getFirst().instance().getData(entryPass).getVertexCount();
+            } else if (rebuilt) {
+                rebuildVertices(items, key.mode());
+            } else {
+                updateDirtyVertices(items);
+            }
 
             updateBones(items, rebuilt);
             updateInstances(items);
-            drawBuffer(key, modelViewMatrix, projectionMatrix);
+            FencedVertexBuffer geometry = shared == null ? vertexBuffer : shared;
+            drawBuffer(key, geometry, shared == null ? 0 : items.size(), modelViewMatrix, projectionMatrix);
         }
 
         private boolean matchesLayout(List<BatchItem> items) {
@@ -230,23 +338,28 @@ final class GlobalModelBatcher implements AutoCloseable {
 
         private ModelRenderPass entryPass;
 
-        private void rebuild(List<BatchItem> items, VertexFormat.Mode mode) {
+        private void rebuildLayout(List<BatchItem> items) {
             layout.clear();
-            vertexOffsets.clear();
             boneOffsets.clear();
             boneVersions.clear();
-            vertexCount = 0;
             int boneCount = 0;
             for (BatchItem item : items) {
                 BackendInstance instance = item.instance();
                 layout.add(instance);
-                vertexOffsets.add(vertexCount);
                 boneOffsets.add(boneCount);
-                vertexCount += instance.getData(entryPass).getVertexCount();
                 BoneTransformTBO tbo = instance.getBoneTransformTBO();
                 if (!instance.usesCpuSkinning() && tbo != null) boneCount += tbo.getBoneCount();
             }
+        }
 
+        private void rebuildVertices(List<BatchItem> items, VertexFormat.Mode mode) {
+            vertexOffsets.clear();
+            vertexCount = 0;
+            contentVersions = new long[items.size()];
+            for (BatchItem item : items) {
+                vertexOffsets.add(vertexCount);
+                vertexCount += item.instance().getData(entryPass).getVertexCount();
+            }
             int vertexSize = RenderState.UML_VERTEX_FORMAT.getVertexSize();
             int byteSize = Math.multiplyExact(vertexCount, vertexSize);
             if (mergedVertices != null) MemoryUtil.memFree(mergedVertices);
@@ -256,7 +369,6 @@ final class GlobalModelBatcher implements AutoCloseable {
                 copyWholeInstance(items.get(i).instance(), i, vertexOffsets.get(i));
             }
             uploadWholeVertexBuffer(mode, byteSize);
-            clearDirtyVertices(items);
         }
 
         private void copyWholeInstance(BackendInstance instance, int objectIndex, int globalVertex) {
@@ -267,6 +379,7 @@ final class GlobalModelBatcher implements AutoCloseable {
                     MemoryUtil.memAddress(mergedVertices) + (long) globalVertex * vertexSize,
                     byteCount);
             patchObjectIndices(globalVertex, data.getVertexCount(), data.getOverlayOffset(), vertexSize, objectIndex);
+            contentVersions[objectIndex] = data.getContentVersion();
         }
 
         private void updateDirtyVertices(List<BatchItem> items) {
@@ -274,8 +387,16 @@ final class GlobalModelBatcher implements AutoCloseable {
             for (int objectIndex = 0; objectIndex < items.size(); objectIndex++) {
                 BackendInstance instance = items.get(objectIndex).instance();
                 FlatModelData data = instance.getData(entryPass);
+                long version = data.getContentVersion();
+                if (version == contentVersions[objectIndex]) continue;
                 BitSet dirty = data.getDirtyVertices();
                 int globalOffset = vertexOffsets.get(objectIndex);
+                // Another view or draw path may already have consumed some of these dirty ranges.
+                if (dirty.isEmpty() || version != contentVersions[objectIndex] + 1) {
+                    copyWholeInstance(instance, objectIndex, globalOffset);
+                    mergedDirty.set(globalOffset, globalOffset + data.getVertexCount());
+                    continue;
+                }
                 for (int start = dirty.nextSetBit(0); start >= 0;) {
                     int end = dirty.nextClearBit(start);
                     int byteOffset = start * data.getVertexSize();
@@ -289,19 +410,9 @@ final class GlobalModelBatcher implements AutoCloseable {
                     mergedDirty.set(globalOffset + start, globalOffset + end);
                     start = dirty.nextSetBit(end);
                 }
+                contentVersions[objectIndex] = version;
             }
             uploadDirtyVertexRanges(mergedDirty);
-            clearDirtyVertices(items);
-        }
-
-        private void clearDirtyVertices(List<BatchItem> items) {
-            clearedInstances.clear();
-            for (BatchItem item : items) {
-                if (clearedInstances.add(item.instance())) {
-                    item.instance().clearBatchDirtyVertices(entryPass);
-                }
-            }
-            clearedInstances.clear();
         }
 
         private void patchObjectIndices(int firstVertex, int count, int overlayOffset,
@@ -382,13 +493,12 @@ final class GlobalModelBatcher implements AutoCloseable {
                 }
                 BoneTransformTBO tbo = instance.getBoneTransformTBO();
                 boolean gpuSkinning = !instance.usesCpuSkinning() && tbo != null && tbo.isValid();
-                FlatModelData modelData = instance.getData(entryPass);
-                data.put(modelData.getBrightness())
+                data.put(item.brightness())
                         .put(boneOffsets.get(itemIndex))
                         .put(gpuSkinning ? 1f : 0f)
                         .put(0f);
-                int light = modelData.getLightmap();
-                int overlay = modelData.getOverlay();
+                int light = item.light();
+                int overlay = item.overlay();
                 data.put(light & 0xffff).put((light >>> 16) & 0xffff)
                         .put(overlay & 0xffff).put((overlay >>> 16) & 0xffff);
             }
@@ -396,8 +506,9 @@ final class GlobalModelBatcher implements AutoCloseable {
             instanceTextureId = instanceBuffers.upload(data);
         }
 
-        private void drawBuffer(BatchKey key, Matrix4f modelViewMatrix, Matrix4f projectionMatrix) {
-            if (vertexBuffer == null || vertexCount == 0) return;
+        private void drawBuffer(BatchKey key, FencedVertexBuffer geometry, int instanceCount,
+                                Matrix4f modelViewMatrix, Matrix4f projectionMatrix) {
+            if (geometry == null || vertexCount == 0) return;
             RenderType renderType = RenderState.getGlobalBatchRenderType(key.pass());
             ShaderInstance shader = null;
             boolean rasterizerDiscard = GL11.glGetBoolean(GL30.GL_RASTERIZER_DISCARD);
@@ -405,7 +516,7 @@ final class GlobalModelBatcher implements AutoCloseable {
                 renderType.setupRenderState();
                 shader = RenderSystem.getShader();
                 if (!(shader instanceof KasugaGlobalBatchShaderInstance batchShader)) return;
-                batchShader.setBatchTextures(instanceTextureId, boneTextureId);
+                batchShader.setBatchTextures(instanceTextureId, boneTextureId, instanceCount > 0);
                 batchShader.setEmissiveStrength(key.emissiveStrength());
                 batchShader.setAmbientLightEnhancement(key.ambientLightEnhancement());
                 batchShader.setAlphaMode(key.pass().shaderAlphaMode());
@@ -414,13 +525,20 @@ final class GlobalModelBatcher implements AutoCloseable {
                         Minecraft.getInstance().getWindow());
                 shader.apply();
                 BufferUploader.reset();
-                vertexBuffer.current().bind();
+                VertexBuffer current = geometry.current();
+                current.bind();
                 if (rasterizerDiscard) GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);
-                try (var ignored = PolygonOffsetScope.apply(key.depthBias())) {
-                    vertexBuffer.current().draw();
+                try (PolygonOffsetScope ignored = PolygonOffsetScope.apply(key.depthBias())) {
+                    if (instanceCount > 0) {
+                        // FencedVertexBuffer uses Minecraft's sequential index buffer for this mode.
+                        GL31.glDrawElementsInstanced(key.mode().asGLMode, key.mode().indexCount(vertexCount),
+                                RenderSystem.getSequentialBuffer(key.mode()).type().asGLType, 0L, instanceCount);
+                    } else {
+                        current.draw();
+                    }
                 }
                 finally {
-                    vertexBuffer.markSubmitted();
+                    geometry.markSubmitted();
                     instanceBuffers.markSubmitted();
                     boneBuffers.markSubmitted();
                 }

@@ -17,7 +17,7 @@ class DummyModelGpuTest {
                     assertNull(backend.getData());
                     for (var pass : ModelRenderPass.values()) {
                         assertFalse(backend.hasPass(pass));
-                        assertFalse(backend.prepareForGlobalBatch(pass));
+                        assertFalse(backend.prepareForGlobalBatch(pass, false));
                     }
                 }
             }

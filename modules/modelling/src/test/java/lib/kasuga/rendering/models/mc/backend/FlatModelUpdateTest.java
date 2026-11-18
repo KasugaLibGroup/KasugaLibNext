@@ -67,6 +67,42 @@ class FlatModelUpdateTest {
         }
     }
 
+    @Test void batchGeometryIgnoresPackedLightingAndTracksVertexAndMaterialChanges() throws Exception {
+        ModelInstance first = fixture().model;
+        Model asset = first.getModel();
+        try (first;
+             ModelInstance second = new ModelInstance(asset, null, null, null, null, null);
+             FlatModelData reference = data(first, false);
+             FlatModelData instance = data(second, false)) {
+            reference.updateModel();
+            instance.updateModel();
+            reference.getDirtyVertices().clear();
+            instance.getDirtyVertices().clear();
+            assertTrue(instance.shareBatchGeometry(reference));
+            Object geometry = reference.getBatchGeometry();
+            instance.setLight(0x00f000f0);
+            instance.setOverlay(0x0003000a);
+            assertFalse(instance.updateModel(false, false));
+            assertSame(geometry, instance.getBatchGeometry());
+            assertTrue(instance.updateModel());
+            assertNotEquals(reference.getBuffer().getInt(reference.getOverlayOffset()),
+                    instance.getBuffer().getInt(instance.getOverlayOffset()));
+            assertTrue(instance.shareBatchGeometry(reference));
+            instance.getDirtyVertices().clear();
+
+            for (String name : List.of("pos", "uv", "color")) {
+                second.getMorph().activateMorph(name, 1f);
+                assertTrue(instance.updateModel(true, false));
+                assertFalse(instance.shareBatchGeometry(reference));
+                instance.getDirtyVertices().clear();
+                second.getMorph().deactivateMorph(name);
+                assertTrue(instance.updateModel(true, false));
+                assertTrue(instance.shareBatchGeometry(reference));
+                instance.getDirtyVertices().clear();
+            }
+        }
+    }
+
     @Test void cpuMorphUpdatesWithoutSkeletonVersionChange() throws Exception {
         Fixture f = fixture();
         try (var data = data(f.model, true)) {

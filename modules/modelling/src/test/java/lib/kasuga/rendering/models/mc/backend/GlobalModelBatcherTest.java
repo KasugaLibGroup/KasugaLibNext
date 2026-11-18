@@ -5,8 +5,10 @@ import lib.kasuga.rendering.models.uml.backend.DepthBias;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GlobalModelBatcherTest {
 
@@ -33,6 +35,14 @@ class GlobalModelBatcherTest {
                 () -> GlobalModelBatcher.nextChunkEnd(1, 0, 8, ignored -> 0));
         assertThrows(IllegalStateException.class,
                 () -> GlobalModelBatcher.nextChunkEnd(1, 0, 100, ignored -> 101));
+    }
+
+    @Test
+    void instancesIdenticalBatchesAndKeepsSmallRunsInMixedBatchesMerged() {
+        assertFalse(GlobalModelBatcher.shouldInstance(1, 1, 32_768));
+        assertTrue(GlobalModelBatcher.shouldInstance(2, 2, 512));
+        assertFalse(GlobalModelBatcher.shouldInstance(2, 4, 512));
+        assertTrue(GlobalModelBatcher.shouldInstance(2, 4, 32_768));
     }
 
     @Test
