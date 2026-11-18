@@ -19,6 +19,7 @@ public class KasugaGlobalBatchShaderInstance extends KasugaShaderInstance {
 
     private int instanceDataTextureId;
     private int boneTransformTextureId;
+    private boolean instanced;
 
     public KasugaGlobalBatchShaderInstance(ResourceProvider provider,
                                            ResourceLocation shaderLocation,
@@ -27,12 +28,18 @@ public class KasugaGlobalBatchShaderInstance extends KasugaShaderInstance {
     }
 
     public void setBatchTextures(int instanceDataTextureId, int boneTransformTextureId) {
+        setBatchTextures(instanceDataTextureId, boneTransformTextureId, false);
+    }
+
+    public void setBatchTextures(int instanceDataTextureId, int boneTransformTextureId, boolean instanced) {
         this.instanceDataTextureId = instanceDataTextureId;
         this.boneTransformTextureId = boneTransformTextureId;
+        this.instanced = instanced;
     }
 
     @Override
     protected void applyAdditionalData() {
+        safeGetUniform("ksg_Instanced").set(instanced ? 1 : 0);
         safeGetUniform("ksg_EmissiveStrength").set(getEmissiveStrength());
         safeGetUniform("ksg_ParallaxScale").set(getParallaxScale());
         safeGetUniform("ksg_ParallaxSamples").set(getParallaxSamplerTimes());

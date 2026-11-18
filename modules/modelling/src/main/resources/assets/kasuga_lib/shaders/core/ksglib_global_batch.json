@@ -22,8 +22,9 @@
     {"name": "ksg_ParallaxScale", "type": "float", "count": 1, "values": [0.05]},
     {"name": "ksg_ParallaxSamples", "type": "int", "count": 1, "values": [4]},
     {"name": "ksg_AmbientLightEnhancement", "type": "float", "count": 1, "values": [1.0]},
-    {"name": "ksg_StylizedShadingStrength", "type": "float", "count": 1, "values": [0.65]}
-    ,{"name": "ksg_AlphaMode", "type": "int", "count": 1, "values": [0]}
-    ,{"name": "ksg_OitMode", "type": "int", "count": 1, "values": [0]}
+    {"name": "ksg_StylizedShadingStrength", "type": "float", "count": 1, "values": [0.65]},
+    {"name": "ksg_Instanced", "type": "int", "count": 1, "values": [0]},
+    {"name": "ksg_AlphaMode", "type": "int", "count": 1, "values": [0]},
+    {"name": "ksg_OitMode", "type": "int", "count": 1, "values": [0]}
   ]
 }

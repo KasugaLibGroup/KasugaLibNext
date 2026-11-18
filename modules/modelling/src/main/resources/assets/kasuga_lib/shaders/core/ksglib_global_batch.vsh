@@ -27,6 +27,7 @@ uniform sampler2D Sampler1;
 uniform sampler2D Sampler2;
 uniform samplerBuffer ksg_InstanceData;
 uniform samplerBuffer ksg_BoneTransforms;
+uniform int ksg_Instanced;
 uniform vec3 Light0_Direction;
 uniform vec3 Light1_Direction;
 
@@ -51,7 +52,8 @@ int ksg_BatchBoneOffset = 0;
 const int KSG_OBJECT_TEXELS = 9;
 
 void main() {
-    int objectBase = UV1.x * KSG_OBJECT_TEXELS;
+    int objectIndex = ksg_Instanced != 0 ? gl_InstanceID : UV1.x;
+    int objectBase = objectIndex * KSG_OBJECT_TEXELS;
     mat4 modelPose = mat4(
         texelFetch(ksg_InstanceData, objectBase),
         texelFetch(ksg_InstanceData, objectBase + 1),
