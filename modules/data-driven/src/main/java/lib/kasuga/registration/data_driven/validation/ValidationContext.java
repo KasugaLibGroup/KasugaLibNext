@@ -30,6 +30,20 @@ public interface ValidationContext {
 
     List<LocatedDefinition<?>> findAll(DefinitionKey key);
 
+    /**
+     * Returns every parsed definition in one handler type, regardless of its identity.
+     *
+     * <p>This is intended for strict cross-definition checks where a handler must inspect all
+     * contributions of a type before applying any registration.
+     *
+     * @param typeDomain top-level handler type
+     * @return all parsed definitions of the requested type in declaration order
+     */
+    default List<LocatedDefinition<?>> findAll(String typeDomain) {
+        throw new UnsupportedOperationException(
+                "This validation context does not expose complete type-domain queries");
+    }
+
     boolean canReference(DefinitionKey key);
 
     boolean requireDefinition(DefinitionKey key, String relativeJsonPointer);

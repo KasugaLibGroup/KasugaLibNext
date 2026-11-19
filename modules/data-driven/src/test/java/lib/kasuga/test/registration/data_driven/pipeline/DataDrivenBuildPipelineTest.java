@@ -133,6 +133,50 @@ class DataDrivenBuildPipelineTest {
     }
 
     @Test
+    void strictValidationCanQueryEveryDefinitionOfATypeInSessionOrder() throws Exception {
+        Path firstRoot = source(
+                "type_query",
+                "type_query",
+                """
+                        {
+                          "probes":[
+                            {"id":"example:alpha","value":"first"},
+                            {"id":"example:beta","value":"first"}
+                          ]
+                        }
+                        """
+        );
+        Path secondRoot = source(
+                "type_query_overlay",
+                "type_query_overlay",
+                """
+                        {
+                          "probes":[
+                            {"id":"example:alpha","value":"overlay"},
+                            {"id":"example:gamma","value":"overlay"}
+                          ],
+                          "type_queries":[{"id":"example:query"}]
+                        }
+                        """
+        );
+
+        try (ContentSource source = open(firstRoot, "type-query", "type-query");
+             ContentSource overlay = open(
+                     secondRoot,
+                     "type-query-overlay",
+                     "type-query-overlay"
+             )) {
+            var prepared = new DataDrivenBuildPipeline(
+                    "example",
+                    List.of(new RecordingHandler(), new TypeQueryHandler()),
+                    List.of()
+            ).prepare(List.of(source, overlay), BuildOptions.STRICT);
+
+            assertTrue(prepared.diagnostics().isEmpty(), prepared.diagnostics().toString());
+        }
+    }
+
+    @Test
     void lowerPrioritySourceIsOverriddenBeforeOneUnifiedBuild() throws Exception {
         Path core = source(
                 "core",
@@ -735,6 +779,62 @@ class DataDrivenBuildPipelineTest {
 
         @Override
         public void apply(ResourceProbeDefinition definition, BuildContext context) {
+        }
+    }
+
+    private static final class TypeQueryHandler implements TypeHandler<PlainDefinition> {
+        @Override
+        public Set<HandlerCapability> capabilities() {
+            return Set.of(HandlerCapability.STRICT_PREFLIGHT, HandlerCapability.NON_REGISTRATION);
+        }
+
+        @Override
+        public boolean strictValidationImplemented() {
+            return true;
+        }
+
+        @Override
+        public String getTypeName() {
+            return "type_queries";
+        }
+
+        @Override
+        public int getPhase() {
+            return PHASE_CONTENT;
+        }
+
+        @Override
+        public PlainDefinition parse(JsonObject json) {
+            return new PlainDefinition(json.get("id").getAsString());
+        }
+
+        @Override
+        public String resolveIdentity(String hostModId, PlainDefinition definition) {
+            return definition.id();
+        }
+
+        @Override
+        public void validate(PlainDefinition definition, ValidationContext context) {
+            List<String> ids = context.findAll("probes").stream()
+                    .map(located -> ((ProbeDefinition) located.definition()).id())
+                    .toList();
+            if (!ids.equals(List.of(
+                    "example:alpha",
+                    "example:beta",
+                    "example:alpha",
+                    "example:gamma"
+            ))) {
+                context.error(
+                        BuildDiagnostic.Code.CONTENT_INVALID,
+                        "/id",
+                        "Unexpected type query result: " + ids,
+                        "Return every candidate of the requested type in source order."
+                );
+            }
+        }
+
+        @Override
+        public void apply(PlainDefinition definition, BuildContext context) {
         }
     }
 

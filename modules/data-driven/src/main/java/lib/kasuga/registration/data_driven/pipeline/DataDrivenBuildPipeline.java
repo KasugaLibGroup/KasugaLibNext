@@ -196,13 +196,21 @@ public final class DataDrivenBuildPipeline {
                 selected,
                 sourceViews,
                 directory,
+                data.allDefinitions,
                 dependencyView,
                 Set.copyOf(sharedAssetOwners),
                 data.diagnostics
         );
         collectGroupCycleDiagnostics(options, selected, sourceViews, directory, dependencyView, data.diagnostics);
-        List<RegistryClaim> claims =
-                collectClaims(options, selected, sourceViews, directory, dependencyView, data.diagnostics);
+        List<RegistryClaim> claims = collectClaims(
+                options,
+                selected,
+                sourceViews,
+                directory,
+                data.allDefinitions,
+                dependencyView,
+                data.diagnostics
+        );
 
         return new PreparedContent(
                 hostModId,
@@ -1179,6 +1187,7 @@ public final class DataDrivenBuildPipeline {
             List<LocatedDefinition<?>> selected,
             List<PipelineSource> sources,
             DefinitionDirectory directory,
+            List<LocatedDefinition<?>> allDefinitions,
             Map<String, Set<String>> dependencies,
             Set<String> sharedAssetOwners,
             DiagnosticCollector diagnostics
@@ -1191,6 +1200,7 @@ public final class DataDrivenBuildPipeline {
                     hostModId,
                     definition,
                     sources,
+                    allDefinitions,
                     directory.candidates(),
                     directory.effective(),
                     dependencies,
@@ -1296,6 +1306,7 @@ public final class DataDrivenBuildPipeline {
             List<LocatedDefinition<?>> selected,
             List<PipelineSource> sources,
             DefinitionDirectory directory,
+            List<LocatedDefinition<?>> allDefinitions,
             Map<String, Set<String>> dependencies,
             DiagnosticCollector diagnostics
     ) {
@@ -1310,6 +1321,7 @@ public final class DataDrivenBuildPipeline {
                     hostModId,
                     definition,
                     sources,
+                    allDefinitions,
                     directory.candidates(),
                     directory.effective(),
                     dependencies,

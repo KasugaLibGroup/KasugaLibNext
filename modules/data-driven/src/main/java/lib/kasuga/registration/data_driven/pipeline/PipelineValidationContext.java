@@ -21,6 +21,7 @@ final class PipelineValidationContext implements ValidationContext {
     private final String hostModId;
     private final LocatedDefinition<?> current;
     private final List<PipelineSource> sources;
+    private final List<LocatedDefinition<?>> allDefinitions;
     private final Map<DefinitionKey, List<LocatedDefinition<?>>> candidates;
     private final Map<DefinitionKey, LocatedDefinition<?>> effective;
     private final Map<String, Set<String>> dependencies;
@@ -32,6 +33,7 @@ final class PipelineValidationContext implements ValidationContext {
             String hostModId,
             LocatedDefinition<?> current,
             List<PipelineSource> sources,
+            List<LocatedDefinition<?>> allDefinitions,
             Map<DefinitionKey, List<LocatedDefinition<?>>> candidates,
             Map<DefinitionKey, LocatedDefinition<?>> effective,
             Map<String, Set<String>> dependencies,
@@ -42,6 +44,7 @@ final class PipelineValidationContext implements ValidationContext {
         this.hostModId = hostModId;
         this.current = current;
         this.sources = sources;
+        this.allDefinitions = allDefinitions;
         this.candidates = candidates;
         this.effective = effective;
         this.dependencies = dependencies;
@@ -84,6 +87,13 @@ final class PipelineValidationContext implements ValidationContext {
     @Override
     public List<LocatedDefinition<?>> findAll(DefinitionKey key) {
         return candidates.getOrDefault(key, List.of());
+    }
+
+    @Override
+    public List<LocatedDefinition<?>> findAll(String typeDomain) {
+        return allDefinitions.stream()
+                .filter(definition -> definition.typeName().equals(typeDomain))
+                .toList();
     }
 
     @Override
