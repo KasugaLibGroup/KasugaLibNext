@@ -4,12 +4,14 @@ import lib.kasuga.core.resource.identity.ResourceUri;
 import lib.kasuga.core.resource.lifecycle.*;
 import lib.kasuga.core.resource.pack.ApprovedResourcePacks;
 import lib.kasuga.core.resource.pack.McManagedResourceView;
+import lib.kasuga.core.resource.pack.OrderedResourcePackGroup;
 import lib.kasuga.core.resource.routing.ResourceRouting;
 import lib.kasuga.core.resource.source.*;
 import lib.kasuga.core.resource.view.*;
 import lib.kasuga.core.vfs.VfsPath;
 import lib.kasuga.core.vfs.backend.InMemoryVfs;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.repository.Pack;
 import net.minecraft.server.packs.resources.MultiPackResourceManager;
@@ -90,6 +92,29 @@ class ResourcePipelineTest {
                 }
             }
             }
+        }
+    }
+    @Test void orderedGroupAndRegistryCloseAreIdempotent() throws Exception {
+        try (var vfs = new InMemoryVfs("input");
+             var source = source("demo", "main", 1, vfs);
+             var packs = new ApprovedResourcePacks()) {
+            vfs.writeString(VfsPath.of("assets/demo/test.txt"), "value");
+            var placements = Map.of(
+                    PackType.CLIENT_RESOURCES,
+                    new OrderedResourcePackGroup.Placement(Pack.Position.TOP, true),
+                    PackType.SERVER_DATA,
+                    new OrderedResourcePackGroup.Placement(Pack.Position.TOP, true)
+            );
+            var input = new OrderedResourcePackGroup(
+                    "demo_group",
+                    Component.literal("Demo Group"),
+                    List.of(new OrderedResourcePackGroup.Layer("demo", source, plan())),
+                    placements
+            );
+            try (var group = packs.registerOrderedGroup(input)) {
+                assertNotNull(group);
+            }
+            packs.close();
         }
     }
     @Test void failedConsumerPrepareKeepsPublishedGenerationAndClosesAbortedArtifacts() throws Exception {

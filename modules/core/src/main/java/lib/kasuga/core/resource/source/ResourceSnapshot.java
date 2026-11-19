@@ -95,6 +95,13 @@ public final class ResourceSnapshot implements AutoCloseable {
     @FunctionalInterface public interface Opener { InputStream open() throws IOException; }
 
     public static final class Builder implements AutoCloseable {
+        /** Invalid captured input; host/temp/open failures remain ordinary IOException. */
+        public static final class ValidationException extends IOException {
+            public ValidationException(String message) {
+                super(message);
+            }
+        }
+
         private final ResourceSnapshot snapshot = new ResourceSnapshot();
         private final ResourceSourceDescriptor source;
         private final InputPolicy policy;
@@ -124,14 +131,17 @@ public final class ResourceSnapshot implements AutoCloseable {
         public void add(ResourceUri uri, String logicalPath, String type, String subtype, Set<String> tags, Opener opener) throws IOException {
             if (built) throw new IllegalStateException("Snapshot already built");
             ResourcePaths.path(logicalPath, false);
-            if (snapshot.files.containsKey(uri) || !logicalPaths.add(logicalPath)) throw new IOException("DUPLICATE_ENTRY: " + logicalPath);
+            if (snapshot.files.containsKey(uri) || !logicalPaths.add(logicalPath))
+                throw new ValidationException("DUPLICATE_ENTRY: " + logicalPath);
             for (int slash = logicalPath.indexOf('/'); slash >= 0; slash = logicalPath.indexOf('/', slash + 1)) {
                 if (logicalPaths.contains(logicalPath.substring(0, slash)))
-                    throw new IOException("DUPLICATE_ENTRY: file/directory conflict: " + logicalPath);
+                    throw new ValidationException("DUPLICATE_ENTRY: file/directory conflict: " + logicalPath);
             }
             String child = logicalPaths.ceiling(logicalPath + "/");
-            if (child != null && child.startsWith(logicalPath + "/")) throw new IOException("DUPLICATE_ENTRY: file/directory conflict");
-            if (snapshot.files.size() >= policy.maxFiles()) throw new IOException("LIMIT_EXCEEDED: file count");
+            if (child != null && child.startsWith(logicalPath + "/"))
+                throw new ValidationException("DUPLICATE_ENTRY: file/directory conflict");
+            if (snapshot.files.size() >= policy.maxFiles())
+                throw new ValidationException("LIMIT_EXCEEDED: file count");
             long maximum = ResourceDescriptor.extension(logicalPath).equals("json") ? policy.maxJsonBytes() : policy.maxFileBytes();
             ByteArrayOutputStream memory = new ByteArrayOutputStream();
             ByteArrayOutputStream header = new ByteArrayOutputStream(ResourceTypeDetector.HEADER_BYTES);
@@ -147,7 +157,8 @@ public final class ResourceSnapshot implements AutoCloseable {
                     if (count == 0) continue;
                     header.write(buffer, 0, Math.min(count, ResourceTypeDetector.HEADER_BYTES - header.size()));
                     size += count; total += count;
-                    if (size > maximum || total > policy.maxTotalBytes()) throw new IOException("LIMIT_EXCEEDED: captured bytes");
+                    if (size > maximum || total > policy.maxTotalBytes())
+                        throw new ValidationException("LIMIT_EXCEEDED: captured bytes");
                     if (spool == null && size > policy.memoryThresholdBytes()) {
                         spool = Files.createTempFile("kasuga-resource-", ".snapshot");
                         snapshot.spoolFiles.add(spool);
@@ -159,7 +170,7 @@ public final class ResourceSnapshot implements AutoCloseable {
             } finally { output.close(); }
             var detected = ResourceTypeDetector.detect(uri.path(), header.toByteArray());
             if ((detected.subtype().equals("json") || type.equals("config") && subtype.equals("json")) && size > policy.maxJsonBytes())
-                throw new IOException("LIMIT_EXCEEDED: JSON bytes");
+                throw new ValidationException("LIMIT_EXCEEDED: JSON bytes");
             var provider = uri.childKey().isEmpty() ? source : new ResourceSourceDescriptor(source.ownerId(), source.sourceId(), source.rootId(),
                     source.rank(), ResourceSourceDescriptor.Origin.DERIVED);
             var descriptor = new ResourceDescriptor(uri, provider, logicalPath,
@@ -170,6 +181,7 @@ public final class ResourceSnapshot implements AutoCloseable {
         }
 
         public ResourceSnapshot build() { if (built) throw new IllegalStateException("Already built"); built = true; return snapshot; }
+        public Set<String> logicalPaths() { return Set.copyOf(logicalPaths); }
         @Override public void close() throws IOException { if (!built) snapshot.close(); }
     }
 }
