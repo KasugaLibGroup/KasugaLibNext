@@ -1170,7 +1170,7 @@ public final class DataDrivenBuildPipeline {
             boolean strictRegistration = options.isStrict()
                     && capabilities.contains(HandlerCapability.REGISTRY_CLAIMS)
                     && !configuration;
-            if (strictRegistration) {
+            if (capabilities.contains(HandlerCapability.OVERLAY) || strictRegistration) {
                 selected.addAll(candidates);
             } else {
                 selected.add(candidates.stream().max(priorityComparator()).orElseThrow());

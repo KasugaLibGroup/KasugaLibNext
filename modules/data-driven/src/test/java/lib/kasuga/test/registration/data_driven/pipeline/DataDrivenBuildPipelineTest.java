@@ -177,7 +177,7 @@ class DataDrivenBuildPipelineTest {
     }
 
     @Test
-    void lowerPrioritySourceIsOverriddenBeforeOneUnifiedBuild() throws Exception {
+    void nonOverlayDefinitionsUseLastWinsSelection() throws Exception {
         Path core = source(
                 "core",
                 "kuayue_core",
@@ -226,6 +226,103 @@ class DataDrivenBuildPipelineTest {
 
             assertTrue(result.successful(), result.diagnostics().toString());
             assertEquals(List.of("example:beta=core", "example:alpha=overlay"), handler.applied);
+        }
+    }
+
+    @Test
+    void overlayDefinitionsKeepEveryCandidateInStrictAndLegacyModes() throws Exception {
+        Path core = source(
+                "overlay_selection_core",
+                "overlay_selection_core",
+                """
+                        {"probes":[{"id":"example:alpha","value":"core"}]}
+                        """
+        );
+        Path overlay = source(
+                "overlay_selection_overlay",
+                "overlay_selection_overlay",
+                """
+                        {"probes":[{"id":"example:alpha","value":"overlay"}]}
+                        """
+        );
+        RecordingHandler handler = new RecordingHandler(true);
+
+        try (ContentSource coreSource = open(core, "core", "overlay_selection_core");
+             ContentSource overlaySource = open(
+                     overlay,
+                     "overlay",
+                     "overlay_selection_overlay"
+             )) {
+            DataDrivenBuildPipeline pipeline = new DataDrivenBuildPipeline(
+                    "kuayue",
+                    List.of(handler),
+                    List.of()
+            );
+
+            for (BuildOptions options : List.of(BuildOptions.STRICT, BuildOptions.LEGACY)) {
+                var prepared = pipeline.prepare(
+                        List.of(coreSource, overlaySource),
+                        options
+                );
+
+                assertTrue(prepared.diagnostics().isEmpty(), prepared.diagnostics().toString());
+                assertEquals(
+                        List.of("core", "overlay"),
+                        prepared.definitions().stream()
+                                .map(definition -> ((ProbeDefinition) definition.definition()).value())
+                                .toList()
+                );
+            }
+        }
+    }
+
+    @Test
+    void strictOverlayBuildAppliesAndFinalizesEveryCandidate() throws Exception {
+        Path core = source(
+                "overlay_build_core",
+                "overlay_build_core",
+                """
+                        {"probes":[{"id":"example:alpha","value":"core"}]}
+                        """
+        );
+        Path overlay = source(
+                "overlay_build_overlay",
+                "overlay_build_overlay",
+                """
+                        {"probes":[{"id":"example:alpha","value":"overlay"}]}
+                        """
+        );
+        RecordingHandler handler = new RecordingHandler(true);
+        List<String> finalized = new ArrayList<>();
+
+        try (ContentSource coreSource = open(core, "overlay-build-core", "overlay_build_core");
+             ContentSource overlaySource = open(
+                     overlay,
+                     "overlay-build-overlay",
+                     "overlay_build_overlay"
+             )) {
+            DataDrivenBuildPipeline pipeline = new DataDrivenBuildPipeline(
+                    "kuayue",
+                    List.of(handler),
+                    List.of((context, content) -> {
+                        content.definitions().stream()
+                                .map(definition ->
+                                        ((ProbeDefinition) definition.definition()).value())
+                                .forEach(finalized::add);
+                        return null;
+                    })
+            );
+
+            var result = pipeline.build(
+                    pipeline.prepare(
+                            List.of(coreSource, overlaySource),
+                            BuildOptions.STRICT
+                    )
+            );
+
+            assertTrue(result.successful(), result.diagnostics().toString());
+            assertEquals(List.of("example:alpha=core", "example:alpha=overlay"), handler.applied);
+            assertEquals(List.of("core", "overlay"), finalized);
         }
     }
 
@@ -581,6 +678,53 @@ class DataDrivenBuildPipelineTest {
     }
 
     @Test
+    void findAllVisibleReturnsCurrentAndDirectDependencyCandidatesInSessionOrder() throws Exception {
+        Path current = source(
+                "visibility_current",
+                "current_owner",
+                """
+                        {
+                          "probes":[{"id":"example:target","value":"current"}],
+                          "visibility_queries":[{"id":"example:query"}]
+                        }
+                        """
+        );
+        Path direct = source(
+                "visibility_direct",
+                "direct_owner",
+                """
+                        {"probes":[{"id":"example:target","value":"direct"}]}
+                        """
+        );
+        Path hidden = source(
+                "visibility_hidden",
+                "hidden_owner",
+                """
+                        {"probes":[{"id":"example:target","value":"hidden"}]}
+                        """
+        );
+
+        try (ContentSource currentSource = open(current, "current", "current_owner");
+             ContentSource directSource = open(direct, "direct", "direct_owner");
+             ContentSource hiddenSource = open(hidden, "hidden", "hidden_owner")) {
+            var prepared = new DataDrivenBuildPipeline(
+                    "kuayue",
+                    List.of(new RecordingHandler(), new VisibilityQueryHandler()),
+                    List.of()
+            ).prepare(
+                    List.of(currentSource, directSource, hiddenSource),
+                    BuildOptions.STRICT,
+                    Map.of(
+                            "current_owner", Set.of("direct_owner"),
+                            "direct_owner", Set.of("hidden_owner")
+                    )
+            );
+
+            assertTrue(prepared.diagnostics().isEmpty(), prepared.diagnostics().toString());
+        }
+    }
+
+    @Test
     void sharedAssetOwnerIsVisibleWithoutGrantingItsDataResources() throws Exception {
         Path runtime = Files.createDirectories(temporaryDirectory.resolve("runtime"));
         write(runtime, "assets/example/models/block/shared.obj", "model");
@@ -671,11 +815,29 @@ class DataDrivenBuildPipelineTest {
     }
 
     private static final class RecordingHandler implements TypeHandler<ProbeDefinition> {
+        private final Set<HandlerCapability> capabilities;
         private final List<String> applied = new ArrayList<>();
+
+        private RecordingHandler() {
+            this(false);
+        }
+
+        private RecordingHandler(boolean overlay) {
+            capabilities = overlay
+                    ? Set.of(
+                            HandlerCapability.STRICT_PREFLIGHT,
+                            HandlerCapability.NON_REGISTRATION,
+                            HandlerCapability.OVERLAY
+                    )
+                    : Set.of(
+                            HandlerCapability.STRICT_PREFLIGHT,
+                            HandlerCapability.NON_REGISTRATION
+                    );
+        }
 
         @Override
         public Set<HandlerCapability> capabilities() {
-            return Set.of(HandlerCapability.STRICT_PREFLIGHT, HandlerCapability.NON_REGISTRATION);
+            return capabilities;
         }
 
         @Override
@@ -713,6 +875,59 @@ class DataDrivenBuildPipelineTest {
         @Override
         public void apply(ProbeDefinition definition, BuildContext context) {
             applied.add(definition.id() + "=" + definition.value());
+        }
+    }
+
+    private static final class VisibilityQueryHandler implements TypeHandler<PlainDefinition> {
+        @Override
+        public Set<HandlerCapability> capabilities() {
+            return Set.of(HandlerCapability.STRICT_PREFLIGHT, HandlerCapability.NON_REGISTRATION);
+        }
+
+        @Override
+        public boolean strictValidationImplemented() {
+            return true;
+        }
+
+        @Override
+        public String getTypeName() {
+            return "visibility_queries";
+        }
+
+        @Override
+        public int getPhase() {
+            return PHASE_CONTENT;
+        }
+
+        @Override
+        public PlainDefinition parse(JsonObject json) {
+            return new PlainDefinition(json.get("id").getAsString());
+        }
+
+        @Override
+        public String resolveIdentity(String hostModId, PlainDefinition definition) {
+            return definition.id();
+        }
+
+        @Override
+        public void validate(PlainDefinition definition, ValidationContext context) {
+            List<String> owners = context.findAllVisible(
+                            new DefinitionKey("probes", "example:target")
+                    ).stream()
+                    .map(located -> located.source().ownerId())
+                    .toList();
+            if (!owners.equals(List.of("current_owner", "direct_owner"))) {
+                context.error(
+                        BuildDiagnostic.Code.CONTENT_INVALID,
+                        "/id",
+                        "Unexpected visible candidates: " + owners,
+                        "Return only the current owner and direct dependency candidates."
+                );
+            }
+        }
+
+        @Override
+        public void apply(PlainDefinition definition, BuildContext context) {
         }
     }
 
