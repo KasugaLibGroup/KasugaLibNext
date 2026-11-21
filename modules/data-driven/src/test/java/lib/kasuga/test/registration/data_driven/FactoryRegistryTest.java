@@ -37,6 +37,16 @@ class FactoryRegistryTest {
     }
 
     @Test
+    void tracksWhetherBlockFactoryCreatesMatchingItem() {
+        FactoryRegistry.BlockFactory factory = (id, params) -> null;
+        FactoryRegistry.register("_test_block_item_claim", factory, true);
+        assertTrue(FactoryRegistry.createsBlockItem("_test_block_item_claim"));
+
+        FactoryRegistry.register("_test_block_item_claim", factory, false);
+        assertFalse(FactoryRegistry.createsBlockItem("_test_block_item_claim"));
+    }
+
+    @Test
     void factoryCreatesRegInstance() {
         // Requires NeoForge unitTest classpath for BlockReg
         FactoryRegistry.BlockFactory factory = FactoryRegistry.get("simple_block");

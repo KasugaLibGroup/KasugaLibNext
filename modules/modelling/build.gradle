@@ -415,9 +415,6 @@ dependencies {
 
     implementation project(":modules:annotations")
 
-    // Source: https://mvnrepository.com/artifact/com.twelvemonkeys/twelvemonkeys
-    implementation("com.twelvemonkeys:twelvemonkeys:3.13.1")
-
     annotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
 
     gameTestAnnotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'

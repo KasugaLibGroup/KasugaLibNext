@@ -5,6 +5,7 @@ import lib.kasuga.registration.data_driven.json.DataJson;
 import java.util.Objects;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.data_driven.property.JsonItemParser;
+import lib.kasuga.registration.data_driven.validation.ValidationContext;
 import lib.kasuga.registration.factory.FactoryRegistry;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
@@ -19,6 +20,11 @@ public class ItemTypeHandler extends RegTypeHandler<ItemDef> {
 
     @Override
     public int getPhase() { return PHASE_CONTENT; }
+
+    @Override
+    protected ValidationContext.FactoryType factoryType() {
+        return ValidationContext.FactoryType.ITEM;
+    }
 
     @Override
     public ItemDef parse(JsonObject json) {
@@ -47,6 +53,21 @@ public class ItemTypeHandler extends RegTypeHandler<ItemDef> {
     protected ResourceLocation resolveCreativeTab(ItemDef definition) {
         String tab = DataJson.creativeTab(definition.properties());
         return tab == null ? null : ResourceLocation.parse(tab);
+    }
+
+    @Override
+    public void validate(ItemDef definition, ValidationContext context) {
+        super.validate(definition, context);
+        if (definition.properties() != null) {
+            for (var issue : JsonItemParser.INSTANCE.validateStrict(definition.properties())) {
+                context.error(
+                        lib.kasuga.registration.data_driven.pipeline.BuildDiagnostic.Code.CONTENT_INVALID,
+                        "/properties" + issue.relativeJsonPointer(),
+                        issue.message(),
+                        "Fix the item property value according to the strict schema."
+                );
+            }
+        }
     }
 
     @Override

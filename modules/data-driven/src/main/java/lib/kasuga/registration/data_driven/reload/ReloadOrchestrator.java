@@ -31,11 +31,11 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 
@@ -305,32 +305,49 @@ public final class ReloadOrchestrator implements ScopedResourceManagerConsumer, 
      * @return the {@code on_reload} content paths, or an empty list when the namespace ships no index
      */
     private List<String> readReloadPaths(ResourceManager resourceManager, String namespace) {
-        Map<ResourceLocation, Resource> found = resourceManager.listResources(indexResourcePath(namespace),
+        Map<ResourceLocation, List<Resource>> found = resourceManager.listResourceStacks(indexResourcePath(namespace),
                 loc -> loc.getNamespace().equals(namespace) && loc.getPath().endsWith(".json"));
         if (found.isEmpty()) {
             return List.of();
         }
 
         List<JsonTreeBuilder.IndexManifest> manifests = new ArrayList<>();
-        for (Map.Entry<ResourceLocation, Resource> entry : new TreeMap<>(found).entrySet()) {
+        for (Map.Entry<ResourceLocation, List<Resource>> entry : new TreeMap<>(found).entrySet()) {
             ResourceLocation loc = entry.getKey();
-            JsonObject root;
-            try (BufferedReader reader = entry.getValue().openAsReader()) {
-                JsonElement json = JsonParser.parseReader(reader);
-                if (json == null || json.isJsonNull()) {
-                    root = null; // empty file: reported as "declares neither" by the manifest parser
-                } else if (json.isJsonObject()) {
-                    root = json.getAsJsonObject();
-                } else {
-                    reportError(namespace, "Index file '" + loc + "' must be a JSON object, got "
-                            + ContentStructure.describe(json));
+            List<Resource> managed = entry.getValue().stream()
+                    .filter(resource -> ManagedReloadAllowlist.isManaged(
+                            sourcePackId(resource)))
+                    .filter(resource -> ManagedReloadAllowlist.allowsIndex(
+                            sourcePackId(resource), loc))
+                    .sorted(Comparator.comparingInt(resource ->
+                            ManagedReloadAllowlist.priority(sourcePackId(resource))))
+                    .toList();
+            boolean anyManaged = entry.getValue().stream()
+                    .anyMatch(resource -> ManagedReloadAllowlist.isManaged(
+                            sourcePackId(resource)));
+            if (anyManaged && managed.isEmpty()) continue;
+            List<Resource> selected = anyManaged
+                    ? managed
+                    : entry.getValue().stream().findFirst().stream().toList();
+            for (Resource resource : selected) {
+                JsonObject root;
+                try (BufferedReader reader = resource.openAsReader()) {
+                    JsonElement json = JsonParser.parseReader(reader);
+                    if (json == null || json.isJsonNull()) {
+                        root = null; // reported as "declares neither" by the manifest parser
+                    } else if (json.isJsonObject()) {
+                        root = json.getAsJsonObject();
+                    } else {
+                        reportError(namespace, "Index file '" + loc + "' must be a JSON object, got "
+                                + ContentStructure.describe(json));
+                        continue;
+                    }
+                } catch (IOException | JsonParseException e) {
+                    reportError(namespace, "Failed to read data-driven index " + loc, e);
                     continue;
                 }
-            } catch (IOException | JsonParseException e) {
-                reportError(namespace, "Failed to read data-driven index " + loc, e);
-                continue;
+                manifests.add(JsonTreeBuilder.parseIndexManifest(namespace, loc.getPath(), root));
             }
-            manifests.add(JsonTreeBuilder.parseIndexManifest(namespace, loc.getPath(), root));
         }
         if (manifests.isEmpty()) {
             return List.of();
@@ -348,15 +365,21 @@ public final class ReloadOrchestrator implements ScopedResourceManagerConsumer, 
     private void collectGlob(ResourceManager resourceManager, String namespace, Set<String> indexedPaths,
                              Set<String> globDirectories, List<HandlerCycle> cycle) {
         for (String directory : globDirectories) {
-            Map<ResourceLocation, Resource> found = new TreeMap<>(resourceManager.listResources(directory,
+            Map<ResourceLocation, List<Resource>> found = new TreeMap<>(resourceManager.listResourceStacks(directory,
                     loc -> loc.getNamespace().equals(namespace) && loc.getPath().endsWith(".json")));
-            for (Map.Entry<ResourceLocation, Resource> entry : found.entrySet()) {
+            for (Map.Entry<ResourceLocation, List<Resource>> entry : found.entrySet()) {
                 ResourceLocation loc = entry.getKey();
                 if (indexedPaths.contains(loc.getPath())) {
                     continue;
                 }
+                Resource legacy = entry.getValue().stream()
+                        .filter(resource -> !ManagedReloadAllowlist.isManaged(
+                                sourcePackId(resource)))
+                        .findFirst()
+                        .orElse(null);
+                if (legacy == null) continue;
                 readAndDispatch(namespace, "data/" + namespace + "/" + loc.getPath(), loc.getPath(),
-                        entry.getValue(), cycle, true);
+                        legacy, cycle, true);
             }
         }
     }
@@ -387,14 +410,46 @@ public final class ReloadOrchestrator implements ScopedResourceManagerConsumer, 
                         + "namespace only [a-z0-9_.-])");
                 continue;
             }
-            Optional<Resource> resource = resourceManager.getResource(loc);
-            if (resource.isEmpty()) {
+            List<Resource> stack = resourceManager.getResourceStack(loc);
+            if (stack.isEmpty()) {
                 reportError(namespace, "Source file not found for mod '" + namespace + "': data/"
                         + namespace + "/" + path);
                 continue;
             }
-            readAndDispatch(namespace, "data/" + namespace + "/" + path, path, resource.get(), cycle, false);
+            List<Resource> managed = stack.stream()
+                    .filter(resource -> ManagedReloadAllowlist.isManaged(
+                            sourcePackId(resource)))
+                    .filter(resource -> ManagedReloadAllowlist.allowsContent(
+                            sourcePackId(resource), loc))
+                    .sorted(Comparator.comparingInt(resource ->
+                            ManagedReloadAllowlist.priority(sourcePackId(resource))))
+                    .toList();
+            boolean anyManaged = stack.stream()
+                    .anyMatch(resource -> ManagedReloadAllowlist.isManaged(
+                            sourcePackId(resource)));
+            if (anyManaged && managed.isEmpty()) {
+                reportError(namespace, "Managed reload source is not authorized by an index: "
+                        + loc);
+                continue;
+            }
+            List<Resource> selected = anyManaged
+                    ? managed
+                    : stack.stream().findFirst().stream().toList();
+            for (Resource resource : selected) {
+                readAndDispatch(
+                        namespace,
+                        "data/" + namespace + "/" + path,
+                        path,
+                        resource,
+                        cycle,
+                        false
+                );
+            }
         }
+    }
+
+    private static String sourcePackId(Resource resource) {
+        return resource.source() == null ? null : resource.sourcePackId();
     }
 
     /**
