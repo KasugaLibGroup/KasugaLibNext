@@ -8,6 +8,7 @@ import lib.kasuga.rendering.effect.pipeline.RenderPhase;
 import lib.kasuga.rendering.effect.pipeline.RenderPipelineDescriptor;
 import lib.kasuga.rendering.models.mc.scene.LayerLayout;
 import lib.kasuga.rendering.models.mc.scene.MinecraftModelSource;
+import lib.kasuga.rendering.output.mc.DistantWorldRendering;
 import lib.kasuga.rendering.output.mc.MinecraftFrameOutputs;
 import lib.kasuga.rendering.output.mc.MinecraftWorldViews;
 import lib.kasuga.rendering.effect.EffectHandle;
@@ -19,7 +20,9 @@ import lib.kasuga.rendering.models.mc.scene.display.WorldLightTarget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
@@ -43,21 +46,35 @@ public final class SceneModels implements AutoCloseable {
     private static final Set<SceneModels> ACTIVE = new LinkedHashSet<>();
     private static final AtomicLong IDS = new AtomicLong();
     private final ClientLevel level;
+    private final ResourceLocation id;
     private final RenderPipelineScope scope;
     private final List<Entry> models = new ArrayList<>();
     private boolean closed;
     private lib.kasuga.rendering.models.mc.backend.ui.PreviewRenderBuffers buffers;
     private long resourceGeneration=-1;
     private long displayTick;
+    private float renderDistance;
 
     private SceneModels(ClientLevel level) {
         this.level = java.util.Objects.requireNonNull(level);
-        var id = ResourceLocation.fromNamespaceAndPath(KasugaLib.MODID, "scene/models/" + IDS.incrementAndGet());
+        id = ResourceLocation.fromNamespaceAndPath(KasugaLib.MODID, "scene/models/" + IDS.incrementAndGet());
         scope = RenderPipelineScope.create(id);
         scope.world(RenderPipelineDescriptor.builder(id, RenderPhase.AFTER_BLOCK_ENTITIES).build(), this::render);
         ACTIVE.add(this);
     }
     public static SceneModels open(ClientLevel level) { RenderSystem.assertOnRenderThread(); return new SceneModels(level); }
+
+    /**
+     * Draws this scene in the main view out to the supplied distance using the terrain's depth projection.
+     * Static placements can remain visible after the surrounding client chunks are unloaded. Zero restores
+     * the default world range. A placement that borrows a host still expires when its host is removed.
+     */
+    public SceneModels distantRange(float blocks) {
+        if (closed) throw new IllegalStateException("Model scene is closed");
+        DistantWorldRendering.setRange(id, blocks);
+        renderDistance = blocks;
+        return this;
+    }
     /** Takes ownership. Position stays double precision until the camera has been subtracted. */
     public Entry add(MinecraftModelSource source, Vec3 position) {
         if (closed) throw new IllegalStateException("Model scene is closed");
@@ -97,7 +114,6 @@ public final class SceneModels implements AutoCloseable {
         boolean sameWorld = context.level() == level || (MinecraftWorldViews.sourceLevel() == level
                 && context.level().dimension().equals(level.dimension()));
         if (closed || !sameWorld) return;
-        var camera = context.camera().getPosition();
         float partial = context.partialTick().getGameTimeDeltaPartialTick(false);
         long generation=lib.kasuga.rendering.models.mc.scene.ModelPreviewResources.generation();
         if (generation!=resourceGeneration) {
@@ -105,8 +121,17 @@ public final class SceneModels implements AutoCloseable {
         }
         if (buffers==null) buffers=new lib.kasuga.rendering.models.mc.backend.ui.PreviewRenderBuffers();
         buffers.begin(context.mainRenderTarget().frameBufferId,context.mainRenderTarget().width,context.mainRenderTarget().height);
+        boolean mainView = MinecraftFrameOutputs.MAIN_VIEW.equals(context.viewId());
+        if (mainView && renderDistance > 0) {
+            DistantWorldRendering.withFog(renderDistance, () -> renderEntries(context, partial, true));
+        } else {
+            renderEntries(context, partial, mainView);
+        }
+    }
+
+    private void renderEntries(WorldRenderPipelineContext context, float partial, boolean mainView) {
+        Vec3 camera = context.camera().getPosition();
         try {
-            boolean mainView = MinecraftFrameOutputs.MAIN_VIEW.equals(context.viewId());
             for (Entry entry : List.copyOf(models)) {
                 Frame frame;
                 try {
@@ -120,14 +145,24 @@ public final class SceneModels implements AutoCloseable {
                 var pose = frame.pose;
                 var snapshot = frame.snapshot;
                 if (snapshot == null) continue;
+                if (mainView && renderDistance > 0 && camera.distanceToSqr(pose.origin()) > renderDistance * renderDistance) continue;
                 context.poseStack().pushPose();
                 try {
                     context.poseStack().mulPose(pose.relativeTo(camera));
                     snapshot.render(new MinecraftModelSource.Context(context.poseStack(), buffers, context.projectionMatrix(),
-                            partial, LevelRenderer.getLightColor(level, BlockPos.containing(pose.origin())), context.modelViewMatrix()));
+                            partial, lightAt(pose.origin(), mainView && renderDistance > 0), context.modelViewMatrix()));
                 } finally { context.poseStack().popPose(); }
             }
         } finally { buffers.flush(); }
+    }
+
+    private int lightAt(Vec3 position, boolean distant) {
+        BlockPos pos = BlockPos.containing(position);
+        if (distant && !level.getChunkSource().hasChunk(SectionPos.blockToSectionCoord(pos.getX()),
+                SectionPos.blockToSectionCoord(pos.getZ()))) {
+            return LightTexture.pack(0, level.dimensionType().hasSkyLight() ? 15 : 0);
+        }
+        return LevelRenderer.getLightColor(level, pos);
     }
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
         for (var scene : List.copyOf(ACTIVE)) {
@@ -144,6 +179,7 @@ public final class SceneModels implements AutoCloseable {
     @Override public void close() {
         if (closed) return;
         closed = true; ACTIVE.remove(this);
+        if (renderDistance > 0) DistantWorldRendering.setRange(id, 0);
         try { try { scope.close(); } finally { if (buffers!=null) buffers.close(); } }
         finally {
             RuntimeException failure = null;

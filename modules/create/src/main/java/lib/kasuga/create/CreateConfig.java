@@ -17,10 +17,15 @@ public final class CreateConfig implements Configurable {
     private static final Lazy<CreateConfig> INSTANCE = Lazy.of(() -> KasugaLib.getBean(CreateConfig.class));
 
     private ModConfigSpec.BooleanValue multiBogeyCarriage;
+    private ModConfigSpec.BooleanValue contraptionLod;
 
     /** Whether carriages may capture and use more than the vanilla two bogeys. */
     public static boolean isMultiBogeyCarriageEnabled() {
         return INSTANCE.get().multiBogeyCarriage.getAsBoolean();
+    }
+
+    public static boolean isContraptionLodEnabled() {
+        return INSTANCE.get().contraptionLod.getAsBoolean();
     }
 
     @Override
@@ -30,5 +35,7 @@ public final class CreateConfig implements Configurable {
                         "When false, assembly, persistence, sync and rendering use the vanilla two-bogey path.")
                 .translation("kasuga_lib.configuration.enable_multi_bogey_carriage")
                 .define("enable_multi_bogey_carriage", KasugaLibCreateApi::getMultiBogeyCarriageDefault);
+        contraptionLod = builder.comment("Send distant render meshes for active Create contraptions.")
+                .define("enable_contraption_lod", true);
     }
 }

@@ -1,5 +1,6 @@
 package lib.kasuga.rendering.models.mc.dynamic.fsm;
 
+import lib.kasuga.rendering.models.mc.dynamic.ClientBlockModelLifetime;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
@@ -34,7 +35,11 @@ public class AnimationBlockEntity extends BlockEntity implements AnimationHost {
 
     /** Both sides use the same ticker: {@link FsmAnimatedModel#tick} drives everything. */
     public static final BlockEntityTicker<AnimationBlockEntity> TICKER =
-            (level, pos, state, blockEntity) -> blockEntity.model.tick(level, pos);
+            (level, pos, state, blockEntity) -> {
+                if (!level.isClientSide() || ClientBlockModelLifetime.isLoadedHost(blockEntity, level)) {
+                    blockEntity.model.tick(level, pos);
+                }
+            };
 
     /**
      * Shared server-side FSM sync instance (see {@link FsmSyncServer#GLOBAL} — dedup/heartbeat tables must be
@@ -90,6 +95,12 @@ public class AnimationBlockEntity extends BlockEntity implements AnimationHost {
         model.model(loc, name, level);
     }
 
+    /** Enables per-bone collision from the specified data-pack model, including its file extension. */
+    public void collisionModel(@Nullable ResourceLocation location) {
+        model.collisionModel(location);
+        if (level != null && !level.isClientSide()) setChanged();
+    }
+
     /** Attach the per-entity rendering variable provider — forwarded to the {@link FsmAnimatedModel}. */
     public void setVarProvider(@Nullable VarProvider provider) {
         model.setVarProvider(provider);
@@ -129,6 +140,7 @@ public class AnimationBlockEntity extends BlockEntity implements AnimationHost {
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
         writePersistedIds(tag, model.stateMachineId(), model.modelLoc(), model.modelName());
+        if (model.collisionModelLoc() != null) tag.putString("collisionModel", model.collisionModelLoc().toString());
     }
 
     @Override
@@ -137,6 +149,7 @@ public class AnimationBlockEntity extends BlockEntity implements AnimationHost {
         PersistedIds ids = PersistedIds.read(tag);
         model.stateMachine(ids.stateMachineId(), level);
         model.model(ids.modelLoc(), ids.modelName(), level);
+        if (tag.contains("collisionModel")) model.collisionModel(ResourceLocation.tryParse(tag.getString("collisionModel")));
     }
 
     /**
@@ -180,17 +193,20 @@ public class AnimationBlockEntity extends BlockEntity implements AnimationHost {
     @Override
     public void onLoad() {
         super.onLoad();
+        if (level != null) ClientBlockModelLifetime.watch(this, level, model::onChunkUnloaded);
         model.onLoad(level);
     }
 
     @Override
     public void onChunkUnloaded() {
+        ClientBlockModelLifetime.forget(this, level);
         model.onChunkUnloaded(level);
         super.onChunkUnloaded();
     }
 
     @Override
     public void setRemoved() {
+        ClientBlockModelLifetime.forget(this, level);
         model.onRemoved(level);
         super.setRemoved();
     }

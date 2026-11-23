@@ -137,6 +137,11 @@ public class ModelInstance implements AutoCloseable {
         }
     }
 
+    /** Creates an instance for animation and physics without allocating renderer material state. */
+    public static ModelInstance forSimulation(Model model, @Nullable Transform root) {
+        return new ModelInstance(model, root, null, null, null, null);
+    }
+
     /** Lazily composes the common posing driver; playback controls install it when requested. */
     public synchronized ModelPosing getPosing() {
         if (poseDriver instanceof ModelPoseBinding binding
