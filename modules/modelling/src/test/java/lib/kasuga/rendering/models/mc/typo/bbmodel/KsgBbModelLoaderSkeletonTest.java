@@ -356,6 +356,87 @@ class KsgBbModelLoaderSkeletonTest {
     }
 
     @Test
+    void nestedGroupsUnderRotatedRootKeepAuthoredGeometry() {
+        BbModelDefinition definition = BbModelDefinition.parse("""
+                {
+                  "resolution": {"width": 16, "height": 16},
+                  "elements": [
+                    {"name": "cube", "type": "cube", "uuid": "element1", "origin": [4,0,4],
+                     "from": [0,0,0], "to": [8,8,8],
+                     "faces": {"north": {"uv": [0,0,1,1], "texture": 0}}}
+                  ],
+                  "groups": [
+                    {"name": "outer", "uuid": "gOuter", "origin": [0,0,0], "rotation": [0,90,0]},
+                    {"name": "inner", "uuid": "gInner", "origin": [8,0,0], "rotation": [0,0,0]},
+                    {"name": "leaf", "uuid": "gLeaf", "origin": [8,0,8], "rotation": [0,0,0]}
+                  ],
+                  "outliner": [
+                    {"uuid": "gOuter", "children": [
+                      {"uuid": "gInner", "children": [
+                        {"uuid": "gLeaf", "children": ["element1"]}
+                      ]}
+                    ]}
+                  ],
+                  "textures": [{"name": "t", "source": "", "width": 16, "height": 16}]
+                }
+                """);
+        Texture texture = new Texture("t", 16f, 16f, null);
+        Material material = new Material(new Texture[]{texture}, null);
+        Model model = KsgBbModelLoader.buildSkeletonAndGeometry(
+                definition, Map.of(0, material), new MaterialSet(texture, material)
+        );
+
+        // Only the outer group rotates. Zero-rotation nested pivots must not move the cube.
+        for (Vertex vertex : model.getVertices()) {
+            assertTrue(vertex.getPosition().x >= -EPS && vertex.getPosition().x <= 0.5f + EPS,
+                    "cube x must stay in the rotated 0..8px range: " + vertex.getPosition());
+            assertTrue(vertex.getPosition().z >= -0.5f - EPS && vertex.getPosition().z <= EPS,
+                    "cube z must stay in the rotated -8..0px range: " + vertex.getPosition());
+        }
+    }
+
+    @Test
+    void animationTranslationUsesAccumulatedGroupRotation() {
+        BbModelDefinition definition = BbModelDefinition.parse("""
+                {
+                  "resolution": {"width": 16, "height": 16},
+                  "elements": [
+                    {"name": "cube", "type": "cube", "uuid": "element1", "origin": [0,0,0],
+                     "from": [-1,0,-1], "to": [1,2,1],
+                     "faces": {"north": {"uv": [0,0,1,1], "texture": 0}}}
+                  ],
+                  "groups": [
+                    {"name": "outer", "uuid": "gOuter", "origin": [0,0,0], "rotation": [0,90,0]},
+                    {"name": "joint", "uuid": "gJoint", "origin": [0,0,0], "rotation": [0,0,0]}
+                  ],
+                  "outliner": [
+                    {"uuid": "gOuter", "children": [
+                      {"uuid": "gJoint", "children": ["element1"]}
+                    ]}
+                  ],
+                  "textures": [{"name": "t", "source": "", "width": 16, "height": 16}]
+                }
+                """);
+        Texture texture = new Texture("t", 16f, 16f, null);
+        Material material = new Material(new Texture[]{texture}, null);
+        Model model = KsgBbModelLoader.buildSkeletonAndGeometry(
+                definition, Map.of(0, material), new MaterialSet(texture, material)
+        );
+        ModelInstance instance = new ModelInstance(model, null, null, null, null, null);
+        List<Vertex> jointVertices = verticesBoundTo(instance, "joint");
+        assertFalse(jointVertices.isEmpty());
+
+        SkeletonInstance skeleton = instance.getSkeletonInstance();
+        assertTrue(skeleton.transform("joint", new Transform().translate(1f, 0f, 0f)));
+        skeleton.updateTransform();
+        Map<Vertex, Vertex> skinned = skeleton.getVertexTransforms(model, BDEF_BRIDGE);
+        for (Vertex vertex : jointVertices) {
+            Vector3f expected = new Vector3f(vertex.getPosition()).add(0f, 0f, -1f);
+            assertPosition(skinned.get(vertex).getPosition(), expected.x, expected.y, expected.z);
+        }
+    }
+
+    @Test
     void missingGroupOriginFallsBackToSubtreeAverage() throws Exception {
         BbModelDefinition definition = BbModelDefinition.parse("""
                 {
