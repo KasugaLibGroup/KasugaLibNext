@@ -14,12 +14,13 @@ public class KasugaLibMixinPlugin extends ServiceMixinPlugin {
             if (resource == null) return List.of();
             if (org.spongepowered.asm.mixin.MixinEnvironment.getCurrentEnvironment().getSide()
                     != org.spongepowered.asm.mixin.MixinEnvironment.Side.CLIENT)
-                return List.of("modelling.CameraChunkServerMixin", "modelling.CameraEntityDataAccessor");
+                return List.of("modelling.CameraChunkServerMixin", "modelling.CameraEntityDataAccessor",
+                        "modelling.ModelCollisionLevelMixin");
             var mixins = new java.util.ArrayList<>(List.of(
                     "modelling.MinecraftFrameOutputMixin", "modelling.HeadlessGlfwMixin",
                     "modelling.WorldUiKeyboardMixin",
                     "modelling.HeadlessWindowMixin", "modelling.HeadlessMinecraftMixin", "modelling.HeadlessRenderSystemMixin", "modelling.CameraEntityDataAccessor",
-                    "modelling.CameraChunkServerMixin", "modelling.WorldViewBiomeAccessor",
+                    "modelling.CameraChunkServerMixin", "modelling.ModelCollisionLevelMixin", "modelling.WorldViewBiomeAccessor",
                     "modelling.WorldViewLevelDataAccessor", "modelling.WorldViewClientLevelAccessor",
                     "modelling.WorldViewChunkLightMixin", "modelling.WorldViewConnectionAccessor",
                     "modelling.CameraNearPlaneAccessor", "modelling.CameraWalkAnimationAccessor",

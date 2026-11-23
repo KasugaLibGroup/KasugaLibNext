@@ -1,5 +1,7 @@
 package lib.kasuga.rendering.models.mc.dynamic.fsm;
 
+import lib.kasuga.rendering.models.mc.dynamic.collision.MinecraftModelCollisions;
+import lib.kasuga.rendering.models.mc.dynamic.collision.ServerCollisionModels;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.ControllerBinding;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.LogicalStepPolicy;
@@ -13,6 +15,8 @@ import lib.kasuga.rendering.models.uml.dynamic.animation.target.ModelPoseTarget;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmMachineBuilder;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmPoseEvaluator;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
+import lib.kasuga.rendering.models.uml.dynamic.fsm.ModelInstancePoseSink;
+import lib.kasuga.rendering.models.uml.dynamic.fsm.Pose;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.VarProvider;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.codec.StateMachineDefinition;
@@ -26,6 +30,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
@@ -41,7 +46,7 @@ import java.util.function.Supplier;
  * client model bind / self-heal, {@link FsmPoseEvaluator} attachment (the FSM-as-pose-driver plugged into the
  * instance), per-tick drive + GPU flush, and server→client sync (push on the server, bind/apply on the client).
  *
- * <p>Server side: holds a logic-only machine (no model, no driver) and pushes authoritative state. Client side:
+ * <p>Server side: owns the authoritative machine and optionally evaluates a collision rig. Client side:
  * binds a {@link ModelInstance} via {@link KasugaModelPipelines}, builds a puppet machine (logic disabled), plugs
  * an {@link FsmPoseEvaluator} into a private animation scope, and drives the pose every tick; {@code FsmSyncClient} conforms the
  * puppet to server snapshots on the main thread between ticks.
@@ -68,6 +73,11 @@ public final class FsmAnimatedModel {
     private ResourceLocation modelLoc;
     @Nullable
     private String modelName;
+    @Nullable private ResourceLocation collisionModelLoc;
+    @Nullable private ServerCollisionModels.Asset collisionAsset;
+    @Nullable private MinecraftModelCollisions.Handle collision;
+    @Nullable private FsmPoseEvaluator serverPoseEvaluator;
+    @Nullable private ModelInstancePoseSink serverPoseSink;
     private boolean definitionWarned;
 
     @Nullable
@@ -220,6 +230,17 @@ public final class FsmAnimatedModel {
         modelInstance = null;
     }
 
+    /** Opts a block model into server-authoritative collision using a data-pack model. */
+    public void collisionModel(@Nullable ResourceLocation location) {
+        if (Objects.equals(collisionModelLoc, location)) return;
+        collisionModelLoc = location;
+        detachCollision();
+    }
+
+    public @Nullable ResourceLocation collisionModelLoc() {
+        return collisionModelLoc;
+    }
+
     //endregion
 
     //region AnimationHost — lazy machine
@@ -286,14 +307,48 @@ public final class FsmAnimatedModel {
         }
     }
 
-    /** Server: logic-only machine, then push authoritative state to chunk-tracking players. */
+    /** Server: advance the authoritative machine once, then publish its final pose and state. */
     private void tickServer(Level level, BlockPos pos) {
+        ensureServerCollision(level);
         StateMachine<?> m = machine(level);
-        if (m == null) {
-            return;
+        if (m != null) {
+            if (collision == null) m.tick();
+            else advanceServerPose(m);
+            pushSync(level, pos, m);
         }
-        m.tick();
-        pushSync(level, pos, m);
+        if (serverPoseSink != null) serverPoseSink.applyPose(serverPoseEvaluator.currentOutput().pose());
+        if (collision != null) collision.tick(1f / 20f);
+    }
+
+    private void advanceServerPose(StateMachine<?> machine) {
+        if (serverPoseEvaluator == null) {
+            serverPoseEvaluator = new FsmPoseEvaluator(machine, varProvider);
+            serverPoseSink = new ModelInstancePoseSink(collision.instance());
+        }
+        try {
+            serverPoseEvaluator.advanceTick(1f / 20f);
+        } catch (RuntimeException failure) {
+            LOGGER.warn("[FsmAnimatedModel] animation step aborted for {}", owner, failure);
+        }
+    }
+
+    private void ensureServerCollision(Level level) {
+        if (collisionModelLoc == null || !(level instanceof ServerLevel server) || !(owner instanceof BlockEntity block)) return;
+        ServerCollisionModels.Asset asset = ServerCollisionModels.find(server, collisionModelLoc).orElse(null);
+        if (asset == collisionAsset && collision != null && !collision.isClosed()) return;
+        detachCollision();
+        if (asset != null) {
+            collision = MinecraftModelCollisions.attach(block, asset);
+            collisionAsset = asset;
+        }
+    }
+
+    private void detachCollision() {
+        if (collision == null) return;
+        detachPoseBinding();
+        collision.close();
+        collision = null;
+        collisionAsset = null;
     }
 
     /**
@@ -309,6 +364,11 @@ public final class FsmAnimatedModel {
             return;
         }
         attachDriverIfReady();
+        advanceMachine(m);
+        logVersionChange(m);
+    }
+
+    private void advanceMachine(StateMachine<?> m) {
         if (animationScope != null) {
             ScopeAdvanceResult result = animationScope.advance(new ScopeAdvance(
                     1.0 / 20.0, ScopeAdvanceCause.GAME_TICK));
@@ -322,7 +382,6 @@ public final class FsmAnimatedModel {
             // Model not bound yet — keep the puppet ticking so timers are ready when it binds.
             m.tick();
         }
-        logVersionChange(m);
     }
 
     /**
@@ -411,12 +470,14 @@ public final class FsmAnimatedModel {
     }
 
     public void onChunkUnloaded(Level level) {
+        detachCollision();
         unbindClientModel(level);
         unbindClientSync(level);
         unbindServerSync(level);
     }
 
     public void onRemoved(Level level) {
+        detachCollision();
         unbindClientModel(level);
         unbindClientSync(level);
         unbindServerSync(level);
@@ -488,6 +549,11 @@ public final class FsmAnimatedModel {
     }
 
     private void detachPoseBinding() {
+        if (serverPoseSink != null) {
+            if (!serverPoseSink.model().isClosed()) serverPoseSink.applyPose(Pose.empty());
+            serverPoseSink = null;
+            serverPoseEvaluator = null;
+        }
         ModelInstance current = poseTarget != null ? poseTarget.model() : null;
         if (current != null && animationScope != null
                 && current.getAnimationRenderPort() == animationScope.renderPort()) {

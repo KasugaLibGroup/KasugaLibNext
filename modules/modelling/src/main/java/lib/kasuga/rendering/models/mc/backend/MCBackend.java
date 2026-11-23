@@ -115,6 +115,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
         // schedule mode → view distance → frustum. Culled instances neither
         // sample animation nor touch GPU buffers this frame.
         ModelInstance model = renderable.getModelInstance();
+        if (model.isClosed()) return;
         BackendTransform transform = renderable.beforeRender(context);
         if (!passesSchedule(model, transform, context)) return;
 

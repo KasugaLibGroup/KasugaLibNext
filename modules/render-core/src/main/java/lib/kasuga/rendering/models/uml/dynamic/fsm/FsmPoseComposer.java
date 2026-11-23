@@ -57,34 +57,43 @@ public final class FsmPoseComposer {
         List<PoseTarget.LayerTarget> layerTargets = snapshot.layers();
         for (int i = 0; i < layerTargets.size(); i++) {
             PoseTarget.LayerTarget layerTarget = layerTargets.get(i);
-            State<?> active = layerTarget.activeState();
-            Transition<?> transition = layerTarget.activeTransition();
-            PoseTarget.ClipTarget clip = layerTarget.clip();
-            Pose pose;
-            if (active == null) {
-                pose = Pose.empty();
-            } else if (transition != null) {
-                float crossFade = transition.crossFadeSeconds();
-                float alpha = crossFade <= 0f
-                        ? 1f
-                        : Math.min(1f, (layerTarget.transitionElapsed()
-                        + interpolationAlpha * TICK_SECONDS) / crossFade);
-                Pose fromPose = clip != null
-                        ? poseOf(active, clipTimeAt(clip, interpolationAlpha), namespace)
-                        : active.buildPose();
-                Pose toPose = poseOf(transition.to(), 0f, namespace);
-                pose = PoseBlend.blend(fromPose, toPose, alpha);
-            } else {
-                pose = clip != null
-                        ? poseOf(active, clipTimeAt(clip, interpolationAlpha), namespace)
-                        : active.buildPose();
-            }
-            blender.applyLayer(
-                    snapshot.modes().get(i),
-                    pose,
-                    snapshot.weights().get(i),
-                    snapshot.masks().get(i));
+            Pose pose = sampleLayer(layerTarget.activeState(), layerTarget.activeTransition(),
+                    layerTarget.transitionElapsed(), layerTarget.clip(), interpolationAlpha, namespace);
+            blender.applyLayer(snapshot.modes().get(i), pose, snapshot.weights().get(i), snapshot.masks().get(i));
         }
+    }
+
+    /** Samples the current logical tick on the machine's owning thread. Returns true if a clip wrapped. */
+    static boolean composeTick(Blender blender, StateMachine<?> machine, Namespace namespace) {
+        blender.reset();
+        boolean wrapped = false;
+        for (Layer<?> layer : machine.layers()) {
+            PoseTarget.ClipTarget clip = layer.clipTarget();
+            Pose pose = sampleLayer(layer.active(), layer.activeTransition(), layer.transitionElapsed(),
+                    clip, 1f, namespace);
+            blender.applyLayer(layer.mode(), pose, layer.weight(), layer.boneMask());
+            wrapped |= crossesClipLoopBoundary(clip);
+        }
+        return wrapped;
+    }
+
+    private static Pose sampleLayer(State<?> active, Transition<?> transition, float transitionElapsed,
+                                    PoseTarget.ClipTarget clip, float interpolationAlpha,
+                                    @Nullable Namespace namespace) {
+        if (active == null) return Pose.empty();
+        Pose from = clip != null ? poseOf(active, clipTimeAt(clip, interpolationAlpha), namespace) : active.buildPose();
+        if (transition == null) return from;
+        float crossFade = transition.crossFadeSeconds();
+        float alpha = crossFade <= 0f ? 1f
+                : Math.min(1f, (transitionElapsed + interpolationAlpha * TICK_SECONDS) / crossFade);
+        return PoseBlend.blend(from, poseOf(transition.to(), 0f, namespace), alpha);
+    }
+
+    private static boolean crossesClipLoopBoundary(PoseTarget.ClipTarget clip) {
+        if (clip == null || !clip.loop()) return false;
+        float duration = clip.duration();
+        return Float.isFinite(duration) && duration > 0f && clip.time() > clip.prevTime()
+                && Math.floor(clip.prevTime() / duration) < Math.floor(clip.time() / duration);
     }
 
     private static Pose poseOf(State<?> state, float time, @Nullable Namespace namespace) {

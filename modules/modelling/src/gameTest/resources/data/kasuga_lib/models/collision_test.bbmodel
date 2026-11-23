@@ -1,0 +1,21 @@
+{
+  "resolution": {"width": 16, "height": 16},
+  "textures": [{"name": "geometry", "source": "geometry-only"}],
+  "elements": [
+    {"uuid": "arm-cube", "from": [32, 0, -8], "to": [48, 32, 8],
+      "faces": {
+        "north": {"uv": [0, 0, 16, 16], "texture": 0},
+        "south": {"uv": [0, 0, 16, 16], "texture": 0}
+      }
+    }
+  ],
+  "outliner": [
+    {"name": "arm", "origin": [32, 0, 0], "children": ["arm-cube"]}
+  ],
+  "animations": [
+    {"name": "retract", "length": 1, "animators": {"arm": {"name": "arm", "type": "bone", "keyframes": [
+      {"channel": "position", "data_points": [{"x": "0", "y": "0", "z": "0"}], "time": 0, "interpolation": "linear"},
+      {"channel": "position", "data_points": [{"x": "32", "y": "0", "z": "0"}], "time": 1, "interpolation": "linear"}
+    ]}}}
+  ]
+}

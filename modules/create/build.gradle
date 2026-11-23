@@ -154,6 +154,8 @@ neoForge {
             }
             systemProperty 'kasuga.createMountDemo', providers.gradleProperty('kasugaCreateMountDemo').getOrElse('false')
             systemProperty 'kasuga.testCreateMounts', providers.gradleProperty('kasugaTestCreateMounts').getOrElse('false')
+            systemProperty 'kasuga.testContraptionLod', providers.gradleProperty('kasugaTestContraptionLod').getOrElse('false')
+            systemProperty 'kasuga.testContraptionLod.voxy', providers.gradleProperty('kasugaTestContraptionLodVoxy').getOrElse('false')
             systemProperty 'kasuga.testSableScene', providers.gradleProperty('kasugaTestSableScene').getOrElse('false')
             def previewSchematic = providers.gradleProperty('kasugaPreviewSchematic')
             if (previewSchematic.isPresent()) systemProperty 'kasuga.minecraftPreview.schematic', file(previewSchematic.get()).absolutePath

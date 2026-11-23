@@ -102,12 +102,12 @@ public class Constants {
         lib.kasuga.scene.SceneProps.initialize(pipelines);
         RenderPipelineDescriptor opaque = RenderPipelineDescriptor.builder(
                         ResourceLocation.fromNamespaceAndPath(KasugaLib.MODID, "models_opaque"),
-                        RenderPhase.AFTER_ENTITIES)
+                        RenderPhase.AFTER_BLOCK_ENTITIES)
                 .priority(0)
                 .build();
         RenderPipelineDescriptor mask = RenderPipelineDescriptor.builder(
                         ResourceLocation.fromNamespaceAndPath(KasugaLib.MODID, "models_mask"),
-                        RenderPhase.AFTER_ENTITIES)
+                        RenderPhase.AFTER_BLOCK_ENTITIES)
                 .priority(1)
                 .build();
         RenderPipelineDescriptor translucent = RenderPipelineDescriptor.builder(

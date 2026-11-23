@@ -3,6 +3,7 @@ package lib.kasuga.rendering.models.mc.backend;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.logging.LogUtils;
 import lib.kasuga.rendering.models.uml.backend.gpu.GlslProgram;
+import lib.kasuga.rendering.models.mc.compat.voxy.VoxyCompat;
 import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.client.GlStateBackup;
 import org.lwjgl.opengl.*;
@@ -49,6 +50,7 @@ public final class LayeredTransparency implements AutoCloseable {
 
     void arm(MCBackendContext context) {
         if (disabled || BackendInstance.isIrisEnabled() || Minecraft.useShaderTransparency()
+                || VoxyCompat.hasTerrainPass(Minecraft.getInstance().levelRenderer)
                 || !Boolean.parseBoolean(System.getProperty("kasuga.layeredTransparency", "true"))
                 || backend.getRenderingObjects().isEmpty()) return;
         this.context = context;
