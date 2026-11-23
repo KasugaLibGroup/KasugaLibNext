@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,7 +47,9 @@ public final class ManagedAnimationScope implements AnimationScope {
         this.timeGraph = new PlaybackTimeGraph();
         this.targets = new TargetRegistry();
         this.publisher = new ScopeSnapshotPublisher();
-        this.commandApplier = builder.commandApplier;
+        this.commandApplier = builder.commandApplierFactory == null
+                ? builder.commandApplier
+                : builder.commandApplierFactory.create(playbackPort);
         this.commandTransaction = new CommandTransaction();
         this.controlEventSink = builder.controlEventSink;
         builder.targetBindings.forEach(targets::register);
@@ -346,6 +349,8 @@ public final class ManagedAnimationScope implements AnimationScope {
                     throw new CommandRejectedException(
                             "no playback command applier configured");
                 };
+        @Nullable
+        private PlaybackCommandApplierFactory commandApplierFactory;
         private Consumer<ControlEvent> controlEventSink = ignored -> {
         };
 
@@ -366,6 +371,11 @@ public final class ManagedAnimationScope implements AnimationScope {
 
         public Builder commandApplier(PlaybackCommandApplier applier) {
             this.commandApplier = Objects.requireNonNull(applier, "applier");
+            return this;
+        }
+
+        public Builder commandApplierFactory(PlaybackCommandApplierFactory factory) {
+            this.commandApplierFactory = Objects.requireNonNull(factory, "factory");
             return this;
         }
 
@@ -472,10 +482,30 @@ public final class ManagedAnimationScope implements AnimationScope {
         }
 
         @Override
+        public void seek(PlaybackInstanceId id, double sourceTime) {
+            synchronized (ManagedAnimationScope.this) {
+                requireOpen();
+                playbacks.seek(id, rootTimeline.snapshot().currentTime(), sourceTime);
+            }
+        }
+
+        @Override
         public void replace(PlaybackInstanceId id, String definitionId) {
             synchronized (ManagedAnimationScope.this) {
                 requireOpen();
                 playbacks.replace(id, definitionId);
+            }
+        }
+
+        @Override
+        public void replace(
+                PlaybackInstanceId id,
+                String definitionId,
+                PlaybackBinding binding
+        ) {
+            synchronized (ManagedAnimationScope.this) {
+                requireOpen();
+                playbacks.replace(id, definitionId, binding);
             }
         }
 
@@ -495,6 +525,22 @@ public final class ManagedAnimationScope implements AnimationScope {
                         playbacks,
                         rootTimeline.snapshot().currentTime(),
                         rootTimeline.snapshot().currentTime()));
+            }
+        }
+
+        @Override
+        public PlaybackRegistrySnapshot snapshot() {
+            synchronized (ManagedAnimationScope.this) {
+                requireOpen();
+                return playbacks.snapshot();
+            }
+        }
+
+        @Override
+        public void restore(PlaybackRegistrySnapshot snapshot) {
+            synchronized (ManagedAnimationScope.this) {
+                requireOpen();
+                playbacks.restore(snapshot);
             }
         }
     }

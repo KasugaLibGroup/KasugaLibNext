@@ -88,6 +88,35 @@ create(MyBlockEntity element) {
 Visual 如果需要替换模型，通常复用 `RigidPartVisualStage` 或
 `DeferredModelPoseTarget`，不要自行创建新的 `ManagedAnimationScope`。
 
+需要播放图时，使用 `ProxyComposition.of(...)` 的扩展重载，同时传入初始
+`ProxyPlaybackRoot`、`TargetBinding` 和 `PlaybackCommandApplierFactory`：
+
+```java
+return ProxyComposition.of(
+        policy, input, controller, writeback,
+        ProxyCommandPort.none(), visual,
+        List.of(poseBinding),
+        List.of(new ProxyPlaybackRoot("idle", idleBinding)),
+        ScopedPlaybackCommandApplier.factory(
+                Map.of("idle", idleBinding, "active", activeBinding))
+);
+```
+
+Controller 通过 `ControlFrame.commands()` 发出 `Play`、`Stop`、`Pause`、`Resume`、`Seek`、
+`SetSpeed`、`SetBoundaryPolicy` 或 `Replace`。工厂在 Scope 创建后绑定其
+`PlaybackControlPort`；`ScopedPlaybackCommandApplier` 为每个逻辑步暂存播放注册表，失败时恢复。
+定义 ID 和片段内容属于接入方的呈现配置，状态到播放选择的规则仍由 Controller 决定。
+`PlaybackCommand.Play.placementStart` 可以是负数，用于让 PING_PONG 等播放窗口从已提交的
+中间时间接续；它仍由同一个 RootTimeline 推进，不创建第二个时钟。
+
+数据驱动的 `proxy_model_be` 也使用同一条 Proxy 链路。单模型可继续声明 `model`；需要同时加载
+多个小组件时声明 `model_groups`，每个 part 使用稳定的 `id`、模型资源和可选 `local` 变换。
+注册阶段会生成不可变 `CompiledModelGroup`，其中只有解析完成的几何与 part 身份；Handle、
+ModelInstance 和播放状态在后续运行时阶段创建。
+`model_by_state` 选择整个 group ID，各 group 必须保持相同的有序 part ID 集合，这样切换 group
+时 `kasuga:part_root` target 地址不变，视觉层只原子替换底层模型实例。业务交互和动画策略仍由
+内容模组的专用 Block/Controller 提供。
+
 ## 3. 让方块实体实现 ProxySessionHost
 
 ```java

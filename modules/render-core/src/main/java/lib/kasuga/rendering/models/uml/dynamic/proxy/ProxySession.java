@@ -59,6 +59,12 @@ public final class ProxySession<T, I, O, C, F> implements AutoCloseable {
         ManagedAnimationScope.Builder builder = ManagedAnimationScope.builder(
                         UUID.randomUUID(), composition.policy())
                 .controller(ControllerBinding.create(composition.controllerPort().controller()));
+        for (ProxyPlaybackRoot root : composition.playbackRoots()) {
+            builder.rootPlayback(root.definitionId(), root.binding(), root.events());
+        }
+        if (composition.playbackCommandApplierFactory() != null) {
+            builder.commandApplierFactory(composition.playbackCommandApplierFactory());
+        }
         for (TargetBinding<?> target : composition.targets()) {
             builder.target(target);
         }

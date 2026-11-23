@@ -26,8 +26,8 @@ public sealed interface PlaybackCommand permits
             parentId = Objects.requireNonNull(parentId, "parentId");
             placementStart = Objects.requireNonNull(placementStart, "placementStart");
             placementStart.ifPresent(value -> {
-                if (!Double.isFinite(value) || value < 0.0) {
-                    throw new IllegalArgumentException("placementStart must be finite and non-negative");
+                if (!Double.isFinite(value)) {
+                    throw new IllegalArgumentException("placementStart must be finite");
                 }
             });
             requireSpeed(speed);

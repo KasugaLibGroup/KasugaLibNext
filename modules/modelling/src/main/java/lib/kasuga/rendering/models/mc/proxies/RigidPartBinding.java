@@ -34,7 +34,7 @@ final class RigidPartBinding
     private final PartMotionSampler sampler;
     private final Supplier<@Nullable StateMachine<?>> machine;
     private final ModelGroupFrameState frameState;
-    private final Transform local;
+    private volatile Transform local;
     private final Vector3f worldLightOffset;
 
     @Nullable
@@ -46,6 +46,22 @@ final class RigidPartBinding
     @Nullable
     private volatile Vector3d worldLightPosition;
     private volatile boolean closed;
+
+    RigidPartBinding(int index, String partId, PartMotionSampler sampler,
+                     Supplier<@Nullable StateMachine<?>> machine,
+                     ModelGroupFrameState frameState, Transform local,
+                     Vector3f worldLightOffset) {
+        this.ref = AnimationTargetRef.partRoot(partId);
+        this.index = index;
+        this.sampler = Objects.requireNonNull(sampler, "sampler");
+        this.machine = Objects.requireNonNull(machine, "machine");
+        this.frameState = Objects.requireNonNull(frameState, "frameState");
+        this.local = Objects.requireNonNull(local, "local").copy();
+        this.worldLightOffset = new Vector3f(Objects.requireNonNull(worldLightOffset, "worldLightOffset"));
+        if (!this.worldLightOffset.isFinite()) {
+            throw new IllegalArgumentException("worldLightOffset must be finite");
+        }
+    }
 
     RigidPartBinding(int index, PartMotionSampler sampler,
                      Supplier<@Nullable StateMachine<?>> machine,
@@ -116,6 +132,14 @@ final class RigidPartBinding
 
     int index() {
         return index;
+    }
+
+    void setLocal(Transform local) {
+        this.local = Objects.requireNonNull(local, "local").copy();
+    }
+
+    Transform local() {
+        return local.copy();
     }
 
     @Override

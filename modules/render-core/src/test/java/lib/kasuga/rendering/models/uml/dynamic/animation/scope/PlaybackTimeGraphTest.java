@@ -22,14 +22,45 @@ class PlaybackTimeGraphTest {
 
         assertEquals(3.0, binding.placementEnd(), 1e-9);
         assertEquals(4.5, binding.sourceEnd(), 1e-9);
-        assertThrows(IllegalArgumentException.class,
-                () -> new PlaybackBinding(-1.0, 2.0, 0.0, 1.0, 1.0, PlaybackBoundaryPolicy.STOP));
+        PlaybackBinding retroactive = new PlaybackBinding(
+                -1.0, 2.0, 0.0, 1.0, 1.0, PlaybackBoundaryPolicy.STOP);
+        assertEquals(-1.0, retroactive.placementStart(), 1e-9);
         assertThrows(IllegalArgumentException.class,
                 () -> new PlaybackBinding(0.0, 0.0, 0.0, 1.0, 1.0, PlaybackBoundaryPolicy.STOP));
         assertThrows(IllegalArgumentException.class,
                 () -> new PlaybackBinding(0.0, 1.0, 0.0, 0.0, 1.0, PlaybackBoundaryPolicy.STOP));
         assertThrows(IllegalArgumentException.class,
                 () -> new PlaybackBinding(0.0, 1.0, 0.0, 1.0, -0.1, PlaybackBoundaryPolicy.STOP));
+    }
+
+    @Test
+    void retroactivePingPongWindowResumesAtMidpointAndMovesBackward() {
+        double duration = 6.5;
+        double currentRootTime = 10.0;
+        double desiredSourceTime = 2.0;
+        PlaybackRegistry registry = new PlaybackRegistry(SCOPE_ID);
+        PlaybackInstanceId id = registry.addRoot(
+                "retract",
+                new PlaybackBinding(
+                        currentRootTime - (duration * 2.0 - desiredSourceTime),
+                        duration * 2.0,
+                        0.0,
+                        duration,
+                        1.0,
+                        PlaybackBoundaryPolicy.PING_PONG
+                )
+        );
+
+        PlaybackTimeResolution current =
+                new PlaybackTimeGraph().resolve(registry.snapshot(), 9.95, currentRootTime)
+                        .getFirst();
+        PlaybackTimeResolution next =
+                new PlaybackTimeGraph().resolve(registry.snapshot(), 10.0, 10.5)
+                        .getFirst();
+
+        assertEquals(id, current.id());
+        assertEquals(desiredSourceTime, current.currentSourceLocalTime(), 1e-9);
+        assertEquals(1.5, next.currentSourceLocalTime(), 1e-9);
     }
 
     @Test

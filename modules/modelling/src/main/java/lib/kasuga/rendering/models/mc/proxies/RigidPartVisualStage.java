@@ -12,8 +12,10 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3f;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -53,6 +55,88 @@ public final class RigidPartVisualStage implements AutoCloseable {
             Vector3f worldLightOffset,
             PartHandleFactory handleFactory
     ) {
+        this(instanceBase, specs, null, machine, initialRoot, worldLightOffset, handleFactory);
+    }
+
+    /** Creates a group whose parts use explicit stable IDs instead of list indexes. */
+    public RigidPartVisualStage(
+            ResourceLocation instanceBase,
+            List<ModelPart> specs,
+            List<String> partIds,
+            Supplier<@Nullable StateMachine<?>> machine,
+            Transform initialRoot
+    ) {
+        this(
+                instanceBase,
+                specs,
+                partIds,
+                machine,
+                initialRoot,
+                new Vector3f(),
+                (part, instanceLoc) -> McModelHandle.of(
+                        part.model(), part.modelName(), instanceLoc, null)
+        );
+    }
+
+    /** Mounts a shared compiled model group with its stable part identities. */
+    public RigidPartVisualStage(
+            ResourceLocation instanceBase,
+            CompiledModelGroup group,
+            Supplier<@Nullable StateMachine<?>> machine,
+            Transform initialRoot
+    ) {
+        this(instanceBase, group, machine, initialRoot,
+                (part, instanceLoc) -> McModelHandle.of(
+                        part.model(), part.modelName(), instanceLoc, null));
+    }
+
+    public RigidPartVisualStage(
+            ResourceLocation instanceBase,
+            CompiledModelGroup group,
+            Supplier<@Nullable StateMachine<?>> machine,
+            Transform initialRoot,
+            PartHandleFactory handleFactory
+    ) {
+        this(
+                instanceBase,
+                group.modelParts(),
+                group.partIds(),
+                machine,
+                initialRoot,
+                new Vector3f(),
+                handleFactory
+        );
+    }
+
+    /** Stable-ID group with a custom handle factory, primarily for resource-switch tests and adapters. */
+    public RigidPartVisualStage(
+            ResourceLocation instanceBase,
+            List<ModelPart> specs,
+            List<String> partIds,
+            Supplier<@Nullable StateMachine<?>> machine,
+            Transform initialRoot,
+            PartHandleFactory handleFactory
+    ) {
+        this(
+                instanceBase,
+                specs,
+                partIds,
+                machine,
+                initialRoot,
+                new Vector3f(),
+                handleFactory
+        );
+    }
+
+    private RigidPartVisualStage(
+            ResourceLocation instanceBase,
+            List<ModelPart> specs,
+            @Nullable List<String> stableIds,
+            Supplier<@Nullable StateMachine<?>> machine,
+            Transform initialRoot,
+            Vector3f worldLightOffset,
+            PartHandleFactory handleFactory
+    ) {
         this.instanceBase = Objects.requireNonNull(instanceBase, "instanceBase");
         this.machine = Objects.requireNonNull(machine, "machine");
         this.handleFactory = Objects.requireNonNull(handleFactory, "handleFactory");
@@ -65,19 +149,31 @@ public final class RigidPartVisualStage implements AutoCloseable {
         this.evaluationRoot = root;
 
         List<Part> prepared = new ArrayList<>(specs.size());
+        Set<String> partIds = new HashSet<>();
+        if (stableIds != null && stableIds.size() != specs.size()) {
+            throw new IllegalArgumentException("part id count must match model part count");
+        }
         try {
             for (int index = 0; index < specs.size(); index++) {
                 ModelPart spec = Objects.requireNonNull(specs.get(index), "part");
+                String partId = stableIds == null
+                        ? stablePartId(index, partIds)
+                        : stablePartId(stableIds.get(index), index, partIds);
                 PartMotionSampler sampler = new PartMotionSampler(spec.motion());
                 sampler.initialSnapshot(machine.get());
-                RigidPartBinding target = new RigidPartBinding(
-                        index, sampler, machine, frameState, spec.local(), this.worldLightOffset);
+                RigidPartBinding target = stableIds == null
+                        ? new RigidPartBinding(
+                                index, sampler, machine, frameState,
+                                spec.local(), this.worldLightOffset)
+                        : new RigidPartBinding(
+                                index, partId, sampler, machine, frameState,
+                                spec.local(), this.worldLightOffset);
                 TargetBinding<RigidPartOutput> binding = new TargetBinding<>(
                         target,
                         ignored -> target.evaluate(evaluationRoot),
                         new TargetPublicationFactory<>());
-                prepared.add(new Part(spec, sampler, target, binding,
-                        partInstanceKey(instanceBase, index)));
+                prepared.add(new Part(partId, spec, sampler, target, binding,
+                        partInstanceKey(instanceBase, partId)));
             }
             this.parts = List.copyOf(prepared);
             frameState.publishLogical(snapshotFrame(root));
@@ -133,6 +229,119 @@ public final class RigidPartVisualStage implements AutoCloseable {
             result.add(part.binding);
         }
         return List.copyOf(result);
+    }
+
+    /** The first mounted part instance, used by single-pose proxy adapters. */
+    public @Nullable ModelInstance primaryInstance() {
+        for (Part part : parts) {
+            McModelHandle handle = part.handle;
+            if (handle != null) {
+                ModelInstance instance = handle.instance();
+                if (instance != null) {
+                    return instance;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Atomically replaces the resource set while preserving target addresses and instance keys.
+     * The replacement must keep the same stable part IDs in the same order.
+     */
+    public boolean replaceParts(List<ModelPart> specs, Transform currentRoot) {
+        return replaceParts(
+                specs,
+                parts.stream().map(part -> part.id).toList(),
+                currentRoot
+        );
+    }
+
+    /**
+     * Replaces the group while supplying stable part IDs for the new specs.
+     */
+    public boolean replaceParts(
+            List<ModelPart> specs,
+            List<String> partIds,
+            Transform currentRoot
+    ) {
+        Objects.requireNonNull(specs, "specs");
+        Objects.requireNonNull(partIds, "partIds");
+        Objects.requireNonNull(currentRoot, "currentRoot");
+        synchronized (publicationLock) {
+            requireOpen();
+            if (specs.size() != parts.size() || partIds.size() != parts.size()) {
+                throw new IllegalArgumentException("replacement model group must keep the same part count");
+            }
+            for (int index = 0; index < specs.size(); index++) {
+                ModelPart spec = Objects.requireNonNull(specs.get(index), "part");
+                if (!partIds.get(index).equals(parts.get(index).id)) {
+                    throw new IllegalArgumentException(
+                            "replacement model group changed part id at " + index
+                                    + ": expected " + parts.get(index).id
+                                    + ", got " + partIds.get(index));
+                }
+                if (parts.get(index).spec.motion() != null || spec.motion() != null) {
+                    throw new IllegalArgumentException(
+                            "dynamic model-group replacement does not support part motion");
+                }
+            }
+            List<PreparedReplacement> replacements = new ArrayList<>(specs.size());
+            try {
+                for (int index = 0; index < specs.size(); index++) {
+                    ModelPart spec = specs.get(index);
+                    McModelHandle handle = Objects.requireNonNull(
+                            handleFactory.create(spec, parts.get(index).instanceLoc),
+                            "part handle factory returned null");
+                    replacements.add(new PreparedReplacement(handle, spec.local()));
+                    handle.setPose(initialPose(currentRoot, spec.local()));
+                    applyVisibility(handle);
+                    if (!handle.mount()) {
+                        destroyReplacements(replacements);
+                        return false;
+                    }
+                }
+            } catch (RuntimeException | Error failure) {
+                destroyReplacements(replacements, failure);
+                throw failure;
+            }
+
+            List<PreviousPart> previous = new ArrayList<>(parts.size());
+            try {
+                for (int index = 0; index < parts.size(); index++) {
+                    Part part = parts.get(index);
+                    previous.add(new PreviousPart(part.spec, part.handle, part.target.local()));
+                    PreparedReplacement replacement = replacements.get(index);
+                    part.spec = specs.get(index);
+                    part.handle = replacement.handle;
+                    part.target.setLocal(replacement.local);
+                    ModelInstance instance = replacement.handle.instance();
+                    if (instance != null) {
+                        part.target.attachTo(instance);
+                    }
+                    replacement.handle.show();
+                }
+            } catch (RuntimeException | Error failure) {
+                restorePrevious(previous);
+                destroyReplacements(replacements, failure);
+                throw failure;
+            }
+            for (int index = 0; index < previous.size(); index++) {
+                McModelHandle oldHandle = previous.get(index).handle;
+                if (oldHandle != null) {
+                    oldHandle.destroy();
+                }
+            }
+            evaluationRoot = new RootSnapshot(currentRoot, currentRoot);
+            rootAdvanced = true;
+            return true;
+        }
+    }
+
+    /** Atomically switches to another compiled group with the same part layout. */
+    public boolean replaceGroup(CompiledModelGroup group, Transform currentRoot) {
+        Objects.requireNonNull(group, "group");
+        return replaceParts(group.modelParts(), group.partIds(), currentRoot);
     }
 
     /** Runtime skin that joins this stage's frame-domain snapshot to the session's target batch. */
@@ -442,6 +651,10 @@ public final class RigidPartVisualStage implements AutoCloseable {
         return pose;
     }
 
+    private Transform initialPose(Transform root, Transform local) {
+        return root.mul(local);
+    }
+
     private ModelGroupFrame snapshotFrame(RootSnapshot root) {
         List<PartMotionSnapshot> motions = new ArrayList<>(parts.size());
         for (Part part : parts) {
@@ -457,12 +670,77 @@ public final class RigidPartVisualStage implements AutoCloseable {
     }
 
     static ResourceLocation partInstanceKey(ResourceLocation proxyKey, int index) {
+        return partInstanceKey(proxyKey, Integer.toString(index));
+    }
+
+    static ResourceLocation partInstanceKey(ResourceLocation proxyKey, String partId) {
         return ResourceLocation.fromNamespaceAndPath(
-                proxyKey.getNamespace(), proxyKey.getPath() + "/part/" + index);
+                proxyKey.getNamespace(), proxyKey.getPath() + "/part/" + partId);
+    }
+
+    private static String stablePartId(int index, Set<String> used) {
+        String candidate = Integer.toString(index);
+        if (!used.add(candidate)) {
+            throw new IllegalArgumentException("duplicate model part id: " + candidate);
+        }
+        return candidate;
+    }
+
+    private static String stablePartId(String requested, int index, Set<String> used) {
+        String candidate = requested == null || requested.isBlank()
+                ? Integer.toString(index)
+                : requested;
+        if (!candidate.matches("[a-z0-9_.-]+")) {
+            throw new IllegalArgumentException("invalid model part id: " + candidate);
+        }
+        if (!used.add(candidate)) {
+            throw new IllegalArgumentException("duplicate model part id: " + candidate);
+        }
+        return candidate;
+    }
+
+    private void destroyReplacements(List<PreparedReplacement> replacements) {
+        destroyReplacements(replacements, null);
+    }
+
+    private void destroyReplacements(
+            List<PreparedReplacement> replacements,
+            @Nullable Throwable primary
+    ) {
+        Throwable failure = primary;
+        for (PreparedReplacement replacement : replacements) {
+            try {
+                replacement.handle.destroy();
+            } catch (RuntimeException cleanupFailure) {
+                if (failure == null) {
+                    failure = cleanupFailure;
+                } else {
+                    failure.addSuppressed(cleanupFailure);
+                }
+            }
+        }
+        if (primary == null && failure != null) {
+            throw new IllegalStateException("failed to release replacement model handles", failure);
+        }
+    }
+
+    private void restorePrevious(List<PreviousPart> previous) {
+        for (int index = 0; index < previous.size(); index++) {
+            Part part = parts.get(index);
+            PreviousPart state = previous.get(index);
+            part.spec = state.spec;
+            part.handle = state.handle;
+            part.target.setLocal(state.local);
+            ModelInstance instance = state.handle == null ? null : state.handle.instance();
+            if (instance != null) {
+                part.target.attachTo(instance);
+            }
+        }
     }
 
     private static final class Part {
-        private final ModelPart spec;
+        private final String id;
+        private ModelPart spec;
         private final PartMotionSampler sampler;
         private final RigidPartBinding target;
         private final TargetBinding<RigidPartOutput> binding;
@@ -470,12 +748,14 @@ public final class RigidPartVisualStage implements AutoCloseable {
         private @Nullable McModelHandle handle;
 
         private Part(
+                String id,
                 ModelPart spec,
                 PartMotionSampler sampler,
                 RigidPartBinding target,
                 TargetBinding<RigidPartOutput> binding,
                 ResourceLocation instanceLoc
         ) {
+            this.id = id;
             this.spec = spec;
             this.sampler = sampler;
             this.target = target;
@@ -489,6 +769,24 @@ public final class RigidPartVisualStage implements AutoCloseable {
             if (current != null) {
                 current.destroy();
             }
+        }
+    }
+
+    private record PreparedReplacement(McModelHandle handle, Transform local) {
+        private PreparedReplacement {
+            Objects.requireNonNull(handle, "handle");
+            local = Objects.requireNonNull(local, "local").copy();
+        }
+    }
+
+    private record PreviousPart(
+            ModelPart spec,
+            @Nullable McModelHandle handle,
+            Transform local
+    ) {
+        private PreviousPart {
+            Objects.requireNonNull(spec, "spec");
+            local = Objects.requireNonNull(local, "local").copy();
         }
     }
 }

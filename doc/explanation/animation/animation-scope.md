@@ -80,6 +80,10 @@ Minecraft adapter 通常以 `1/20s` 作为固定步，并限制单次追帧数�
 
 `ManagedAnimationScope` 是 final 默认实现。接入方通过 builder 注册 Controller、Playback、Target 和命令处理器；不应继承 Scope 来添加某种方块、实体或模型格式的特殊逻辑。
 
+Proxy 接入与 Scope 使用同一套能力：`ProxyPlaybackRoot` 注册初始播放，
+`PlaybackCommandApplierFactory` 在 Scope 创建后绑定播放控制端口，Controller 发出的命令会与
+Target publication 一起提交。内容模组只需要提供输入、控制器语义和 target evaluator。
+
 ## 常见业务场景
 
 ### 状态机驱动的角色或方块

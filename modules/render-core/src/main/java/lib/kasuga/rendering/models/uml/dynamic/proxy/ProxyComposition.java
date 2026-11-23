@@ -1,7 +1,9 @@
 package lib.kasuga.rendering.models.uml.dynamic.proxy;
 
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.LogicalStepPolicy;
+import lib.kasuga.rendering.models.uml.dynamic.animation.scope.PlaybackCommandApplierFactory;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.TargetBinding;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
@@ -17,7 +19,9 @@ public record ProxyComposition<T, I, O, C, F>(
         ProxyWritebackPort<T, O> writebackPort,
         ProxyCommandPort<T, C> commandPort,
         ProxyVisualPort<T, F> visualPort,
-        List<TargetBinding<?>> targets
+        List<TargetBinding<?>> targets,
+        List<ProxyPlaybackRoot> playbackRoots,
+        @Nullable PlaybackCommandApplierFactory playbackCommandApplierFactory
 ) {
 
     public ProxyComposition {
@@ -28,6 +32,30 @@ public record ProxyComposition<T, I, O, C, F>(
         commandPort = Objects.requireNonNull(commandPort, "commandPort");
         visualPort = Objects.requireNonNull(visualPort, "visualPort");
         targets = List.copyOf(Objects.requireNonNull(targets, "targets"));
+        playbackRoots = List.copyOf(Objects.requireNonNull(playbackRoots, "playbackRoots"));
+    }
+
+    /** Binary-compatible constructor for compositions created before playback wiring was exposed. */
+    public ProxyComposition(
+            LogicalStepPolicy policy,
+            ProxyInputPort<T, I> inputPort,
+            ProxyControllerPort<I, O> controllerPort,
+            ProxyWritebackPort<T, O> writebackPort,
+            ProxyCommandPort<T, C> commandPort,
+            ProxyVisualPort<T, F> visualPort,
+            List<TargetBinding<?>> targets
+    ) {
+        this(
+                policy,
+                inputPort,
+                controllerPort,
+                writebackPort,
+                commandPort,
+                visualPort,
+                targets,
+                List.of(),
+                null
+        );
     }
 
     public static <T, I, O, C, F> ProxyComposition<T, I, O, C, F> of(
@@ -39,8 +67,25 @@ public record ProxyComposition<T, I, O, C, F>(
             ProxyVisualPort<T, F> visualPort,
             List<TargetBinding<?>> targets
     ) {
+        return of(
+                policy, inputPort, controllerPort, writebackPort, commandPort, visualPort,
+                targets, List.of(), null);
+    }
+
+    public static <T, I, O, C, F> ProxyComposition<T, I, O, C, F> of(
+            LogicalStepPolicy policy,
+            ProxyInputPort<T, I> inputPort,
+            ProxyControllerPort<I, O> controllerPort,
+            ProxyWritebackPort<T, O> writebackPort,
+            ProxyCommandPort<T, C> commandPort,
+            ProxyVisualPort<T, F> visualPort,
+            List<TargetBinding<?>> targets,
+            List<ProxyPlaybackRoot> playbackRoots,
+            @Nullable PlaybackCommandApplierFactory playbackCommandApplierFactory
+    ) {
         return new ProxyComposition<>(
                 policy, inputPort, controllerPort, writebackPort,
-                commandPort, visualPort, targets);
+                commandPort, visualPort, targets, playbackRoots,
+                playbackCommandApplierFactory);
     }
 }
