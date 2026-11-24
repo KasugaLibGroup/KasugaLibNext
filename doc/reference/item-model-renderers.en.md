@@ -14,14 +14,18 @@ A static registry plus a shared extension. Writes happen during client setup, re
 | Method | Signature | Notes |
 | --- | --- | --- |
 | `register` | `static void register(Item item, ResourceLocation model, @Nullable String modelName)` | Binds an item to a model. `modelName` is MMD-only; pass `null` otherwise. Last write wins. |
+| `register` | `static void register(Item item, ResourceLocation model, @Nullable String modelName, float guiScale)` | Same as above with a GUI display-size multiplier composed with the standard `0.625`; it must be finite and positive. |
 | `binding` | `static @Nullable Binding binding(Item item)` | The binding, or `null` when the item is not registered. |
 | `items` | `static Set<Item> items()` | Currently registered items (read-only, for diagnostics). |
 | `clientExtensions` | `static IClientItemExtensions clientExtensions()` | The shared extension to pass to `RegisterClientExtensionsEvent#registerItem`. |
 | `renderer` | `static ItemModelRenderer renderer()` | The shared BEWLR, created on first use. |
 
 ```java
-public record Binding(ResourceLocation model, @Nullable String modelName) {}
+public record Binding(ResourceLocation model, @Nullable String modelName, float guiScale) {}
 ```
+
+The two-argument constructor remains compatible and defaults `guiScale` to `1.0`. Scaling affects only
+`ItemDisplayContext.GUI`; hand, ground and world block rendering keep their existing sizes.
 
 ## ItemModelRenderer
 

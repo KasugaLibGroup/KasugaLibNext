@@ -56,7 +56,7 @@ Recommended: give the block a minimal dedicated placeholder (a plate or a cube) 
 
 ```java
 // 1) declare which model the item uses (any time before the client extension event)
-ItemModelRenderers.register(item, MODEL_ID, null);   // third argument is an MMD entry name; null otherwise
+ItemModelRenderers.register(item, MODEL_ID, null);   // third is MMD entry; four-argument overload sets a GUI scale
 
 // 2) write builtin/entity in the item model JSON (above)
 
