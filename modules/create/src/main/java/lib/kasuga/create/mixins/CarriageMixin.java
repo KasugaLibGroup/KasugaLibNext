@@ -160,12 +160,14 @@ public class CarriageMixin implements CarriageAccess {
     /**
      * Advances the offset once per server tick. The client copy is driven by the synced entity
      * data instead, so this deliberately ignores the client-side runs of {@code manageEntities}.
+     * This is the feature's single source of truth: when the config switch is off the value is
+     * forced to 0, which makes every consumer below a no-op on both sides.
      */
     @Inject(method = "manageEntities", at = @At("TAIL"))
     private void kasuga$tickYOffset(Level level, CallbackInfo ci) {
         if (level.isClientSide())
             return;
-        if (!CreateConfig.isMultiBogeyCarriageEnabled()) {
+        if (!CreateConfig.isCarriageYOffestEnabled()) {
             ksg$yOffset = 0;
             return;
         }

@@ -34,6 +34,9 @@ public class CarriageContraptionVisualMixin {
         if (!(entity instanceof CarriageContraptionEntityAccess access))
             return original;
 
-        return original.add(0.0f, -partialTicks * access.kasuga$getCarriageYOffset(), 0.0f);
+        float offset = access.kasuga$getCarriageYOffset();
+        if (offset == 0)
+            return original;
+        return original.add(0.0f, -partialTicks * offset, 0.0f);
     }
 }

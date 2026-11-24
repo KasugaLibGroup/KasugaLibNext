@@ -160,7 +160,8 @@ public class CarriageContraptionEntityMixin implements CarriageContraptionEntity
             )
     )
     private Vec3 kasuga$excludeOffsetFromTravelDistance(Vec3 original) {
-        return original.subtract(0.0D, kasuga$getCarriageYOffset(), 0.0D);
+        float offset = kasuga$getCarriageYOffset();
+        return offset == 0 ? original : original.subtract(0.0D, offset, 0.0D);
     }
 
     /**
@@ -178,7 +179,8 @@ public class CarriageContraptionEntityMixin implements CarriageContraptionEntity
             )
     )
     private Vec3 kasuga$storeRawServerPrevPos(Vec3 original) {
-        return original.subtract(0.0D, kasuga$getCarriageYOffset(), 0.0D);
+        float offset = kasuga$getCarriageYOffset();
+        return offset == 0 ? original : original.subtract(0.0D, offset, 0.0D);
     }
 
     /**
@@ -215,10 +217,12 @@ public class CarriageContraptionEntityMixin implements CarriageContraptionEntity
      */
     @Unique
     private Vec3 kasuga$modifyPrevPositionVec(Vec3 original, boolean fromServerPrevPos) {
-        if (fromServerPrevPos) return original.add(0D, kasuga$getCarriageYOffset(), 0D);
+        float offset = kasuga$getCarriageYOffset();
+        if (offset == 0) return original;
+        if (fromServerPrevPos) return original.add(0D, offset, 0D);
         if (!(this instanceof AbstractContraptionEntityAccessor accessor)) return original;
         if (accessor.getPrevPosInvalid()) return original;
-        return original.add(0D, kasuga$getCarriageYOffset(), 0D);
+        return original.add(0D, offset, 0D);
     }
 
     @Override

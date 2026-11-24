@@ -44,8 +44,11 @@ public class OrientedContraptionEntityMixin {
         // `this` is the entity (CarriageContraptionEntity when a carriage is rendered; cast to
         // CarriageContraptionEntityAccess for the kasuga$ accessors). The interpolated offset keeps
         // the contraption body in step with the bogey visuals, which use the same interpolation.
-        if (this instanceof CarriageContraptionEntityAccess access)
-            stack.translate(0, access.kasuga$getInterpolatedYOffset(partialTicks), 0);
+        if (this instanceof CarriageContraptionEntityAccess access) {
+            float offset = access.kasuga$getInterpolatedYOffset(partialTicks);
+            if (offset != 0)
+                stack.translate(0, offset, 0);
+        }
         return result;
     }
 }

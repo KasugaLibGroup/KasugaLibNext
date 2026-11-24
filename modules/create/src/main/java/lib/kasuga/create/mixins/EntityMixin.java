@@ -22,9 +22,13 @@ public class EntityMixin {
     @Inject(method = "position", at = @At("RETURN"), cancellable = true)
     private void kasuga$modifyPosition(CallbackInfoReturnable<Vec3> cir) {
         if (!(this instanceof CarriageContraptionEntityAccess access)) return;
+        // Zero when the carriage y-offset feature is disabled, so the vanilla result is untouched.
+        float offset = access.kasuga$getCarriageYOffset();
+        if (offset == 0)
+            return;
         Vec3 original = cir.getReturnValue();
         if (original == null)
             return;
-        cir.setReturnValue(original.add(0.0D, access.kasuga$getCarriageYOffset(), 0.0D));
+        cir.setReturnValue(original.add(0.0D, offset, 0.0D));
     }
 }
