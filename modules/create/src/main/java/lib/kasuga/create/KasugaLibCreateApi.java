@@ -9,6 +9,8 @@ public final class KasugaLibCreateApi {
 
     private static volatile boolean carriageYOffsetDefault = false;
 
+    private static volatile boolean derailedOnBogeyOffsetDefault = false;
+
     private KasugaLibCreateApi() {
     }
 
@@ -25,10 +27,16 @@ public final class KasugaLibCreateApi {
         carriageYOffsetDefault = enabled;
     }
 
+    public static void setDerailedOnBogeyOffsetDefault(boolean enabled) {
+        derailedOnBogeyOffsetDefault = enabled;
+    }
+
     /** Current default used when the config entry is absent. */
     public static boolean getMultiBogeyCarriageDefault() {
         return multiBogeyCarriageDefault;
     }
 
     public static boolean getCarriageYOffsetDefault() {return carriageYOffsetDefault;}
+
+    public static boolean getDerailedOnBogeyOffsetDefault() { return derailedOnBogeyOffsetDefault; }
 }

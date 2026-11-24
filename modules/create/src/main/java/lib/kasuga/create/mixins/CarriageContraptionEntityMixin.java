@@ -6,10 +6,13 @@ import com.simibubi.create.content.trains.bogey.AbstractBogeyBlock;
 import com.simibubi.create.content.trains.entity.Carriage;
 import com.simibubi.create.content.trains.entity.CarriageBogey;
 import com.simibubi.create.content.trains.entity.CarriageContraptionEntity;
+import com.simibubi.create.content.trains.entity.TravellingPoint;
+import com.simibubi.create.content.trains.graph.TrackGraph;
 import lib.kasuga.create.CreateConfig;
 import lib.kasuga.create.content.train.CarriageAccess;
 import lib.kasuga.create.content.train.CarriageContraptionEntityAccess;
 import net.createmod.catnip.animation.LerpedFloat;
+import net.createmod.catnip.math.AngleHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -99,6 +102,29 @@ public class CarriageContraptionEntityMixin implements CarriageContraptionEntity
 
         CarriageContraptionEntity entity = (CarriageContraptionEntity) (Object) this;
         Direction forward = entity.getInitialOrientation().getCounterClockWise();
+        double maxLateralOffset = CreateConfig.maxBogeyOffset();
+
+        // Orientation from the real track. Interpolating the end bogeys' yaw/pitch is badly off
+        // when the carriage spans a node (S-bends: the end tangents are nearly parallel while the
+        // middle follows a whole curve). Instead walk the graph from the carriage's leading wheel
+        // point towards the trailing one and read the tangent at the extra bogey's position; the
+        // walk handles both Bezier turns and plain edges. Unavailable graph -> keep the lerp.
+        TrackGraph graph = carriage.train == null ? null : carriage.train.graph;
+        TravellingPoint leadingPoint = null;
+        TravellingPoint trailingPoint = null;
+        int rearSign = 1;
+        AbstractBogeyBlock<?> leadingType = leadingAngles.kasuga$getType();
+        if (graph != null && !carriage.train.derailed) {
+            TravellingPoint start = carriage.getLeadingPoint();
+            TravellingPoint toward = carriage.getTrailingPoint();
+            if (start.edge != null && toward.edge != null && start.node1 != null && toward.node1 != null
+                    && start.edge.getLength() > 0) {
+                Vec3 rearDirection = toward.getPosition(graph).subtract(start.getPosition(graph));
+                rearSign = start.edge.getDirection(true).dot(rearDirection) >= 0 ? 1 : -1;
+                leadingPoint = start;
+                trailingPoint = toward;
+            }
+        }
 
         for (int i = 0; i < count; i++) {
             CarriageBogey bogey = redundant.get(i);
@@ -129,15 +155,85 @@ public class CarriageContraptionEntityMixin implements CarriageContraptionEntity
                     lateralOffset = Math.max(0, Math.sqrt(Math.max(0, radius * radius - u * u))
                             - radius * Math.cos(halfAngle)) * -Math.signum(yawDelta);
                 }
-                ksg$redundantBogeyOffset.get(i).setValue(lateralOffset);
+                ksg$redundantBogeyOffset.get(i)
+                        .setValue(Mth.clamp(lateralOffset, -maxLateralOffset, maxLateralOffset));
             }
 
             double angleDiff = 360 * distanceTo / (Math.PI * 2 * type.getWheelRadius());
             angles.kasuga$getWheelAngle()
                     .setValue((angles.kasuga$getWheelAngle().getValue() - angleDiff) % 360);
-            angles.kasuga$getYaw().setValue(Mth.rotLerp(t, leadingYaw, trailingYaw));
-            angles.kasuga$getPitch().setValue(Mth.lerp(t, leadingPitch, trailingPitch));
+            if (!kasuga$sampleTrackAngles(graph, leadingPoint, trailingPoint, rearSign, leadingType, type,
+                    bogey.isUpsideDown(), along, angles)) {
+                angles.kasuga$getYaw().setValue(Mth.rotLerp(t, leadingYaw, trailingYaw));
+                angles.kasuga$getPitch().setValue(Mth.lerp(t, leadingPitch, trailingPitch));
+            }
         }
+    }
+
+    /**
+     * Computes an extra bogey's orientation from the real track: samples the track at the midpoints
+     * of its two wheel contact points (walking the graph, so Bezier turns and nodes are handled)
+     * and derives yaw/pitch exactly like vanilla {@code updateAngles} derives them from a real
+     * bogey's two travelling points.
+     *
+     * @return false when the graph or the end points are unavailable, so the caller falls back to
+     *         interpolating the end bogeys' angles.
+     */
+    @Unique
+    private static boolean kasuga$sampleTrackAngles(TrackGraph graph, TravellingPoint start,
+                                                    TravellingPoint toward, int rearSign,
+                                                    AbstractBogeyBlock<?> leadingType,
+                                                    AbstractBogeyBlock<?> type, boolean upsideDown,
+                                                    int along, CarriageBogeyAccessor angles) {
+        if (graph == null || start == null || toward == null)
+            return false;
+
+        double halfLeading = leadingType == null ? 0 : leadingType.getWheelPointSpacing() / 2;
+        double halfExtra = type.getWheelPointSpacing() / 2;
+        double centerDistance = halfLeading + along;
+        Vec3 front = kasuga$sampleTrackPoint(graph, start, toward, rearSign,
+                centerDistance - halfExtra, upsideDown);
+        Vec3 rear = kasuga$sampleTrackPoint(graph, start, toward, rearSign,
+                centerDistance + halfExtra, upsideDown);
+        if (front == null || rear == null)
+            return false;
+
+        Vec3 diff = front.subtract(rear);
+        if (diff.lengthSqr() < 1.0e-8)
+            return false;
+
+        double horizontal = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
+        float yRot = AngleHelper.deg(Math.atan2(diff.z, diff.x)) + 90;
+        float xRot = AngleHelper.deg(Math.atan2(diff.y, horizontal));
+        angles.kasuga$getYaw().setValue(-yRot);
+        angles.kasuga$getPitch().setValue(xRot);
+        return true;
+    }
+
+    /**
+     * Walks {@code distance} along the graph from {@code start} towards {@code toward} and returns
+     * the track surface point, or null when the walk is blocked or invalid.
+     */
+    @Unique
+    private static Vec3 kasuga$sampleTrackPoint(TrackGraph graph, TravellingPoint start,
+                                                TravellingPoint toward, int rearSign, double distance,
+                                                boolean upsideDown) {
+        TravellingPoint scratch = new TravellingPoint(start.node1, start.node2, start.edge, start.position,
+                upsideDown);
+        TravellingPoint.ITrackSelector selector = scratch.follow(toward);
+        double remaining = rearSign * distance;
+        while (Math.abs(remaining) > 1.0e-4) {
+            // Stride at most 5 blocks: TrackEdge#incrementT only maps distance to the Bezier
+            // parameter properly for short strides, longer ones fall back to a linear guess.
+            double step = Mth.clamp(remaining, -5.0, 5.0);
+            double traveled = scratch.travel(graph, step, selector);
+            if (scratch.blocked || Math.abs(traveled) < Math.abs(step) * 0.5)
+                return null;
+            remaining -= traveled;
+        }
+        if (scratch.edge == null)
+            return null;
+        return scratch.getPosition(graph);
     }
 
     /**

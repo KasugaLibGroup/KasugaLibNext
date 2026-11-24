@@ -26,4 +26,5 @@
 | 风格化纹理、材质变体与分代缓存 | [PBR](pbr.md) |
 | 天气密度层、光线步进与遮光 | [体积云](volumetric-clouds.md) |
 | 内容树、属性转换、工厂与注册分派 | [数据驱动注册](data-driven-registration.md) |
-| Create 车站装配、多转向架捕获、折叠、持久化与同步 | [多转向架列车车厢](create/multi-bogey-carriage.md) |
+| Create 车站装配、多转向架捕获、折叠、持久化与同步、弯道贴轨与出轨判定 | [多转向架列车车厢](create/multi-bogey-carriage.md) |
+| 姿态事件、车厢权威值、客户端追赶、持久化与渲染消费 | [车厢垂直姿态](create/carriage-posture.md) |

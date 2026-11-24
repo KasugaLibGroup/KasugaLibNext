@@ -1,3 +1,7 @@
 {
-  "kasuga_lib.configuration.enable_multi_bogey_carriage": "Multi-Bogey Carriages"
+  "kasuga_lib.configuration.enable_multi_bogey_carriage": "Multi-Bogey Carriages",
+  "kasuga_lib.configuration.enable_carriage_yoffset": "Carriage Y Offset",
+  "kasuga_lib.configuration.max_bogey_offset": "Max Curve Bogey Offset",
+  "kasuga_lib.configuration.max_carriage_y_offset": "Max Carriage Y Offset",
+  "kasuga_lib.configuration.derailed_on_bogey_offset_overflow": "Derail on Bogey Offset Overflow"
 }
