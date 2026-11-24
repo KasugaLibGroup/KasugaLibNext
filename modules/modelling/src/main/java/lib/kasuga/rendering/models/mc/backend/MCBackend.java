@@ -86,7 +86,8 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
     @Override
     public void add(Object key, MCBridge bridge, ModelInstance instance) {
         super.add(key, bridge, instance);
-        if (lib.kasuga.rendering.models.mc.dynamic.ModelParticleRuntime.module(instance) != null)
+        if (lib.kasuga.rendering.models.mc.dynamic.ModelParticleRuntime.module(instance) != null
+                || lib.kasuga.rendering.models.mc.dynamic.ModelLightRuntime.module(instance) != null)
             lib.kasuga.rendering.models.mc.dynamic.MinecraftModelRuntime.register(instance);
     }
 
@@ -114,6 +115,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
         // schedule mode → view distance → frustum. Culled instances neither
         // sample animation nor touch GPU buffers this frame.
         ModelInstance model = renderable.getModelInstance();
+        if (model.isClosed()) return;
         BackendTransform transform = renderable.beforeRender(context);
         if (!passesSchedule(model, transform, context)) return;
 
@@ -455,7 +457,8 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
                 .anyMatch(context -> context.getModelInstance() == model);
         if (!stillMounted) {
             getScheduler().detach(model);
-            if (lib.kasuga.rendering.models.mc.dynamic.ModelParticleRuntime.module(model) != null)
+            if (lib.kasuga.rendering.models.mc.dynamic.ModelParticleRuntime.module(model) != null
+                    || lib.kasuga.rendering.models.mc.dynamic.ModelLightRuntime.module(model) != null)
                 lib.kasuga.rendering.models.mc.dynamic.MinecraftModelRuntime.unregister(model);
         }
     }

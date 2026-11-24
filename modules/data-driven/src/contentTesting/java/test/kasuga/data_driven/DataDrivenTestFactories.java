@@ -32,13 +32,13 @@ public class DataDrivenTestFactories {
 
     static {
         // Block factories — each factory is responsible for creating its own BlockItem
-        FactoryRegistry.register("simple_block", (id, params) -> blockWithItem(id, SimpleTestBlock::new));
-        FactoryRegistry.register("be_block", (id, params) -> blockWithItem(id, BEBlock::new));
-        FactoryRegistry.register("occluding_block", (id, params) -> blockWithItem(id, OccludingTestBlock::new));
+        FactoryRegistry.register("simple_block", (id, params) -> blockWithItem(id, SimpleTestBlock::new), true);
+        FactoryRegistry.register("be_block", (id, params) -> blockWithItem(id, BEBlock::new), true);
+        FactoryRegistry.register("occluding_block", (id, params) -> blockWithItem(id, OccludingTestBlock::new), true);
 
         FactoryRegistry.register("stateful_test_block", (StatefulBlockFactory) (id, params, states) ->
                 blockWithItem(id, properties -> StatePropertyContext.construct(states,
-                        () -> new StatefulTestBlock(properties))));
+                        () -> new StatefulTestBlock(properties))), true);
 
         // Factory that exercises params: reads "occluding" boolean
         FactoryRegistry.register("params_block", (id, params) -> {
@@ -46,7 +46,7 @@ public class DataDrivenTestFactories {
                 return blockWithItem(id, OccludingTestBlock::new);
             }
             return blockWithItem(id, SimpleTestBlock::new);
-        });
+        }, true);
 
         // Item factories
         FactoryRegistry.registerItem("simple_item", (id, params) -> ItemReg.of(id, Item::new));

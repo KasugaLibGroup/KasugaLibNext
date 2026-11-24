@@ -487,7 +487,12 @@ public class SkeletonInstance {
 
     /** Returns a defensive copy of the high-precision world anchor. */
     public Vector3d getWorldOrigin() {
-        return new Vector3d(worldOrigin);
+        return getWorldOrigin(new Vector3d());
+    }
+
+    /** Copies the high-precision world anchor into caller-owned storage. */
+    public Vector3d getWorldOrigin(Vector3d destination) {
+        return destination.set(worldOrigin);
     }
 
     /** Exact world-space position of the skeleton root. */

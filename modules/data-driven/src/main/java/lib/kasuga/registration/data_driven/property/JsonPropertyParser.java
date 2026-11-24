@@ -25,6 +25,7 @@ public class JsonPropertyParser {
     private static final Logger LOGGER = LogUtils.getLogger();
     private final Map<String, SoundType> soundTypes;
     private final List<PropertyCompiler> compilers;
+    private final Map<String, Predicate<JsonElement>> strictExtensions;
 
     public List<Function<BlockBehaviour.Properties, BlockBehaviour.Properties>> parseBlockProperties(JsonObject json) {
         if (json == null) return List.of();
@@ -36,6 +37,106 @@ public class JsonPropertyParser {
             }
         }
         return result;
+    }
+
+    /**
+     * Validates block properties without invoking legacy modifiers or discarding failures as WARN.
+     */
+    public List<StrictPropertyIssue> validateStrict(JsonObject json) {
+        if (json == null) return List.of();
+        List<StrictPropertyIssue> issues = new ArrayList<>();
+        for (Map.Entry<String, JsonElement> entry : json.entrySet()) {
+            String key = entry.getKey();
+            JsonElement value = entry.getValue();
+            String pointer = "/" + JsonPointers.escape(key);
+            Predicate<JsonElement> extension = strictExtensions.get(key.toLowerCase(Locale.ROOT));
+            if (extension != null) {
+                if (!extension.test(value)) {
+                    issues.add(new StrictPropertyIssue(
+                            pointer,
+                            "Extended block property '" + key + "' has an invalid value"
+                    ));
+                }
+                continue;
+            }
+            validateStrictBuiltin(key, value, pointer, issues);
+        }
+        return List.copyOf(issues);
+    }
+
+    private void validateStrictBuiltin(
+            String key,
+            JsonElement value,
+            String pointer,
+            List<StrictPropertyIssue> issues
+    ) {
+        switch (key) {
+            case "no_occlusion", "no_collision", "no_collission",
+                    "requires_correct_tool", "replaceable", "dynamic_shape",
+                    "random_ticks", "no_loot_table", "ignited_by_lava", "liquid",
+                    "force_solid_on", "air", "no_terrain_particles" -> {
+                if (StrictPropertyValues.exactBoolean(value) == null) {
+                    issue(issues, pointer, "Expected a JSON boolean");
+                }
+            }
+            case "friction", "speed_factor", "jump_factor", "destroy_time",
+                    "explosion_resistance" -> {
+                if (StrictPropertyValues.finiteFloat(value) == null) {
+                    issue(issues, pointer, "Expected a finite JSON number");
+                }
+            }
+            case "strength" -> validateStrictStrength(value, pointer, issues);
+            case "map_color" -> {
+                String name = StrictPropertyValues.exactString(value);
+                if (name == null || DyeColor.byName(name, null) == null) {
+                    issue(issues, pointer, "Unknown or non-string map_color");
+                }
+            }
+            case "sound_type" -> {
+                String name = StrictPropertyValues.exactString(value);
+                if (name == null || !soundTypes.containsKey(name)) {
+                    issue(issues, pointer, "Unknown or non-string sound_type");
+                }
+            }
+            case "light_emission" -> {
+                Integer level = StrictPropertyValues.exactInt(value);
+                if (level == null || level < 0 || level > 15) {
+                    issue(issues, pointer, "light_emission must be an integer from 0 to 15");
+                }
+            }
+            default -> issue(issues, pointer, "Unknown block property '" + key + "'");
+        }
+    }
+
+    private static void validateStrictStrength(
+            JsonElement value,
+            String pointer,
+            List<StrictPropertyIssue> issues
+    ) {
+        if (value != null && value.isJsonArray()) {
+            var values = StrictPropertyValues.exactArray(value, 2);
+            if (values == null) {
+                issue(issues, pointer, "strength must contain exactly two numbers");
+                return;
+            }
+            for (int index = 0; index < values.size(); index++) {
+                if (StrictPropertyValues.finiteFloat(values.get(index)) == null) {
+                    issue(issues, pointer + "/" + index, "Expected a finite JSON number");
+                }
+            }
+            return;
+        }
+        if (StrictPropertyValues.finiteFloat(value) == null) {
+            issue(issues, pointer, "Expected a finite JSON number or a two-number array");
+        }
+    }
+
+    private static void issue(
+            List<StrictPropertyIssue> issues,
+            String pointer,
+            String message
+    ) {
+        issues.add(new StrictPropertyIssue(pointer, message));
     }
 
     private Function<BlockBehaviour.Properties, BlockBehaviour.Properties> parseBlockProperty(String key, JsonElement value) {
@@ -191,6 +292,7 @@ public class JsonPropertyParser {
     private JsonPropertyParser() {
         compilers = buildCompilers();
         soundTypes = buildSoundTypeMap();
+        strictExtensions = new HashMap<>();
     }
 
     public void registerCompiler(PropertyCompiler compiler) {
@@ -199,6 +301,13 @@ public class JsonPropertyParser {
 
     public void registerCompiler(String key, BiFunction<String, JsonElement, Function<BlockBehaviour.Properties, BlockBehaviour.Properties>> supplier) {
         addCompiler(compilers, key, supplier);
+    }
+
+    public void registerStrictCompiler(String key, Predicate<JsonElement> validator) {
+        strictExtensions.put(
+                Objects.requireNonNull(key, "key").toLowerCase(Locale.ROOT),
+                Objects.requireNonNull(validator, "validator")
+        );
     }
 
     protected void clearCompilers() {

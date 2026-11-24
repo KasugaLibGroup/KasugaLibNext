@@ -27,6 +27,11 @@ public final class WorldDisplayScene extends WorldDisplayTarget {
         return bounds==null?null:new Snapshot(bounds,parts);
     }
     @Override protected List<Panel> contentPanels() { return children.stream().flatMap(c -> c.panels().stream()).toList(); }
+    @Override protected List<Light> contentLights() {
+        List<Light> result = new ArrayList<>();
+        for (WorldDisplayTarget child : children) result.addAll(child.lights());
+        return result;
+    }
     @Override protected void closeContent() {
         RuntimeException failure=null;
         for(var c:children)try { c.close(); }catch(RuntimeException e){if(failure==null)failure=e;else failure.addSuppressed(e);}

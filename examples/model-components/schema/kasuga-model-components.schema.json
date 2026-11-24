@@ -26,6 +26,10 @@
         "$ref": "#/$defs/emitter"
       }
     },
+    "lights": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/light"}
+    },
     "diamonds": {
       "type": "array",
       "items": {
@@ -35,6 +39,88 @@
   },
   "additionalProperties": true,
   "$defs": {
+    "light": {
+      "type": "object",
+      "required": [
+        "id",
+        "position",
+        "rotation"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "bone": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "enum": [
+            "point",
+            "area",
+            "volumetric"
+          ]
+        },
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 1000,
+          "maximum": 40000
+        },
+        "two_sided": {
+          "type": "boolean"
+        },
+        "range": {
+          "type": "number",
+          "minimum": 0.001,
+          "maximum": 1000000
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0.001,
+          "maximum": 1000000
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0.001,
+          "maximum": 1000000
+        },
+        "intensity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "density": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "anisotropy": {
+          "type": "number",
+          "minimum": -0.9,
+          "maximum": 0.9
+        }
+      },
+      "additionalProperties": true
+    },
     "vec3": {
       "type": "array",
       "prefixItems": [

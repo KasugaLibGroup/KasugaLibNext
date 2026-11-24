@@ -154,6 +154,8 @@ neoForge {
             }
             systemProperty 'kasuga.createMountDemo', providers.gradleProperty('kasugaCreateMountDemo').getOrElse('false')
             systemProperty 'kasuga.testCreateMounts', providers.gradleProperty('kasugaTestCreateMounts').getOrElse('false')
+            systemProperty 'kasuga.testContraptionLod', providers.gradleProperty('kasugaTestContraptionLod').getOrElse('false')
+            systemProperty 'kasuga.testContraptionLod.voxy', providers.gradleProperty('kasugaTestContraptionLodVoxy').getOrElse('false')
             systemProperty 'kasuga.testSableScene', providers.gradleProperty('kasugaTestSableScene').getOrElse('false')
             def previewSchematic = providers.gradleProperty('kasugaPreviewSchematic')
             if (previewSchematic.isPresent()) systemProperty 'kasuga.minecraftPreview.schematic', file(previewSchematic.get()).absolutePath
@@ -218,8 +220,8 @@ dependencies {
     implementation project(":modules:utils")
 
     // modelling is mirrored into this mod layer through useModProject(), which only contributes
-    // compileOnly. A real dependency is needed so its runtime-only libraries (formula, shader, utils,
-    // twelvemonkeys) are on this run configuration's classpath.
+    // compileOnly. A real dependency is needed so its runtime-only libraries (formula, shader and utils)
+    // are on this run configuration's classpath.
     implementation project(":modules:modelling")
 
     // modelling lists these as additionalRuntimeClasspath/shadowLibrary, which are not transitive:

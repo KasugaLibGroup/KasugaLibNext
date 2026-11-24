@@ -157,4 +157,33 @@ class JsonPropertyParserTest {
         List<Function<BlockBehaviour.Properties, BlockBehaviour.Properties>> mods = parser.parseBlockProperties(new JsonObject());
         assertTrue(mods.isEmpty());
     }
+
+    @Test
+    void strictValidationRejectsUnknownAndMalformedValuesWithPointers() {
+        JsonObject json = new JsonObject();
+        json.addProperty("unknown_property", true);
+        json.addProperty("light_emission", 16);
+        JsonArray strength = new JsonArray();
+        strength.add(1);
+        json.add("strength", strength);
+
+        var issues = parser.validateStrict(json);
+
+        assertEquals(3, issues.size());
+        assertTrue(issues.stream().anyMatch(issue ->
+                issue.relativeJsonPointer().equals("/unknown_property")));
+        assertTrue(issues.stream().anyMatch(issue ->
+                issue.relativeJsonPointer().equals("/light_emission")));
+        assertTrue(issues.stream().anyMatch(issue ->
+                issue.relativeJsonPointer().equals("/strength")));
+    }
+
+    @Test
+    void strictValidationTreatsFalseSwitchesAsValidNoOps() {
+        JsonObject json = new JsonObject();
+        json.addProperty("no_occlusion", false);
+        json.addProperty("replaceable", false);
+
+        assertTrue(parser.validateStrict(json).isEmpty());
+    }
 }

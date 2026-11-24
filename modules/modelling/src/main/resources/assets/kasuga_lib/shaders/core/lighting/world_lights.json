@@ -1,0 +1,10 @@
+{
+  "vertex": "kasuga_lib:lighting/world_lights",
+  "fragment": "kasuga_lib:lighting/world_lights",
+  "samplers": [{"name": "SceneSampler"}, {"name": "DepthSampler"}],
+  "uniforms": [
+    {"name": "InverseViewProjection", "type": "matrix4x4", "count": 16,
+      "values": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]},
+    {"name": "LightCount", "type": "int", "count": 1, "values": [0]}
+  ]
+}

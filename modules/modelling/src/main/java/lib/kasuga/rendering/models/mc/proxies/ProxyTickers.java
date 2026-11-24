@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.mc.proxies;
 
 import com.mojang.logging.LogUtils;
+import lib.kasuga.rendering.models.mc.dynamic.ClientBlockModelLifetime;
 import lib.kasuga.rendering.models.uml.dynamic.proxy.ProxyAttachToken;
 import lib.kasuga.rendering.models.uml.dynamic.proxy.ProxySession;
 import net.minecraft.server.level.ServerLevel;
@@ -110,7 +111,10 @@ public final class ProxyTickers {
             T blockEntity,
             ProxySessionHost host
     ) {
-        tickHost(type, blockEntity, host, level.getGameTime(), 1.0 / 20.0);
+        if (level.isClientSide() && !ClientBlockModelLifetime.isLoadedHost(blockEntity, level)) return;
+        if (tickHost(type, blockEntity, host, level.getGameTime(), 1.0 / 20.0) && level.isClientSide()) {
+            ClientBlockModelLifetime.watch(blockEntity, level, ignored -> host.closeProxySession());
+        }
     }
 
     static <T> boolean tickHost(

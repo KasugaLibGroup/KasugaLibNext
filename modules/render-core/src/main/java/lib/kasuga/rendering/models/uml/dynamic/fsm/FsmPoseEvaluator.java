@@ -11,6 +11,7 @@ import lib.kasuga.rendering.models.uml.dynamic.animation.scope.RuntimeController
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.ScopeAdvanceCause;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.TargetEvaluationContext;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.TargetOutputEvaluator;
+import lib.kasuga.rendering.models.uml.math.Transform;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
@@ -71,6 +72,17 @@ public final class FsmPoseEvaluator {
         return variables;
     }
 
+    /** Evaluates one transactional game tick for a caller that consumes the pose on this thread. */
+    public void advanceTick(float deltaSeconds) {
+        ControllerCheckpoint checkpoint = checkpoint();
+        try {
+            advance(deltaSeconds);
+        } catch (RuntimeException failure) {
+            checkpoint.rollback();
+            throw failure;
+        }
+    }
+
     private PoseOutput evaluateTarget(TargetEvaluationContext context) {
         return output;
     }
@@ -81,42 +93,42 @@ public final class FsmPoseEvaluator {
         }
         machine.tick(deltaSeconds);
 
-        Map<String, Float> nextVariables = new HashMap<>();
-        varProvider.provide(machine, deltaSeconds, nextVariables);
-        variables = Map.copyOf(nextVariables);
-        for (Map.Entry<String, Float> entry : variables.entrySet()) {
-            namespace.assign("query." + entry.getKey(), entry.getValue());
+        if (varProvider != NoopVarProvider.INSTANCE) {
+            Map<String, Float> nextVariables = new HashMap<>();
+            varProvider.provide(machine, deltaSeconds, nextVariables);
+            variables = Map.copyOf(nextVariables);
+            for (Map.Entry<String, Float> entry : variables.entrySet()) {
+                namespace.assign("query." + entry.getKey(), entry.getValue());
+            }
         }
 
-        PoseTarget snapshot = FsmPoseComposer.snapshot(machine);
-        FsmPoseComposer.compose(blender, snapshot, 1f, namespace);
-        output = new PoseOutput(
-                resolve(blender),
-                crossesClipLoopBoundary(snapshot) ? Continuity.SNAP : null);
+        boolean wrapped = FsmPoseComposer.composeTick(blender, machine, namespace);
+        output = new PoseOutput(resolve(blender), wrapped ? Continuity.SNAP : null);
+    }
+
+    private ControllerCheckpoint checkpoint() {
+        StateMachineCheckpoint machineCheckpoint = machine.checkpoint();
+        PoseOutput previousOutput = output;
+        Map<String, Float> previousVariables = variables;
+        Map<String, Float> previousNamespace = namespaceValues();
+        return new ControllerCheckpoint() {
+            @Override
+            public void rollback() {
+                machine.restore(machineCheckpoint);
+                output = previousOutput;
+                variables = previousVariables;
+                namespace.INSTANT_VARS.forEach((codec, ignored) -> {
+                    if (codec.startsWith("query.")) namespace.assign(codec, 0f);
+                });
+                previousNamespace.forEach(namespace::assign);
+            }
+        };
     }
 
     private final class Controller implements RuntimeController<Void> {
-
         @Override
         public ControllerCheckpoint beginStep() {
-            StateMachineCheckpoint machineCheckpoint = machine.checkpoint();
-            PoseOutput previousOutput = output;
-            Map<String, Float> previousVariables = variables;
-            Map<String, Float> previousNamespace = namespaceValues();
-            return new ControllerCheckpoint() {
-                @Override
-                public void rollback() {
-                    machine.restore(machineCheckpoint);
-                    output = previousOutput;
-                    variables = previousVariables;
-                    namespace.INSTANT_VARS.forEach((codec, ignored) -> {
-                        if (codec.startsWith("query.")) {
-                            namespace.assign(codec, 0f);
-                        }
-                    });
-                    previousNamespace.forEach(namespace::assign);
-                }
-            };
+            return checkpoint();
         }
 
         @Override
@@ -129,6 +141,7 @@ public final class FsmPoseEvaluator {
     }
 
     private Map<String, Float> namespaceValues() {
+        if (namespace.INSTANT_VARS.isEmpty()) return Map.of();
         Map<String, Float> values = new HashMap<>();
         namespace.INSTANT_VARS.forEach((codec, assignable) -> {
             if (codec.startsWith("query.")) {
@@ -155,9 +168,9 @@ public final class FsmPoseEvaluator {
                 return;
             }
             if (value.base != null) {
-                lib.kasuga.rendering.models.uml.math.Transform transform = value.base.copy();
+                Transform transform = value.base;
                 if (value.additive != null) {
-                    transform.mul(value.additive);
+                    transform = transform.copy().mul(value.additive);
                 }
                 result.bone(name, transform, value.mode);
             } else if (value.additive != null) {
@@ -168,23 +181,6 @@ public final class FsmPoseEvaluator {
         blender.frames().forEach((id, value) -> result.frame(id, value.frame()));
         blender.ikEnabled().forEach((name, value) -> result.ikEnabled(name, value.enabled()));
         return result.build();
-    }
-
-    private static boolean crossesClipLoopBoundary(PoseTarget snapshot) {
-        for (PoseTarget.LayerTarget layer : snapshot.layers()) {
-            PoseTarget.ClipTarget clip = layer.clip();
-            if (clip == null || !clip.loop()) {
-                continue;
-            }
-            float duration = clip.duration();
-            if (Float.isFinite(duration) && duration > 0f
-                    && clip.time() > clip.prevTime()
-                    && Math.floor(clip.prevTime() / duration)
-                    < Math.floor(clip.time() / duration)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private enum NoopVarProvider implements VarProvider {

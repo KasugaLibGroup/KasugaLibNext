@@ -51,13 +51,13 @@ public class BackendInstance implements AutoCloseable {
 
     void renderInFrame(Object token) { renderFrameToken = token; }
 
-    private void updateData(FlatModelData data) {
+    private void updateData(FlatModelData data, boolean updatePackedLighting) {
         if (renderFrameToken == null) {
             if (model.checkForUpdate()) model.update();
         } else {
             model.prepareRenderFrame(renderFrameToken);
         }
-        data.updateModel(false);
+        data.updateModel(false, updatePackedLighting);
         if (tbo != null) tbo.updateForVersion();
     }
 
@@ -139,10 +139,10 @@ public class BackendInstance implements AutoCloseable {
         }
     }
 
-    boolean prepareForGlobalBatch(ModelRenderPass pass) {
+    boolean prepareForGlobalBatch(ModelRenderPass pass, boolean updatePackedLighting) {
         RenderPart part = parts.get(pass);
         if (part == null) return false;
-        updateData(part.data);
+        updateData(part.data, updatePackedLighting);
         part.lastUsedBuffer = null;
         return true;
     }
@@ -184,7 +184,7 @@ public class BackendInstance implements AutoCloseable {
         GLContext context = part.getContext();
         IVertexBuffer buffer = part.getBuffer();
         if (context == null || buffer == null) return false;
-        updateData(part.data);
+        updateData(part.data, true);
         buffer.updateGpuBuffer(part.data.getDirtyVertices(), part.lastUsedBuffer != buffer);
         part.lastUsedBuffer = buffer;
         part.data.getDirtyVertices().clear();

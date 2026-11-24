@@ -16,7 +16,7 @@ public final class CreateConfig implements Configurable {
 
     private static final Lazy<CreateConfig> INSTANCE = Lazy.of(() -> KasugaLib.getBean(CreateConfig.class));
 
-    private ModConfigSpec.BooleanValue multiBogeyCarriage, carriageYOffset, derailedOnBogeyOffsetOverflow;
+    private ModConfigSpec.BooleanValue contraptionLod, multiBogeyCarriage, carriageYOffset, derailedOnBogeyOffsetOverflow;
 
     private ModConfigSpec.DoubleValue maxBogeyOffset, maxCarriageYOffset;
 
@@ -39,6 +39,10 @@ public final class CreateConfig implements Configurable {
 
     public static boolean derailedOnBogeyOffsetEnabled() {
         return INSTANCE.get().derailedOnBogeyOffsetOverflow.getAsBoolean();
+    }
+
+    public static boolean isContraptionLodEnabled() {
+        return INSTANCE.get().contraptionLod.getAsBoolean();
     }
 
     @Override
@@ -68,5 +72,7 @@ public final class CreateConfig implements Configurable {
                 .comment("If the train will be derailed while bogeys reach their max offsets.")
                 .translation("kasuga_lib.configuration.derailed_on_bogey_offset_overflow")
                 .define("derailed_on_bogey_offset_overflow", KasugaLibCreateApi::getDerailedOnBogeyOffsetDefault);
+        contraptionLod = builder.comment("Send distant render meshes for active Create contraptions.")
+                .define("enable_contraption_lod", true);
     }
 }

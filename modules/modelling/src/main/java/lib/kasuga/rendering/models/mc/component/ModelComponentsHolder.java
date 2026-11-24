@@ -9,5 +9,7 @@ public interface ModelComponentsHolder extends lib.kasuga.rendering.models.uml.s
         var definition = components();
         if (definition != null && !definition.emitters().isEmpty())
             lib.kasuga.rendering.models.mc.dynamic.ModelParticleRuntime.install(instance, definition);
+        if (definition != null && !definition.lights().isEmpty())
+            lib.kasuga.rendering.models.mc.dynamic.ModelLightRuntime.install(instance, definition);
     }
 }

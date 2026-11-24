@@ -22,6 +22,7 @@ import lib.kasuga.rendering.models.uml.structure.material.SpriteSet;
 import lib.kasuga.rendering.models.uml.structure.skeleton.Bone;
 import lib.kasuga.rendering.models.uml.util.MeshMode;
 import lib.kasuga.structure.Pair;
+import lombok.AccessLevel;
 import lombok.Getter;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.texture.OverlayTexture;
@@ -133,7 +134,8 @@ public class FlatModelData implements AutoCloseable {
     private int overlay = OverlayTexture.NO_OVERLAY,
                 lightmap = LightTexture.FULL_BLOCK;
 
-    private boolean needToUpdateAll = false;
+    private boolean packedLightingDirty;
+    private boolean alphaDirty;
     private boolean closed;
 
     private final BiConsumer<Sprite, Vector4f> materialColorBlender;  // fixed
@@ -143,6 +145,10 @@ public class FlatModelData implements AutoCloseable {
     private long morphVersion, materialVersion, materialMorphVersion;
     @Getter
     private long contentVersion;
+    /** Equal tokens denote equal vertex payloads for the global batch shader. */
+    @Getter(AccessLevel.PACKAGE)
+    private Object batchGeometry = new Object();
+    private Object differentBatchGeometry;
     @Getter
     private long skinningSourceVersion;
     private final BitSet changedModelVertices = new BitSet();
@@ -293,7 +299,8 @@ public class FlatModelData implements AutoCloseable {
         this.weightCounts = new int[vertexCount];
         this.dirtyWeights = new BitSet(vertexCount);
         this.allMorphedWeights = new BitSet(vertexCount);
-        this.buffer = MemoryUtil.memAlloc(vertexCount * vertexSize);
+        // Optional attributes such as SDEF for BDEF vertices are left unwritten.
+        this.buffer = MemoryUtil.memCalloc(vertexCount * vertexSize);
         buffer.order(ByteOrder.nativeOrder());
 
         Vector3f posOffset = new Vector3f();
@@ -407,6 +414,10 @@ public class FlatModelData implements AutoCloseable {
     }
 
     boolean updateModel(boolean evaluateModel) {
+        return updateModel(evaluateModel, true);
+    }
+
+    boolean updateModel(boolean evaluateModel, boolean updatePackedLighting) {
         boolean modelUpdated = evaluateModel && model.checkForUpdate();
         if (modelUpdated) model.update();
         updateMorphedMaterials();
@@ -443,7 +454,7 @@ public class FlatModelData implements AutoCloseable {
             markMaterialDirty(materials[i], dirtyVertices);
         }
         dirtyMaterials.clear();
-        updateBOL();
+        updateBOL(updatePackedLighting);
         boolean contentChanged = !dirtyVertices.isEmpty();
         if (contentChanged) {
             ArrayList<BoneContext> contexts = new ArrayList<>();
@@ -452,7 +463,7 @@ public class FlatModelData implements AutoCloseable {
             for (int i = dirtyVertices.nextSetBit(0); i >= 0; i = dirtyVertices.nextSetBit(i + 1)) {
                 fillVertexData(i, uv, contexts, p, p2, n, n2, t, t2, true);
             }
-            contentVersion++;
+            advanceContentVersion();
         }
         return modelUpdated || contentChanged;
     }
@@ -463,16 +474,59 @@ public class FlatModelData implements AutoCloseable {
      * L: Light
      */
     public void updateBOL() {
-        if (!this.needToUpdateAll) return;
+        updateBOL(true);
+    }
+
+    private void updateBOL(boolean updatePackedLighting) {
+        if (!alphaDirty && !(updatePackedLighting && packedLightingDirty)) return;
         int bufOrg = 0;
         for (int i = 0; i < vertexCount; i++) {
-            fillLightAndOverlayToBuffer(bufOrg);
+            if (updatePackedLighting) fillLightAndOverlayToBuffer(bufOrg);
             fillColorToBuffer(i, bufOrg);
             dirtyColors.clear(i);
             dirtyVertices.set(i);
             bufOrg += vertexSize;
         }
-        this.needToUpdateAll = false;
+        alphaDirty = false;
+        if (updatePackedLighting) packedLightingDirty = false;
+    }
+
+    private void advanceContentVersion() {
+        contentVersion++;
+        batchGeometry = new Object();
+        differentBatchGeometry = null;
+    }
+
+    /** Called for the UML format, where UV1 and UV2 are consecutive packed shorts. */
+    boolean shareBatchGeometry(FlatModelData reference) {
+        if (batchGeometry == reference.batchGeometry) return true;
+        if (differentBatchGeometry == reference.batchGeometry) return false;
+        if (vertexCount != reference.vertexCount || vertexSize != reference.vertexSize) return false;
+
+        ByteBuffer vertices = buffer.duplicate().clear();
+        ByteBuffer otherVertices = reference.buffer.duplicate().clear();
+        if (!matchesBatchVertices(vertices, otherVertices)) {
+            differentBatchGeometry = reference.batchGeometry;
+            return false;
+        }
+        batchGeometry = reference.batchGeometry;
+        return true;
+    }
+
+    private boolean matchesBatchVertices(ByteBuffer vertices, ByteBuffer reference) {
+        if (vertices.mismatch(reference) < 0) return true;
+        // The shader fetches lighting and overlay from each instance's texture record.
+        // These attributes can differ after either instance has taken the direct draw path.
+        int lightingEnd = lightmapOffset + Integer.BYTES;
+        for (int offset = 0; offset < vertices.capacity(); offset += vertexSize) {
+            vertices.limit(offset + overlayOffset).position(offset);
+            reference.limit(offset + overlayOffset).position(offset);
+            if (vertices.mismatch(reference) >= 0) return false;
+            vertices.limit(offset + vertexSize).position(offset + lightingEnd);
+            reference.limit(offset + vertexSize).position(offset + lightingEnd);
+            if (vertices.mismatch(reference) >= 0) return false;
+        }
+        return true;
     }
 
     public void updateMorphedMaterials() {
@@ -588,21 +642,21 @@ public class FlatModelData implements AutoCloseable {
     public void setReadAlpha(boolean readAlpha) {
         if (this.readAlpha != readAlpha) {
             this.readAlpha = readAlpha;
-            this.needToUpdateAll = true;
+            this.alphaDirty = true;
         }
     }
 
     public void setOverlay(int packedOverlay) {
         if (packedOverlay != this.overlay) {
             this.overlay = packedOverlay;
-            this.needToUpdateAll = true;
+            this.packedLightingDirty = true;
         }
     }
 
     public void setLight(int packedLight) {
         if (packedLight != this.lightmap) {
             this.lightmap = packedLight;
-            this.needToUpdateAll = true;
+            this.packedLightingDirty = true;
         }
     }
 
@@ -685,6 +739,7 @@ public class FlatModelData implements AutoCloseable {
                     tangentCache, tangentCache2,
                     updateTangent);
         }
+        advanceContentVersion();
     }
 
     public void fillVertexData(int vertex, Vector2f v2fCache, ArrayList<BoneContext> cacheList,

@@ -37,7 +37,14 @@ public final class MappedPackResources implements PackResources {
                 if (entries.containsKey(path)) throw new IllegalArgumentException("ROUTING_CONFLICT: duplicate projected path: " + path);
                 entries.put(path, new Entry(route.file(), route.file().lease()));
             }
-        } catch (RuntimeException failure) { close(); throw failure; }
+        } catch (RuntimeException failure) {
+            try {
+                close();
+            } catch (RuntimeException cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            throw failure;
+        }
     }
     public static void validateMinecraftPath(String path) {
         ResourcePaths.path(path, false);

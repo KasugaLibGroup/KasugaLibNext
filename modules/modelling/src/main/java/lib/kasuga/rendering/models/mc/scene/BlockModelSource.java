@@ -44,8 +44,17 @@ public class BlockModelSource extends LayeredModelSource {
         this(host, infos, BlockPos.ZERO);
     }
 
+    /** Geometry-only sources skip private block entities and their renderers. */
+    public BlockModelSource(Level host, List<StructureBlockInfo> infos, boolean includeBlockEntities) {
+        this(host, infos, BlockPos.ZERO, includeBlockEntities);
+    }
+
     /** Keeps world-based block-entity references intact while rendering geometry close to zero. */
     public BlockModelSource(Level host, List<StructureBlockInfo> infos, BlockPos origin) {
+        this(host, infos, origin, true);
+    }
+
+    private BlockModelSource(Level host, List<StructureBlockInfo> infos, BlockPos origin, boolean includeBlockEntities) {
         this.origin = origin.immutable();
         if (infos.size() > MinecraftModelSources.MAX_BLOCKS) throw new IllegalArgumentException("Too many structure blocks");
         var states = new LinkedHashMap<BlockPos, BlockState>();
@@ -61,6 +70,7 @@ public class BlockModelSource extends LayeredModelSource {
         validateSpan(elements);
         dimensions = BlockDimensions.fromBlocks(blocks.keySet());
         level = new PreviewLevel(host, blocks);
+        if (!includeBlockEntities) return;
         try {
             for (var info : infos) if (blocks.containsKey(info.pos()) && info.state().getBlock() instanceof EntityBlock factory) {
                 BlockEntity entity = factory.newBlockEntity(info.pos(), info.state());
