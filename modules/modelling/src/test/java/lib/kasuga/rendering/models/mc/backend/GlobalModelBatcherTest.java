@@ -2,6 +2,7 @@ package lib.kasuga.rendering.models.mc.backend;
 
 import com.mojang.blaze3d.vertex.VertexFormat;
 import lib.kasuga.rendering.models.uml.backend.DepthBias;
+import lib.kasuga.rendering.models.uml.backend.ModelLightingMode;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -11,6 +12,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GlobalModelBatcherTest {
+    @Test
+    void separatesLightingPoliciesAndDimensionShadesInNativeBatches() {
+        var pbr = new GlobalModelBatcher.BatchKey(ModelRenderPass.OPAQUE, VertexFormat.Mode.QUADS,
+                0, 0, DepthBias.NONE, ModelLighting.PBR);
+        var block = new GlobalModelBatcher.BatchKey(ModelRenderPass.OPAQUE, VertexFormat.Mode.QUADS,
+                0, 0, DepthBias.NONE, ModelLighting.world(ModelLightingMode.BLOCK, null));
+        var constantAmbient = new GlobalModelBatcher.BatchKey(ModelRenderPass.OPAQUE, VertexFormat.Mode.QUADS,
+                0, 0, DepthBias.NONE, new ModelLighting(ModelLightingMode.BLOCK, false, .9f, .9f, .8f, .6f));
+        assertNotEquals(pbr, block);
+        assertNotEquals(block, constantAmbient);
+        assertEquals(block, new GlobalModelBatcher.BatchKey(ModelRenderPass.OPAQUE, VertexFormat.Mode.QUADS,
+                0, 0, DepthBias.NONE, ModelLighting.world(ModelLightingMode.BLOCK, null)));
+    }
+
 
     @Test
     void limitsAChunkByInstanceTextureCapacity() {

@@ -105,6 +105,18 @@ public final class ProxyTickers {
         };
     }
 
+    /**
+     * Client adapters for borrowed virtual block entities use the same registration and deduplicated
+     * game-tick path as ordinary world BEs. Calling this from a render frame is not supported.
+     */
+    public static boolean tickClientBlockEntity(BlockEntity blockEntity) {
+        Level level = blockEntity.getLevel();
+        if (level == null || !level.isClientSide || !(blockEntity instanceof ProxySessionHost host)) {
+            return false;
+        }
+        return tickHost(blockEntity.getType(), blockEntity, host, level.getGameTime(), 1.0 / 20.0);
+    }
+
     private static <T extends BlockEntity> void tickKernel(
             Level level,
             BlockEntityType<T> type,

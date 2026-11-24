@@ -14,14 +14,18 @@
 | 方法 | 签名 | 说明 |
 | --- | --- | --- |
 | `register` | `static void register(Item item, ResourceLocation model, @Nullable String modelName)` | 绑定物品与模型。`modelName` 仅 MMD 使用，其余传 `null`。后写覆盖先写。 |
+| `register` | `static void register(Item item, ResourceLocation model, @Nullable String modelName, float guiScale)` | 同上，并调整 `GUI` 上下文中的显示尺寸；倍率乘在标准 `0.625` 上，必须为有限正数。 |
 | `binding` | `static @Nullable Binding binding(Item item)` | 查绑定；未注册返回 `null`。 |
 | `items` | `static Set<Item> items()` | 当前已注册的物品（诊断用，只读）。 |
 | `clientExtensions` | `static IClientItemExtensions clientExtensions()` | 交给 `RegisterClientExtensionsEvent#registerItem` 的共享扩展。 |
 | `renderer` | `static ItemModelRenderer renderer()` | 共享 BEWLR；首次调用时创建。 |
 
 ```java
-public record Binding(ResourceLocation model, @Nullable String modelName) {}
+public record Binding(ResourceLocation model, @Nullable String modelName, float guiScale) {}
 ```
+
+只传模型和 `modelName` 的构造器保留兼容，`guiScale` 默认为 `1.0`。缩放仅影响创建栏、GUI 等
+`ItemDisplayContext.GUI` 绘制，不改变手持、地面和方块世界内模型。
 
 ## ItemModelRenderer
 

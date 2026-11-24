@@ -7,6 +7,7 @@ import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.mc.api.McModelAssemblies;
+import lib.kasuga.rendering.models.mc.api.ModelLightingDefaults;
 import lib.kasuga.client.loading.LoadingIndicator;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
@@ -72,7 +73,7 @@ public final class KasugaModelPipelines {
             // Instance survived but was detached (external stopRendering): re-mount, no rebuild needed.
             if (!pipeline.isRendering(loc, instanceLoc, BACKEND)) {
                 pipeline.addToRenderer(loc, instanceLoc, BRIDGE, BACKEND);
-                LOGGER.info("[KasugaModelPipelines] re-added '{}' instance '{}' to mc_backend", loc, instanceLoc);
+                LOGGER.debug("[KasugaModelPipelines] re-added '{}' instance '{}' to mc_backend", loc, instanceLoc);
             }
             return existing;
         }
@@ -85,8 +86,9 @@ public final class KasugaModelPipelines {
             }
             return null; // model not published yet (resource loading); retry lazily
         }
+        instance.setLightingMode(ModelLightingDefaults.resolve(modelLoc));
         pipeline.addToRenderer(loc, instanceLoc, BRIDGE, BACKEND);
-        LOGGER.info("[KasugaModelPipelines] bound '{}' instance '{}' to mc_backend", loc, instanceLoc);
+        LOGGER.debug("[KasugaModelPipelines] bound '{}' instance '{}' to mc_backend", loc, instanceLoc);
         return instance;
     }
 
@@ -112,7 +114,7 @@ public final class KasugaModelPipelines {
         }
         boolean removed = pipeline.stopRendering(loc, instanceLoc, BACKEND);
         if (removed) {
-            LOGGER.info("[KasugaModelPipelines] unbound '{}' instance '{}' from mc_backend", loc, instanceLoc);
+            LOGGER.debug("[KasugaModelPipelines] unbound '{}' instance '{}' from mc_backend", loc, instanceLoc);
         }
         return removed;
     }
@@ -134,7 +136,7 @@ public final class KasugaModelPipelines {
         }
         boolean removed = pipeline.removeInstance(loc, instanceLoc);
         if (removed) {
-            LOGGER.info("[KasugaModelPipelines] removed '{}' instance '{}'", loc, instanceLoc);
+            LOGGER.debug("[KasugaModelPipelines] removed '{}' instance '{}'", loc, instanceLoc);
         }
         return removed;
     }

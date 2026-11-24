@@ -77,8 +77,50 @@ public final class PlaybackRegistry {
                 state.withBinding(state.binding().withBoundaryPolicy(boundaryPolicy)));
     }
 
+    /** Restarts the placement window at {@code rootTime} while sampling from {@code sourceTime}. */
+    public void seek(PlaybackInstanceId id, double rootTime, double sourceTime) {
+        if (!Double.isFinite(rootTime)) {
+            throw new IllegalArgumentException("rootTime must be finite");
+        }
+        if (!Double.isFinite(sourceTime) || sourceTime < 0.0) {
+            throw new IllegalArgumentException("sourceTime must be finite and non-negative");
+        }
+        update(id, state -> state.withBinding(
+                state.binding()
+                        .withPlacementStart(rootTime)
+                        .withSourceStart(sourceTime)));
+    }
+
+    public void replace(
+            PlaybackInstanceId id,
+            String definitionId,
+            PlaybackBinding binding
+    ) {
+        Objects.requireNonNull(definitionId, "definitionId");
+        Objects.requireNonNull(binding, "binding");
+        update(id, state -> state.withDefinitionId(definitionId).withBinding(binding));
+    }
+
     public void replace(PlaybackInstanceId id, String definitionId) {
-        update(id, state -> state.withDefinitionId(definitionId));
+        PlaybackInstanceState current = state(id);
+        replace(id, definitionId, current.binding());
+    }
+
+    public void restore(PlaybackRegistrySnapshot snapshot) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        Map<PlaybackInstanceId, PlaybackInstanceState> restored = new LinkedHashMap<>();
+        long maximum = 0L;
+        for (PlaybackInstanceState state : snapshot.instances()) {
+            requireScope(state.id());
+            restored.put(state.id(), state);
+            maximum = Math.max(maximum, state.id().sequence());
+        }
+        if (maximum == Long.MAX_VALUE) {
+            throw new IllegalStateException("playback instance sequence exhausted");
+        }
+        instances.clear();
+        instances.putAll(restored);
+        nextSequence = maximum + 1L;
     }
 
     public PlaybackInstanceState state(PlaybackInstanceId id) {

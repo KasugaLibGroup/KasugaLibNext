@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,6 +36,69 @@ class RigidPartVisualStageTest {
             ResourceLocation.fromNamespaceAndPath("test", "rigid_part");
     private static final ResourceLocation BASE =
             ResourceLocation.fromNamespaceAndPath("test", "proxy_instance");
+
+    @Test
+    void stablePartIdsDefineTheTargetAddresses() {
+        CompiledModelGroup group = new CompiledModelGroup(
+                "test",
+                0f,
+                List.of(
+                        new CompiledModelPart("frame", MODEL, null, new Transform()),
+                        new CompiledModelPart("wheel", MODEL, null, new Transform())
+                )
+        );
+        RigidPartVisualStage stage = new RigidPartVisualStage(
+                BASE,
+                group,
+                () -> null,
+                new Transform()
+        );
+
+        assertEquals("frame", stage.targetBindings().get(0).ref().address());
+        assertEquals("wheel", stage.targetBindings().get(1).ref().address());
+        stage.close();
+    }
+
+    @Test
+    void replacingACompatibleGroupPreservesTargetsAndSwapsInstances() {
+        List<ModelInstance> instances = new ArrayList<>();
+        CompiledModelGroup originalGroup = new CompiledModelGroup(
+                "left",
+                0f,
+                List.of(new CompiledModelPart("body", MODEL, null, new Transform()))
+        );
+        CompiledModelGroup replacementGroup = new CompiledModelGroup(
+                "right",
+                0f,
+                List.of(new CompiledModelPart(
+                        "body", MODEL, null, new Transform().translate(1f, 0f, 0f)))
+        );
+        RigidPartVisualStage stage = new RigidPartVisualStage(
+                BASE,
+                originalGroup,
+                () -> null,
+                new Transform(),
+                (spec, instanceLoc) -> {
+                    ModelInstance instance = ModelInstanceFixture.minimal();
+                    instances.add(instance);
+                    return McModelHandleTestSupport.custom(spec.model(), instanceLoc, instance);
+                });
+        stage.maintainVisuals();
+        var originalRef = stage.targetBindings().getFirst().ref();
+        ModelInstance original = stage.primaryInstance();
+
+        boolean replaced = stage.replaceGroup(
+                replacementGroup,
+                new Transform().translate(2f, 0f, 0f)
+        );
+
+        assertTrue(replaced);
+        assertEquals(originalRef, stage.targetBindings().getFirst().ref());
+        assertNotSame(original, stage.primaryInstance());
+        assertSame(instances.get(1), stage.primaryInstance());
+        assertEquals(2, instances.size());
+        stage.close();
+    }
 
     @Test
     void sessionOwnedTargetsComposeRootLocalAndBothMotionDomainsWithoutAFrameRevision() {

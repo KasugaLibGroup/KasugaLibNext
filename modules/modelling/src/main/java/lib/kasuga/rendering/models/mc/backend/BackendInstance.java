@@ -26,6 +26,7 @@ import org.joml.Matrix4f;
 
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 
 /** GPU resources for one model, split into independently stateful alpha passes. */
@@ -48,6 +49,16 @@ public class BackendInstance implements AutoCloseable {
     private final BoneTransformTBO tbo;
     private final Matrix4f matrixCache = new Matrix4f();
     private Object renderFrameToken;
+    @Nullable
+    private ModelLighting lighting;
+
+    void setLighting(ModelLighting lighting) {
+        this.lighting = Objects.requireNonNull(lighting, "lighting");
+    }
+
+    ModelLighting lighting() {
+        return lighting != null ? lighting : ModelLighting.world(model.getLightingMode(), null);
+    }
 
     void renderInFrame(Object token) { renderFrameToken = token; }
 
@@ -281,6 +292,7 @@ public class BackendInstance implements AutoCloseable {
         kasugaShader.setCurrentPose(pose);
         kasugaShader.setEmissiveStrength(emissiveStrength);
         kasugaShader.setAmbientLightEnhancement(ambientLightEnhancement);
+        kasugaShader.setLighting(lighting());
         kasugaShader.setLightData(data.getLightmap(), data.getOverlay());
         kasugaShader.setAlphaMode(pass.shaderAlphaMode());
         kasugaShader.setOitMode(oitMode);

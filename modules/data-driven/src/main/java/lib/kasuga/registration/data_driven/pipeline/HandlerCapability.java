@@ -17,5 +17,10 @@ public enum HandlerCapability {
     /**
      * Definitions occupy Minecraft registry keys and must report every claim before apply.
      */
-    REGISTRY_CLAIMS
+    REGISTRY_CLAIMS,
+
+    /**
+     * All definitions sharing an identity remain selected so handlers can merge or overlay them.
+     */
+    OVERLAY
 }

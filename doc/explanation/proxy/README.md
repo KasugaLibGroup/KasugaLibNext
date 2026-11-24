@@ -109,6 +109,11 @@ Element 是 Proxy 所代表的实际宿主对象，例如 `FanBlockEntity`、Cre
 `BlockEntityProxyDefinitions` 进一步把 `BlockEntityType` 映射到 Definition，让通用
 `ProxyTickers` 在宿主第一次 tick 时找到正确模板。
 
+`proxy_model` / `proxy_model_be` 是这层适配器提供的通用数据驱动入口：单个 `model` 是单 part
+语法糖，`model_groups` 在注册期编译为 `CompiledModelGroup`，`model_by_state` 只选择该不可变
+编译结果，不定义业务交互。组的 part ID 在状态切换和资源重绑之间保持稳定，所有 part 仍注册到
+该元素唯一的 Session Scope。
+
 ### Composition
 
 `ProxyComposition<T, I, O, C, F>` 描述一台设备不可拆分的运行时组成：
@@ -118,7 +123,8 @@ Element 是 Proxy 所代表的实际宿主对象，例如 `FanBlockEntity`、Cre
 - `C`：宿主命令；
 - `F`：render frame 输入；
 - 对应输入、控制器、writeback、命令和视觉五个 Port；
-- Scope 使用的 `LogicalStepPolicy` 和一组成员 `TargetBinding`。
+- Scope 使用的 `LogicalStepPolicy`、初始 `ProxyPlaybackRoot`、命令应用器工厂和一组成员
+  `TargetBinding`。
 
 把这些部分放在同一个值对象中，可以防止 Session 把 A 设备的机器和 B 设备的视觉资源错误
 组合。Composition 仍然是实例级对象，不能承载跨元素共享状态。
@@ -154,6 +160,7 @@ Port 在这里是“职责接口”，不是网络端口，也不是必须跨线
 | `ProxyWritebackPort<T, O>` | 提交后的输出 | 宿主状态 | 只在 Scope 成功后写入，可提供回滚 checkpoint |
 | `ProxyCommandPort<T, C>` | 排队命令 | Controller/机器状态 | 在下一个逻辑步开始前应用 |
 | `ProxyVisualPort<T, F>` | Scope render port 与帧输入 | 模型、资源、可见性 | 不推进逻辑时间，不创建第二个 Scope |
+| `PlaybackCommandApplierFactory` | Scope 的 `PlaybackControlPort` | 可提交的播放命令应用器 | 只在逻辑步内修改播放图，失败时整批回滚 |
 
 Port 的价值不是“类型更多”，而是把错误依赖挡在边界外。例如 Visual 不能拿到完整 Scope，
 Target 不能拿到 StateMachine；这样测试可以用 fake Port 替换真实 Minecraft 或图形后端。

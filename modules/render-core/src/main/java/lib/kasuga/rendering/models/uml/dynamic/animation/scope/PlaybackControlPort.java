@@ -22,9 +22,29 @@ public interface PlaybackControlPort {
 
     void setBoundaryPolicy(PlaybackInstanceId id, PlaybackBoundaryPolicy policy);
 
+    default void seek(PlaybackInstanceId id, double sourceTime) {
+        throw new UnsupportedOperationException("seek is not supported by this playback port");
+    }
+
     void replace(PlaybackInstanceId id, String definitionId);
+
+    default void replace(
+            PlaybackInstanceId id,
+            String definitionId,
+            PlaybackBinding binding
+    ) {
+        replace(id, definitionId);
+    }
 
     PlaybackInstanceState state(PlaybackInstanceId id);
 
     List<PlaybackView> views();
+
+    default PlaybackRegistrySnapshot snapshot() {
+        throw new UnsupportedOperationException("playback snapshots are not supported");
+    }
+
+    default void restore(PlaybackRegistrySnapshot snapshot) {
+        throw new UnsupportedOperationException("playback restore is not supported");
+    }
 }

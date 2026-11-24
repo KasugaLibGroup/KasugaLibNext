@@ -9,6 +9,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -33,8 +34,28 @@ import java.util.Set;
  */
 public final class ItemModelRenderers {
 
-    /** A model reference: pipeline resource id plus the optional MMD archive entry name. */
-    public record Binding(ResourceLocation model, @Nullable String modelName) {
+    /**
+     * A model reference plus its GUI-only scale multiplier.
+     *
+     * <p>{@code guiScale} multiplies the standard {@code 0.625} block-item GUI scale. It is applied only
+     * in {@link net.minecraft.world.item.ItemDisplayContext#GUI}; hand, ground and fixed displays keep
+     * their established sizing.
+     */
+    public record Binding(
+            ResourceLocation model,
+            @Nullable String modelName,
+            float guiScale
+    ) {
+        public Binding(ResourceLocation model, @Nullable String modelName) {
+            this(model, modelName, 1.0f);
+        }
+
+        public Binding {
+            Objects.requireNonNull(model, "model");
+            if (!Float.isFinite(guiScale) || guiScale <= 0.0f) {
+                throw new IllegalArgumentException("guiScale must be finite and greater than zero");
+            }
+        }
     }
 
     private static final Map<Item, Binding> BINDINGS = new IdentityHashMap<>();
@@ -53,7 +74,21 @@ public final class ItemModelRenderers {
 
     /** Maps an item to a pipeline model. Call before {@code RegisterClientExtensionsEvent}. */
     public static void register(Item item, ResourceLocation model, @Nullable String modelName) {
-        BINDINGS.put(item, new Binding(model, modelName));
+        register(item, model, modelName, 1.0f);
+    }
+
+    /**
+     * Maps an item to a pipeline model with a GUI-only scale multiplier.
+     *
+     * @param guiScale multiplier composed with vanilla's block-item {@code 0.625} GUI scale
+     */
+    public static void register(
+            Item item,
+            ResourceLocation model,
+            @Nullable String modelName,
+            float guiScale
+    ) {
+        BINDINGS.put(Objects.requireNonNull(item, "item"), new Binding(model, modelName, guiScale));
     }
 
     /** The model bound to this item, or {@code null} when it does not use the pipeline. */

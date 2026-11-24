@@ -109,7 +109,7 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
             // Pass 2: walk the outliner building bones + binding vertices to their nearest named ancestor.
             for (BbModelDefinition.OutlineNode node : definition.outliner()) {
                 appendOutline(node, BlockBenchTransform.IDENTITY, true, definition, materials, pivots,
-                        root, ZERO_PX, bones, vertices, meshes);
+                        root, ZERO_PX, null, bones, vertices, meshes);
             }
             wireChildren(bones);
         }
@@ -270,7 +270,8 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
      */
     private static void appendOutline(BbModelDefinition.OutlineNode node, BlockBenchTransform parentTransform, boolean parentVisible,
                                BbModelDefinition definition, Map<Integer, Material> materials,
-                               Map<BbModelDefinition.GroupNode, Vector3f> pivots, Bone bindTarget, Vector3f parentBonePivotPx,
+                               Map<BbModelDefinition.GroupNode, Vector3f> pivots, Bone bindTarget,
+                               Vector3f parentBonePivotPx, @Nullable BlockBenchTransform parentBoneTransform,
                                List<Bone> bones, List<Vertex> vertices, List<Mesh> meshes) {
         if (node instanceof BbModelDefinition.ElementNode elementNode) {
             BbModelDefinition.Element element = definition.elements().get(elementNode.elementId());
@@ -288,18 +289,26 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
         BlockBenchTransform transform = parentTransform.child(rawOrigin, group.rotation());
         Bone nextBind = bindTarget;
         Vector3f nextParentPivotPx = parentBonePivotPx;
+        BlockBenchTransform nextParentBoneTransform = parentBoneTransform;
         if (!group.name().isEmpty()) {
             Vector3f pivotPx = pivots.get(group);
-            Vector3f offset = new Vector3f(pivotPx).sub(parentBonePivotPx).mul(1.0f / 16.0f);
-            Bone bone = new Bone(group.name(), new Transform().translate(offset.x, offset.y, offset.z), null);
+            // Geometry follows the raw group origin, while a missing origin uses a derived
+            // subtree pivot for the bone. Rebuild the bone-space transform from that resolved pivot.
+            BlockBenchTransform boneWorld = parentTransform.child(pivotPx, group.rotation());
+            Transform groupTransform = boneWorld.asTransform();
+            Transform bindTransform = parentBoneTransform == null
+                    ? groupTransform
+                    : parentBoneTransform.asTransform().invert().mul(groupTransform);
+            Bone bone = new Bone(group.name(), bindTransform, null);
             bone.setParent(bindTarget);
             bones.add(bone);
             nextBind = bone;
             nextParentPivotPx = pivotPx;
+            nextParentBoneTransform = boneWorld;
         }
         for (BbModelDefinition.OutlineNode child : group.children()) {
             appendOutline(child, transform, parentVisible && group.visible(), definition, materials, pivots,
-                    nextBind, nextParentPivotPx, bones, vertices, meshes);
+                    nextBind, nextParentPivotPx, nextParentBoneTransform, bones, vertices, meshes);
         }
     }
 
@@ -445,7 +454,9 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
 
         private BlockBenchTransform child(Vector3f pivot, Quaternionf localRotation) {
             Vector3f scaledPivot = new Vector3f(pivot).mul(1.0f / 16.0f);
-            Vector3f origin = scaledPivot.sub(parentPivot).rotate(rotation).add(absoluteOrigin);
+            // JOML subtraction/rotation are in-place. Compute from a copy so parentPivot retains
+            // this node's unmodified absolute pivot for the next nested group.
+            Vector3f origin = new Vector3f(scaledPivot).sub(parentPivot).rotate(rotation).add(absoluteOrigin);
             // A node's rotation is applied in its parent's already-rotated frame, around its own origin.
             Quaternionf combinedRotation = new Quaternionf(rotation).mul(localRotation);
             return new BlockBenchTransform(combinedRotation, origin, scaledPivot);
@@ -453,6 +464,10 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
 
         private Vector3f apply(Vector3f localPosition) {
             return new Vector3f(localPosition).rotate(rotation).add(absoluteOrigin);
+        }
+
+        private Transform asTransform() {
+            return new Transform().translate(absoluteOrigin).mul(rotation);
         }
     }
 

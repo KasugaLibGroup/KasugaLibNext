@@ -28,6 +28,24 @@ public interface ValidationContext {
 
     Optional<LocatedDefinition<?>> find(DefinitionKey key);
 
+    /**
+     * Returns every candidate visible to the current owner.
+     *
+     * <p>Candidates are limited to definitions owned by the current source and its direct
+     * dependencies. Their relative order matches {@link #findAll(DefinitionKey)}.
+     *
+     * @param key identity to query
+     * @return visible candidates in session declaration order
+     */
+    List<LocatedDefinition<?>> findAllVisible(DefinitionKey key);
+
+    /**
+     * Returns every parsed candidate for an identity, including definitions owned by sources that
+     * are not visible to the current owner.
+     *
+     * @param key identity to query
+     * @return all candidates in session declaration order
+     */
     List<LocatedDefinition<?>> findAll(DefinitionKey key);
 
     /**

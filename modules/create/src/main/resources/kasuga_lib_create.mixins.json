@@ -30,6 +30,7 @@
     "client.BezierConnectionMixin",
     "client.CarriageContraptionEntityRendererMixin",
     "client.CarriageContraptionVisualMixin",
+    "client.ContraptionInteractionShapeMixin",
     "client.ModernBezierGirdersMixin",
     "client.ModernBezierSegmentsMixin"
   ]

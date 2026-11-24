@@ -23,6 +23,7 @@ uniform int ksg_ParallaxSamples;
 uniform float ksg_AmbientLightEnhancement;
 uniform float ksg_StylizedShadingStrength;
 uniform int ksg_AlphaMode;
+uniform int ksg_LightingMode;
 uniform int ksg_OitMode;
 uniform int ksg_PeelEnabled;
 uniform sampler2D ksg_PeelPrevious;
@@ -161,6 +162,21 @@ vec2 steepParallaxMapping(float depth, vec2 texCoords, vec3 viewDir) {
 }
 
 
+void publishColor(vec3 color, float alpha) {
+    vec4 shadedColor = linear_fog(vec4(color, alpha), vertexDistance, FogStart, FogEnd, FogColor);
+    if (ksg_OitMode == 1) {
+        float oitWeight = clamp(
+                pow(max(0.0, 1.0 - gl_FragCoord.z), 3.0) * 8.0 + 0.01,
+                0.01, 8.0);
+        fragColor = vec4(shadedColor.rgb * shadedColor.a * oitWeight,
+                shadedColor.a * oitWeight);
+    } else if (ksg_OitMode == 4) {
+        fragColor = vec4(shadedColor.rgb * shadedColor.a, shadedColor.a);
+    } else {
+        fragColor = shadedColor;
+    }
+}
+
 void main() {
     // Keep sampled depth identical to the value used by the peel comparison.
     // The fixed-function write can round down by one ULP on macOS. An explicit
@@ -174,10 +190,13 @@ void main() {
         // adjacent sprites in the atlas.
         originalTexCoord = textureBounds.xy + fract(textureUV) * boundsSize;
     }
-    float depth = texture(ksg_NormalMap, originalTexCoord).a;
     vec3 V = normalize(-viewPos);
-    vec3 viewDir = normalize(transpose(TBN) * V);
-    vec2 texCoord = steepParallaxMapping(depth, originalTexCoord, viewDir);
+    vec2 texCoord = originalTexCoord;
+    if (ksg_LightingMode == 0) {
+        float depth = texture(ksg_NormalMap, originalTexCoord).a;
+        vec3 viewDir = normalize(transpose(TBN) * V);
+        texCoord = steepParallaxMapping(depth, originalTexCoord, viewDir);
+    }
 
     vec4 albedo = texture(Sampler0, texCoord);
     // Alpha classification is supplied by the material pass. MASK fragments
@@ -230,6 +249,15 @@ void main() {
         // Revealage consumes only alpha. Vanilla linear_fog preserves alpha,
         // so normal/specular sampling and the entire lighting pass are unused.
         fragColor = vec4(0.0, 0.0, 0.0, clamp(effectiveAlpha, 0.0, 1.0));
+        return;
+    }
+    if (ksg_LightingMode != 0) {
+        // Vanilla block/item lighting preserves all three lightmap channels. The vertex shader
+        // supplied the face shade or item diffuse factor; ordinary albedo needs no PBR conversion.
+        vec3 color = albedo.rgb * vertexColor.rgb * lightMapColor.rgb;
+        color = mix(overlayColor.rgb, color, overlayColor.a);
+        color *= ColorModulator.rgb;
+        publishColor(color, effectiveAlpha);
         return;
     }
     vec3 normalTexture = texture(ksg_NormalMap, texCoord).rgb;
@@ -336,21 +364,5 @@ void main() {
         color = max(color, materialAlbedo * albedoVisibilityFloor);
     }
     color += albedo.rgb * emission;
-    float alpha = effectiveAlpha;
-    vec4 finalColor = vec4(color, alpha);
-
-    vec4 shadedColor = linear_fog(finalColor, vertexDistance, FogStart, FogEnd, FogColor);
-    if (ksg_OitMode == 1) {
-        // Bounded depth-aware weighting favors fragments nearer the camera
-        // without making the aggregate depend on draw order.
-        float oitWeight = clamp(
-                pow(max(0.0, 1.0 - gl_FragCoord.z), 3.0) * 8.0 + 0.01,
-                0.01, 8.0);
-        fragColor = vec4(shadedColor.rgb * shadedColor.a * oitWeight,
-                shadedColor.a * oitWeight);
-    } else if (ksg_OitMode == 4) {
-        fragColor = vec4(shadedColor.rgb * shadedColor.a, shadedColor.a);
-    } else {
-        fragColor = shadedColor;
-    }
+    publishColor(color, effectiveAlpha);
 }

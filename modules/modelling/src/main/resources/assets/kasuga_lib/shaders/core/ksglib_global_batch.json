@@ -25,6 +25,8 @@
     {"name": "ksg_StylizedShadingStrength", "type": "float", "count": 1, "values": [0.65]},
     {"name": "ksg_Instanced", "type": "int", "count": 1, "values": [0]},
     {"name": "ksg_AlphaMode", "type": "int", "count": 1, "values": [0]},
-    {"name": "ksg_OitMode", "type": "int", "count": 1, "values": [0]}
+    {"name": "ksg_OitMode", "type": "int", "count": 1, "values": [0]},
+    {"name": "ksg_LightingMode", "type": "int", "count": 1, "values": [0]},
+    {"name": "ksg_BlockShade", "type": "float", "count": 4, "values": [0.5, 1.0, 0.8, 0.6]}
   ]
 }

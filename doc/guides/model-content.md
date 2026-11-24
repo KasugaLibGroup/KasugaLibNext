@@ -56,7 +56,7 @@
 
 ```java
 // 1) 声明这个物品用哪个模型（任意时机，只要早于客户端扩展事件）
-ItemModelRenderers.register(item, MODEL_ID, null);   // 第三个参数是 MMD 条目名，非 MMD 传 null
+ItemModelRenderers.register(item, MODEL_ID, null);   // 第三参数是 MMD 条目名；四参数重载可设置 GUI 缩放
 
 // 2) item model JSON 写 builtin/entity（见上）
 

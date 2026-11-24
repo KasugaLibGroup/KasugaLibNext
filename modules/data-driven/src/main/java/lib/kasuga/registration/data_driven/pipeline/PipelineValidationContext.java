@@ -80,8 +80,18 @@ final class PipelineValidationContext implements ValidationContext {
 
     @Override
     public Optional<LocatedDefinition<?>> find(DefinitionKey key) {
-        List<LocatedDefinition<?>> visible = visible(key);
+        List<LocatedDefinition<?>> visible = findAllVisible(key);
         return visible.size() == 1 ? Optional.of(visible.getFirst()) : Optional.empty();
+    }
+
+    @Override
+    public List<LocatedDefinition<?>> findAllVisible(DefinitionKey key) {
+        Set<String> visibleOwners = new LinkedHashSet<>();
+        visibleOwners.add(current.source().ownerId());
+        visibleOwners.addAll(directDependencies());
+        return findAll(key).stream()
+                .filter(definition -> visibleOwners.contains(definition.source().ownerId()))
+                .toList();
     }
 
     @Override
@@ -98,13 +108,7 @@ final class PipelineValidationContext implements ValidationContext {
 
     @Override
     public boolean canReference(DefinitionKey key) {
-        Set<String> visibleOwners = new LinkedHashSet<>();
-        visibleOwners.add(current.source().ownerId());
-        visibleOwners.addAll(directDependencies());
-        for (LocatedDefinition<?> candidate : findAll(key)) {
-            if (visibleOwners.contains(candidate.source().ownerId())) return true;
-        }
-        return false;
+        return !findAllVisible(key).isEmpty();
     }
 
     @Override
@@ -133,7 +137,7 @@ final class PipelineValidationContext implements ValidationContext {
             );
             return false;
         }
-        List<LocatedDefinition<?>> visible = visible(key);
+        List<LocatedDefinition<?>> visible = findAllVisible(key);
         if (visible.size() > 1) {
             error(
                     BuildDiagnostic.Code.REFERENCE_AMBIGUOUS,
@@ -148,15 +152,6 @@ final class PipelineValidationContext implements ValidationContext {
             return false;
         }
         return true;
-    }
-
-    private List<LocatedDefinition<?>> visible(DefinitionKey key) {
-        Set<String> visibleOwners = new LinkedHashSet<>();
-        visibleOwners.add(current.source().ownerId());
-        visibleOwners.addAll(directDependencies());
-        return findAll(key).stream()
-                .filter(definition -> visibleOwners.contains(definition.source().ownerId()))
-                .toList();
     }
 
     @Override

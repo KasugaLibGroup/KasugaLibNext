@@ -76,10 +76,11 @@ public final class ItemModelRenderer extends BlockEntityWithoutLevelRenderer {
                 buffer instanceof MultiBufferSource.BufferSource source ? source : null,
                 null, null,
                 RenderSystem.getModelViewMatrix(), RenderSystem.getProjectionMatrix(),
-                0, Minecraft.getInstance().getTimer(), Minecraft.getInstance().level);
+                0, Minecraft.getInstance().getTimer(), Minecraft.getInstance().level)
+                .withItemLighting(light, overlay);
         pose.pushPose();
         try {
-            applyDisplayTransform(pose, context);
+            applyDisplayTransform(pose, context, binding.guiScale());
             // Widen the schedule gate for this one draw, then restore it: the instance stays
             // VANILLA_RENDERER otherwise, which is what keeps the world pass from drawing it at the origin.
             ModelRenderScheduler.setMode(instance, RenderScheduleMode.ALWAYS);
@@ -102,15 +103,20 @@ public final class ItemModelRenderer extends BlockEntityWithoutLevelRenderer {
      * <p>{@code ItemRenderer} has already applied {@code translate(-0.5)} for the vanilla
      * {@code [0,1]} model space; our models are origin-centred, so that offset is cancelled first.
      */
-    private static void applyDisplayTransform(PoseStack pose, ItemDisplayContext context) {
+    private static void applyDisplayTransform(
+            PoseStack pose,
+            ItemDisplayContext context,
+            float guiScale
+    ) {
         pose.translate(0.5f, 0.5f, 0.5f);
         switch (context) {
             case GUI -> {
-                transform(pose, 30, 225, 0, 0, 0, 0, 0.625f, false);
+                transform(pose, 30, 225, 0, 0, 0, 0, 0.625f * guiScale, false);
                 // GUI-only nudge. ItemRenderer flips Y for the GUI (scale(16, -16, 16)), so a negative Y
                 // here moves the icon DOWN on screen. Units are the model's local space, i.e. the shift is
                 // multiplied by the 0.625 display scale above — 0.5f ≈ 5 px at GUI scale 1.
-                pose.translate(0f, GUI_DOWN_SHIFT, 0f);
+                // Undo the per-item scale for this adjustment so every icon keeps the same screen offset.
+                pose.translate(0f, GUI_DOWN_SHIFT / guiScale, 0f);
             }
             case GROUND -> transform(pose, 0, 0, 0, 0, 3, 0, 0.25f, false);
             case FIXED -> transform(pose, 0, 0, 0, 0, 0, 0, 0.5f, false);

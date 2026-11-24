@@ -2,6 +2,7 @@
 
 #moj_import <light.glsl>
 #moj_import <fog.glsl>
+#moj_import <kasuga_lib:ksg_lighting.glsl>
 
 in vec3 Position;
 in vec4 Color;
@@ -28,6 +29,8 @@ uniform sampler2D Sampler2;
 uniform samplerBuffer ksg_InstanceData;
 uniform samplerBuffer ksg_BoneTransforms;
 uniform int ksg_Instanced;
+uniform int ksg_LightingMode;
+uniform vec4 ksg_BlockShade;
 uniform vec3 Light0_Direction;
 uniform vec3 Light1_Direction;
 
@@ -78,6 +81,13 @@ void main() {
 
     vec4 posWorld = modelPose * vec4(skinnedPosition, 1.0);
     vertexColor = vec4(Color.rgb, Color.a);
+    if (ksg_LightingMode != 0) {
+        vec3 worldNormal = normalize(modelNormal * skinnedNormal);
+        if (!(length(worldNormal) > 0.000001)) worldNormal = vec3(0.0, 1.0, 0.0);
+        vertexColor = ksg_LightingMode == 1
+                ? vec4(Color.rgb * ksg_block_shade(worldNormal, ksg_BlockShade), Color.a)
+                : minecraft_mix_light(Light0_Direction, Light1_Direction, worldNormal, Color);
+    }
     // LightTexture.pack stores 0..15 block/sky levels as packed 16-bit
     // components (0, 16, ... 240), while the light texture is 16x16.
     lightMapColor = texelFetch(Sampler2, ivec2(packedLighting.xy) / 16, 0);

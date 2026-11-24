@@ -20,6 +20,7 @@ import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmPoseEvaluator;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.StateMachine;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.backend.ModelLightingMode;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
@@ -85,6 +86,8 @@ public final class McModelHandle {
     @Nullable
     private Transform pendingPose;
     private float ambientLightEnhancement = ModelInstance.DEFAULT_AMBIENT_LIGHT_ENHANCEMENT;
+    @Nullable
+    private ModelLightingMode lightingMode;
     private boolean destroyed;
     private record AnchorCallback(ModelInstance owner, AnchorModule.Attachment adapter) {}
     private final Map<String, IdentityHashMap<BiConsumer<String, Transform>, AnchorCallback>> anchorCallbacks = new HashMap<>();
@@ -195,6 +198,7 @@ public final class McModelHandle {
         if (instance != bound) clearAnchorCallbacks();
         instance = bound;
         bound.setAmbientLightEnhancement(ambientLightEnhancement);
+        if (lightingMode != null) bound.setLightingMode(lightingMode);
         if (pendingPose != null && pendingRebind == null) {
             bound.getSkeletonInstance().transformRoot(pendingPose.copy());
         }
@@ -248,7 +252,9 @@ public final class McModelHandle {
         pipelineResolver = ignored -> service.pipeline();
         if (instance != next) clearAnchorCallbacks();
         instance = next; pendingPose = null; pendingRebind = null;
-        next.setAmbientLightEnhancement(ambientLightEnhancement); applyScheduling(next); observePublication();
+        next.setAmbientLightEnhancement(ambientLightEnhancement);
+        if (lightingMode != null) next.setLightingMode(lightingMode);
+        applyScheduling(next); observePublication();
         if (previous != null && previous != next) {
             MinecraftRagdollRuntime.unregister(previous);
             if (oldPipeline != null && oldKey != null) oldPipeline.removeInstance(oldKey, instanceLoc);
@@ -576,6 +582,13 @@ public final class McModelHandle {
 
     public float ambientLightEnhancement() {
         return instance != null ? instance.getAmbientLightEnhancement() : ambientLightEnhancement;
+    }
+
+    /** Explicit per-host override, buffered until mount and reapplied after resource replacement. */
+    public McModelHandle setLightingMode(ModelLightingMode mode) {
+        lightingMode = Objects.requireNonNull(mode, "mode");
+        if (instance != null) instance.setLightingMode(mode);
+        return this;
     }
 
     /** Per-instance view-distance cap in blocks; 0 disables distance culling. */

@@ -151,7 +151,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
                 if (transform.isAppliesTransform()) {
                     transform.applyTransform(poseStack);
                 }
-                lightData = transform.getLightAndBrightness(context.getLevel());
+                lightData = resolveLightData(transform, context);
                 overlay = transform.getOverlay();
                 emissive = transform.emissiveStrength;
             } else {
@@ -161,7 +161,16 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
                 emissive = 1f;
             }
 
+            MCBackendContext.ItemLighting itemLighting = context.getItemLighting();
+            if (itemLighting != null) {
+                lightData = new LightData(0, 0, itemLighting.packedLight(), 1f);
+                overlay = itemLighting.packedOverlay();
+            }
+
             BackendInstance instance = renderable.apply();
+            instance.setLighting(itemLighting == null
+                    ? ModelLighting.world(model.getLightingMode(), context.getLevel())
+                    : ModelLighting.item(model.getLightingMode()));
             instance.renderInFrame(renderFrameToken);
             float ambientLightEnhancement = effectiveAmbientLightEnhancement(
                     model, BackendInstance.isIrisEnabled());
@@ -169,7 +178,7 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
             if (prepared != null) {
                 if (instance.prepareDraw(pass)) {
                     prepared.add(new PreparedModelDraw(instance, poseStack.last().copy(),
-                            emissive, ambientLightEnhancement, model.getDepthBias()));
+                            emissive, ambientLightEnhancement, model.getDepthBias(), instance.lighting()));
                 }
             } else if (pass != ModelRenderPass.TRANSLUCENT && globalBatcher.isCollecting()
                     && globalBatcher.submit(instance, pass, poseStack.last().pose(), poseStack.last().normal(),
@@ -200,12 +209,18 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
 
     record PreparedModelDraw(BackendInstance instance, PoseStack.Pose pose,
                              float emissive, float ambientLightEnhancement,
-                             DepthBias depthBias) {
+                             DepthBias depthBias, ModelLighting lighting) {
+        PreparedModelDraw(BackendInstance instance, PoseStack.Pose pose,
+                          float emissive, float ambientLightEnhancement, DepthBias depthBias) {
+            this(instance, pose, emissive, ambientLightEnhancement, depthBias, instance.lighting());
+        }
+
         void draw(MCBackendContext context, int mode) {
             draw(context, RenderState.getRenderType(false, ModelRenderPass.OPAQUE), mode);
         }
 
         void draw(MCBackendContext context, RenderType renderType, int mode) {
+            instance.setLighting(lighting);
             instance.drawPreparedBuffer(ModelRenderPass.TRANSLUCENT, pose, renderType,
                     context.getModelViewMatrix(), context.getProjectionMatrix(),
                     emissive, ambientLightEnhancement, mode, depthBias);
@@ -214,6 +229,13 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
 
     static float effectiveAmbientLightEnhancement(ModelInstance model, boolean irisEnabled) {
         return irisEnabled ? 1f : model.getAmbientLightEnhancement();
+    }
+
+    static LightData resolveLightData(BackendTransform transform, MCBackendContext context) {
+        MCBackendContext.ItemLighting itemLighting = context.getItemLighting();
+        return itemLighting == null
+                ? transform.getLightAndBrightness(context.getLevel())
+                : new LightData(0, 0, itemLighting.packedLight(), 1f);
     }
 
     /**

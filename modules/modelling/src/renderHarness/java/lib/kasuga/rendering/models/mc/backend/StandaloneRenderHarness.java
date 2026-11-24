@@ -76,6 +76,7 @@ public final class StandaloneRenderHarness {
             run(results, "conditional-peel-loop", suite::conditionalPeel);
             run(results, "production-program-links", suite::productionPrograms);
             run(results, "production-alpha-passes", suite::alphaPasses);
+            run(results, "vanilla-block-lighting", VanillaBlockLightingRegression::run);
             run(results, "target-resize-and-failure", suite::targetLifecycle);
             run(results, "gpu-buffer-lifecycle", GpuBufferLifecycleRegression::run);
             run(results, "mrt-depth-texture", NebulaGpuResourceRegression::mrtDepthTexture);
