@@ -7,6 +7,8 @@ public final class KasugaLibCreateApi {
 
     private static volatile boolean multiBogeyCarriageDefault = false;
 
+    private static volatile boolean carriageYOffsetDefault = false;
+
     private KasugaLibCreateApi() {
     }
 
@@ -19,8 +21,14 @@ public final class KasugaLibCreateApi {
         multiBogeyCarriageDefault = enabled;
     }
 
+    public static void setCarriageYOffsetDefault(boolean enabled) {
+        carriageYOffsetDefault = enabled;
+    }
+
     /** Current default used when the config entry is absent. */
     public static boolean getMultiBogeyCarriageDefault() {
         return multiBogeyCarriageDefault;
     }
+
+    public static boolean getCarriageYOffsetDefault() {return carriageYOffsetDefault;}
 }

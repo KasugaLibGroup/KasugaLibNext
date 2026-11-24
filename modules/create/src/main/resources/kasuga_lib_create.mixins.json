@@ -4,12 +4,15 @@
   "plugin": "lib.kasuga.create.compat.CreateMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "AbstractContraptionEntityAccessor",
     "CarriageBogeyAccessor",
-    "CarriageContraptionMixin",
     "CarriageContraptionEntityMixin",
+    "CarriageContraptionMixin",
     "CarriageMixin",
     "EdgeDataMixin",
+    "EntityMixin",
     "GlobalRailwayManagerMixin",
+    "OrientedContraptionEntityMixin",
     "SignalPropagatorMixin",
     "StationBlockEntityMixin",
     "TrackGraphAccessor",
@@ -23,8 +26,10 @@
     "requireAnnotations": true
   },
   "client": [
+    "client.AbstractEntityVisualAccessor",
     "client.BezierConnectionMixin",
     "client.CarriageContraptionEntityRendererMixin",
+    "client.CarriageContraptionVisualMixin",
     "client.ModernBezierGirdersMixin",
     "client.ModernBezierSegmentsMixin"
   ]

@@ -16,11 +16,15 @@ public final class CreateConfig implements Configurable {
 
     private static final Lazy<CreateConfig> INSTANCE = Lazy.of(() -> KasugaLib.getBean(CreateConfig.class));
 
-    private ModConfigSpec.BooleanValue multiBogeyCarriage;
+    private ModConfigSpec.BooleanValue multiBogeyCarriage, carriageYOffset;
 
     /** Whether carriages may capture and use more than the vanilla two bogeys. */
     public static boolean isMultiBogeyCarriageEnabled() {
         return INSTANCE.get().multiBogeyCarriage.getAsBoolean();
+    }
+
+    public static boolean isCarriageYOffestEnabled() {
+        return INSTANCE.get().carriageYOffset.getAsBoolean();
     }
 
     @Override
@@ -30,5 +34,9 @@ public final class CreateConfig implements Configurable {
                         "When false, assembly, persistence, sync and rendering use the vanilla two-bogey path.")
                 .translation("kasuga_lib.configuration.enable_multi_bogey_carriage")
                 .define("enable_multi_bogey_carriage", KasugaLibCreateApi::getMultiBogeyCarriageDefault);
+        carriageYOffset = builder
+                .comment("Allow carriages to have y offsets.")
+                .translation("kasuga_lib.configuration.enable_multi_bogey_carriage")
+                .define("enable_carriage_y_offset", KasugaLibCreateApi::getCarriageYOffsetDefault);
     }
 }

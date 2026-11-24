@@ -30,4 +30,19 @@ public interface CarriageAccess {
 
     /** The registered interior bogey positions, in the carriage-local block frame. */
     List<BlockPos> kasuga$getRedundantBogeyPositions();
+
+    /** The carriage's vertical offset for the current tick; applied on both sides. */
+    float kasuga$getYOffset();
+
+    /** The vertical offset interpolated between the previous and the current tick, for rendering. */
+    float kasuga$getInterpolatedYOffset(float partialTicks);
+
+    /** Sets the offset for the current tick; the previous value becomes the last tick's. */
+    void kasuga$setYOffset(float value);
+
+    /**
+     * Sets the offset without a previous value, so the next frame does not interpolate from the
+     * default 0. Used when restoring from disk.
+     */
+    void kasuga$restoreYOffset(float value);
 }
