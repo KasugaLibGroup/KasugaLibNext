@@ -7,6 +7,7 @@ import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPipeLine;
 import lib.kasuga.rendering.models.uml.math.Transform;
 import lib.kasuga.rendering.models.mc.api.McModelAssemblies;
+import lib.kasuga.rendering.models.mc.api.ModelLightingDefaults;
 import lib.kasuga.client.loading.LoadingIndicator;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
@@ -85,6 +86,7 @@ public final class KasugaModelPipelines {
             }
             return null; // model not published yet (resource loading); retry lazily
         }
+        instance.setLightingMode(ModelLightingDefaults.resolve(modelLoc));
         pipeline.addToRenderer(loc, instanceLoc, BRIDGE, BACKEND);
         LOGGER.debug("[KasugaModelPipelines] bound '{}' instance '{}' to mc_backend", loc, instanceLoc);
         return instance;

@@ -2,6 +2,7 @@ package lib.kasuga.rendering.models.mc.api;
 
 import lib.kasuga.rendering.models.mc.backend.schedule.ModelRenderScheduler;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.uml.backend.ModelLightingMode;
 import lib.kasuga.rendering.models.uml.dynamic.ModelPoseBinding;
 import lib.kasuga.rendering.models.uml.dynamic.PoseDriver;
 import lib.kasuga.rendering.models.uml.dynamic.RebindablePoseDriver;
@@ -185,6 +186,28 @@ class McModelHandleTest {
         assertEquals(1f, instance.getAmbientLightEnhancement());
         assertThrows(IllegalArgumentException.class,
                 () -> handle.setAmbientLightEnhancement(Float.NaN));
+    }
+
+    @Test
+    void explicitLightingSurvivesResourceReplacementWithoutChangingAnotherInstance() {
+        ModelInstance first = fixture(null);
+        ModelInstance replacement = fixture(null);
+        ModelInstance unrelated = fixture(null);
+        AtomicInteger calls = new AtomicInteger();
+        McModelHandle handle = McModelHandle.custom(MODEL, null, INSTANCE,
+                pose -> calls.getAndIncrement() == 0 ? first : replacement, ignored -> null);
+
+        handle.setLightingMode(ModelLightingMode.BLOCK);
+        assertTrue(handle.mount());
+        assertEquals(ModelLightingMode.BLOCK, first.getLightingMode());
+        assertEquals(ModelLightingMode.PBR, unrelated.getLightingMode());
+        assertTrue(handle.unmount());
+        assertTrue(handle.mount());
+        assertEquals(ModelLightingMode.BLOCK, replacement.getLightingMode());
+        handle.setLightingMode(ModelLightingMode.PBR);
+        assertEquals(ModelLightingMode.PBR, replacement.getLightingMode());
+        assertThrows(NullPointerException.class, () -> handle.setLightingMode(null));
+        handle.destroy();
     }
 
     @Test

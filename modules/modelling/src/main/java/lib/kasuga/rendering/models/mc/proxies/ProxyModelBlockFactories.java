@@ -11,6 +11,7 @@ import lib.kasuga.registration.factory.FactoryRegistry;
 import lib.kasuga.registration.minecraft.block.BlockReg;
 import lib.kasuga.registration.minecraft.block_entity.BlockEntityReg;
 import lib.kasuga.rendering.models.uml.math.Transform;
+import lib.kasuga.rendering.models.uml.backend.ModelLightingMode;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 import org.jetbrains.annotations.Nullable;
@@ -96,7 +97,8 @@ public final class ProxyModelBlockFactories {
                         state,
                         input.selection,
                         input.yawOffset,
-                        input.facingYaw
+                        input.facingYaw,
+                        input.lightingMode
                 )
         );
         registration.withProperty(Collection.class, values -> {
@@ -118,28 +120,36 @@ public final class ProxyModelBlockFactories {
     public record ModelSettings(
             ProxyModelSelection selection,
             float yawOffset,
-            Map<String, Float> facingYaw
+            Map<String, Float> facingYaw,
+            @Nullable ModelLightingMode lightingMode
     ) {
+        public ModelSettings(ProxyModelSelection selection, float yawOffset, Map<String, Float> facingYaw) {
+            this(selection, yawOffset, facingYaw, null);
+        }
     }
 
     public static ModelSettings parseModelSettings(@Nullable JsonObject params) {
         ModelParams parsed = ModelParams.parse(params);
-        return new ModelSettings(parsed.selection, parsed.yawOffset, parsed.facingYaw);
+        return new ModelSettings(parsed.selection, parsed.yawOffset, parsed.facingYaw, parsed.lightingMode);
     }
 
     static final class ModelParams {
         final ProxyModelSelection selection;
         final float yawOffset;
         final Map<String, Float> facingYaw;
+        @Nullable
+        final ModelLightingMode lightingMode;
 
         private ModelParams(
                 ProxyModelSelection selection,
                 float yawOffset,
-                Map<String, Float> facingYaw
+                Map<String, Float> facingYaw,
+                @Nullable ModelLightingMode lightingMode
         ) {
             this.selection = selection;
             this.yawOffset = yawOffset;
             this.facingYaw = facingYaw;
+            this.lightingMode = lightingMode;
         }
 
         static ModelParams parse(@Nullable JsonObject params) {
@@ -147,10 +157,23 @@ public final class ProxyModelBlockFactories {
             String modelName = null;
             String defaultModel = null;
             float yawOffset = 0f;
+            ModelLightingMode lightingMode = null;
             Map<String, Float> facingYaw = Map.of();
             Map<String, CompiledModelGroup> groups = new LinkedHashMap<>();
             JsonObject modelByState = new JsonObject();
             if (params != null) {
+                if (params.has("lighting_mode")) {
+                    var value = params.get("lighting_mode");
+                    if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
+                        throw new IllegalArgumentException("lighting_mode must be 'pbr' or 'vanilla_block'");
+                    }
+                    lightingMode = switch (value.getAsString()) {
+                        case "pbr" -> ModelLightingMode.PBR;
+                        case "vanilla_block" -> ModelLightingMode.BLOCK;
+                        default -> throw new IllegalArgumentException(
+                                "unknown lighting_mode '" + value.getAsString() + "'; expected 'pbr' or 'vanilla_block'");
+                    };
+                }
                 if (params.has("animation")) {
                     throw new IllegalArgumentException(
                             "proxy_model_be.params.animation is not supported; "
@@ -192,7 +215,7 @@ public final class ProxyModelBlockFactories {
                     parseSelectionRules(modelByState, groups);
             ProxyModelSelection selection =
                     new ProxyModelSelection(defaultGroup, groups, rules);
-            return new ModelParams(selection, yawOffset, facingYaw);
+            return new ModelParams(selection, yawOffset, facingYaw, lightingMode);
         }
     }
 

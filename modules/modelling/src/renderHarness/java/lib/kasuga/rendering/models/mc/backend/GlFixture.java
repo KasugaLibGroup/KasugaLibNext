@@ -62,7 +62,9 @@ final class GlFixture implements AutoCloseable {
         }
         String functions = ShaderFunctionImport.read(new StringReader(resource("/assets/kasuga_lib/shaders/ksg_skinning.transform.glsl")))
                 .replaceFirst("(?m)^#version[^\\n]*\\n", "");
-        return source.replace("#moj_import <kasuga_lib:ksg_skinning.transform.glsl>", functions);
+        return source.replace("#moj_import <kasuga_lib:ksg_skinning.transform.glsl>", functions)
+                .replace("#moj_import <kasuga_lib:ksg_lighting.glsl>",
+                        resource("/assets/kasuga_lib/shaders/ksg_lighting.glsl"));
     }
 
     int program(String fragment) {

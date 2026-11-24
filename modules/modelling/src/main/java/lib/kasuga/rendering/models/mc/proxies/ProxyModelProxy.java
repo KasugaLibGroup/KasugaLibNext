@@ -1,6 +1,7 @@
 package lib.kasuga.rendering.models.mc.proxies;
 
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
+import lib.kasuga.rendering.models.mc.api.McModelHandle;
 import lib.kasuga.rendering.models.uml.dynamic.animation.output.PoseOutput;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.AnimationRenderPort;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.LogicalStepPolicy;
@@ -226,7 +227,14 @@ public final class ProxyModelProxy {
                     element.visualIdentity(),
                     group,
                     () -> null,
-                    rootTransform(element, group.yOffset())
+                    rootTransform(element, group.yOffset()),
+                    (part, instanceLoc) -> {
+                        McModelHandle handle = McModelHandle.of(
+                                part.model(), part.modelName(), instanceLoc, null);
+                        return element.lightingMode() == null
+                                ? handle
+                                : handle.setLightingMode(element.lightingMode());
+                    }
             );
         }
 

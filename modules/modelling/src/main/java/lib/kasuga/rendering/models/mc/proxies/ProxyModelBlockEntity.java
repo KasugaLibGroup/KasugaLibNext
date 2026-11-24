@@ -3,6 +3,7 @@ package lib.kasuga.rendering.models.mc.proxies;
 import lib.kasuga.rendering.models.uml.dynamic.proxy.ProxyAttachToken;
 import lib.kasuga.rendering.models.uml.dynamic.proxy.ProxySession;
 import lib.kasuga.rendering.models.uml.math.Transform;
+import lib.kasuga.rendering.models.uml.backend.ModelLightingMode;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -22,6 +23,8 @@ public class ProxyModelBlockEntity extends BlockEntity implements ProxySessionHo
     private final ProxyModelSelection selection;
     private final float yawOffset;
     private final Map<String, Float> facingYaw;
+    @Nullable
+    private final ModelLightingMode lightingMode;
     @Nullable
     private ProxySession<?, ?, ?, ?, ?> proxySession;
     @Nullable
@@ -78,10 +81,23 @@ public class ProxyModelBlockEntity extends BlockEntity implements ProxySessionHo
             float yawOffset,
             Map<String, Float> facingYaw
     ) {
+        this(type, pos, state, selection, yawOffset, facingYaw, null);
+    }
+
+    public ProxyModelBlockEntity(
+            BlockEntityType<?> type,
+            BlockPos pos,
+            BlockState state,
+            ProxyModelSelection selection,
+            float yawOffset,
+            Map<String, Float> facingYaw,
+            @Nullable ModelLightingMode lightingMode
+    ) {
         super(type, pos, state);
         this.selection = selection;
         this.yawOffset = yawOffset;
         this.facingYaw = Map.copyOf(facingYaw);
+        this.lightingMode = lightingMode;
     }
 
     public ResourceLocation model() {
@@ -98,6 +114,11 @@ public class ProxyModelBlockEntity extends BlockEntity implements ProxySessionHo
 
     public Map<String, Float> facingYaw() {
         return facingYaw;
+    }
+
+    /** Null preserves the content's model default; an explicit value overrides every visual part. */
+    public @Nullable ModelLightingMode lightingMode() {
+        return lightingMode;
     }
 
     public ProxyModelSelection selection() {

@@ -76,7 +76,8 @@ public final class ItemModelRenderer extends BlockEntityWithoutLevelRenderer {
                 buffer instanceof MultiBufferSource.BufferSource source ? source : null,
                 null, null,
                 RenderSystem.getModelViewMatrix(), RenderSystem.getProjectionMatrix(),
-                0, Minecraft.getInstance().getTimer(), Minecraft.getInstance().level);
+                0, Minecraft.getInstance().getTimer(), Minecraft.getInstance().level)
+                .withItemLighting(light, overlay);
         pose.pushPose();
         try {
             applyDisplayTransform(pose, context, binding.guiScale());

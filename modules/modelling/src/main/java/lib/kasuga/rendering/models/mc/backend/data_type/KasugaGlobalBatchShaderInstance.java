@@ -39,6 +39,7 @@ public class KasugaGlobalBatchShaderInstance extends KasugaShaderInstance {
 
     @Override
     protected void applyAdditionalData() {
+        applyLighting();
         safeGetUniform("ksg_Instanced").set(instanced ? 1 : 0);
         safeGetUniform("ksg_EmissiveStrength").set(getEmissiveStrength());
         safeGetUniform("ksg_ParallaxScale").set(getParallaxScale());

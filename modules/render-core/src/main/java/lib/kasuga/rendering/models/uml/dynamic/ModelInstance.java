@@ -2,6 +2,7 @@ package lib.kasuga.rendering.models.uml.dynamic;
 
 import lib.kasuga.rendering.models.uml.dynamic.morph.MorphInstance;
 import lib.kasuga.rendering.models.uml.backend.DepthBias;
+import lib.kasuga.rendering.models.uml.backend.ModelLightingMode;
 import lib.kasuga.rendering.models.uml.dynamic.morph.MorphResult;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.AnimationRenderPort;
 import lib.kasuga.rendering.models.uml.dynamic.animation.scope.RenderSampleContext;
@@ -58,6 +59,13 @@ public class ModelInstance implements AutoCloseable {
     private float ambientLightEnhancement = DEFAULT_AMBIENT_LIGHT_ENHANCEMENT;
 
     private DepthBias depthBias = DepthBias.NONE;
+
+    private ModelLightingMode lightingMode = ModelLightingMode.PBR;
+
+    /** Selects instance-local lighting without changing materials, geometry or animation ownership. */
+    public void setLightingMode(ModelLightingMode lightingMode) {
+        this.lightingMode = Objects.requireNonNull(lightingMode, "lightingMode");
+    }
 
     /**
      * Sets an instance-local raster depth offset. Ordinary models keep {@link DepthBias#NONE};

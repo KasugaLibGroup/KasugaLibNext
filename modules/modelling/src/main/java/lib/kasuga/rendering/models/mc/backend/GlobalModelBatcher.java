@@ -87,7 +87,8 @@ final class GlobalModelBatcher implements AutoCloseable {
         if (!canBatch(instance, pass)) return false;
         BatchKey key = new BatchKey(pass, instance.getMeshMode(pass),
                 Float.floatToIntBits(emissiveStrength),
-                Float.floatToIntBits(ambientLightEnhancement), instance.getModel().getDepthBias());
+                Float.floatToIntBits(ambientLightEnhancement), instance.getModel().getDepthBias(),
+                instance.lighting());
         FlatModelData data = instance.getData(pass);
         submissions.computeIfAbsent(key, ignored -> new ArrayList<>())
                 .add(new BatchItem(instance, new Matrix4f(pose), new Matrix3f(normal),
@@ -245,7 +246,13 @@ final class GlobalModelBatcher implements AutoCloseable {
     }
 
     static record BatchKey(ModelRenderPass pass, VertexFormat.Mode mode,
-                            int emissiveBits, int ambientLightEnhancementBits, DepthBias depthBias) {
+                            int emissiveBits, int ambientLightEnhancementBits, DepthBias depthBias,
+                            ModelLighting lighting) {
+        BatchKey(ModelRenderPass pass, VertexFormat.Mode mode, int emissiveBits,
+                 int ambientLightEnhancementBits, DepthBias depthBias) {
+            this(pass, mode, emissiveBits, ambientLightEnhancementBits, depthBias, ModelLighting.PBR);
+        }
+
         float emissiveStrength() {
             return Float.intBitsToFloat(emissiveBits);
         }
@@ -519,6 +526,7 @@ final class GlobalModelBatcher implements AutoCloseable {
                 batchShader.setBatchTextures(instanceTextureId, boneTextureId, instanceCount > 0);
                 batchShader.setEmissiveStrength(key.emissiveStrength());
                 batchShader.setAmbientLightEnhancement(key.ambientLightEnhancement());
+                batchShader.setLighting(key.lighting());
                 batchShader.setAlphaMode(key.pass().shaderAlphaMode());
                 batchShader.setOitMode(0);
                 shader.setDefaultUniforms(key.mode(), modelViewMatrix, projectionMatrix,

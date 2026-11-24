@@ -11,6 +11,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.client.renderer.culling.Frustum;
 import org.joml.Matrix4f;
+import org.jetbrains.annotations.Nullable;
 
 @Getter
 public class MCBackendContext {
@@ -26,12 +27,28 @@ public class MCBackendContext {
     private final int renderTick;
     private final DeltaTracker partialTick;
     private final ClientLevel level;
+    @Nullable
+    private final ItemLighting itemLighting;
+
+    /** Vanilla item callers supply light and overlay instead of sampling the model's origin. */
+    public record ItemLighting(int packedLight, int packedOverlay) {
+    }
 
     public MCBackendContext(
             VertexConsumer vertexConsumer, PoseStack poseStack,
             RenderBuffers buffers, MultiBufferSource bufferSource, Camera camera,
             Frustum frustum, Matrix4f modelViewMatrix, Matrix4f projectionMatrix,
             int renderTick, DeltaTracker partialTick, ClientLevel level) {
+        this(vertexConsumer, poseStack, buffers, bufferSource, camera, frustum,
+                modelViewMatrix, projectionMatrix, renderTick, partialTick, level, null);
+    }
+
+    private MCBackendContext(
+            VertexConsumer vertexConsumer, PoseStack poseStack,
+            RenderBuffers buffers, MultiBufferSource bufferSource, Camera camera,
+            Frustum frustum, Matrix4f modelViewMatrix, Matrix4f projectionMatrix,
+            int renderTick, DeltaTracker partialTick, ClientLevel level,
+            @Nullable ItemLighting itemLighting) {
         this.buffers = buffers;
         this.bufferSource = bufferSource;
         this.vertexConsumer = vertexConsumer;
@@ -43,6 +60,13 @@ public class MCBackendContext {
         this.renderTick = renderTick;
         this.partialTick = partialTick;
         this.level = level;
+        this.itemLighting = itemLighting;
+    }
+
+    public MCBackendContext withItemLighting(int packedLight, int packedOverlay) {
+        return new MCBackendContext(vertexConsumer, poseStack, buffers, bufferSource, camera, frustum,
+                modelViewMatrix, projectionMatrix, renderTick, partialTick, level,
+                new ItemLighting(packedLight, packedOverlay));
     }
 
     /**

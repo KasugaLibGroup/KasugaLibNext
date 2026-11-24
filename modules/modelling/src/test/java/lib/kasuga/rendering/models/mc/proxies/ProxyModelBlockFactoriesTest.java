@@ -1,12 +1,39 @@
 package lib.kasuga.rendering.models.mc.proxies;
 
 import com.google.gson.JsonParser;
+import lib.kasuga.rendering.models.uml.backend.ModelLightingMode;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class ProxyModelBlockFactoriesTest {
+    @Test
+    void lightingIsOptInAndAllowsAnExplicitPbrOverrideOfContentDefaults() {
+        var input = JsonParser.parseString("""
+                {"model":"example:models/block/test.bbmodel"}
+                """).getAsJsonObject();
+        assertNull(ProxyModelBlockFactories.parseModelSettings(input).lightingMode());
+        input.addProperty("lighting_mode", "vanilla_block");
+        assertEquals(ModelLightingMode.BLOCK,
+                ProxyModelBlockFactories.parseModelSettings(input).lightingMode());
+        input.addProperty("lighting_mode", "pbr");
+        assertEquals(ModelLightingMode.PBR,
+                ProxyModelBlockFactories.parseModelSettings(input).lightingMode());
+    }
+
+    @Test
+    void malformedLightingModesFailDuringRegistrationInsteadOfSilentlyChoosingPbr() {
+        for (String value : java.util.List.of("\"unknown\"", "true", "1", "null", "{}", "[]")) {
+            var input = JsonParser.parseString("""
+                    {"model":"example:models/block/test.bbmodel", "lighting_mode":%s}
+                    """.formatted(value)).getAsJsonObject();
+            assertThrows(IllegalArgumentException.class,
+                    () -> ProxyModelBlockFactories.parseModelSettings(input), value);
+        }
+    }
+
     @Test
     void parsesStateSelectedModels() {
         var params = ProxyModelBlockFactories.ModelParams.parse(JsonParser.parseString("""
