@@ -243,21 +243,27 @@ public class CarriageContraptionEntityMixin implements CarriageContraptionEntity
     }
 
     /**
-     * Server side: mirrors the carriage's authoritative offset into the entity's synched data.
-     * Vanilla sends it to tracking clients whenever it changes, so the offset stays in step with
-     * the value used by {@code position()} on both sides.
+     * Runs every entity tick on both sides. The server mirrors the carriage's authoritative offset
+     * into the entity's synched data (vanilla sends it to tracking clients when it changes). The
+     * client advances its own interpolation towards the last received value; carriages themselves
+     * are only ticked server-side, so the client chase has to be driven from here.
      */
     @Inject(method = "tickContraption", at = @At("HEAD"))
-    private void kasuga$pushYOffset(CallbackInfo ci) {
-        CarriageContraptionEntity entity = (CarriageContraptionEntity) (Object) this;
-        if (entity.level().isClientSide() || carriage == null)
+    private void kasuga$handleYOffsetTick(CallbackInfo ci) {
+        if (carriage == null)
             return;
-        entity.getEntityData().set(KSG_Y_OFFSET, kasuga$getCarriageYOffset());
+        CarriageContraptionEntity entity = (CarriageContraptionEntity) (Object) this;
+        CarriageAccess access = (CarriageAccess) (Object) carriage;
+        if (entity.level().isClientSide()) {
+            access.kasuga$tickYOffsetInterpolation();
+            return;
+        }
+        entity.getEntityData().set(KSG_Y_OFFSET, access.kasuga$getYOffset());
     }
 
     /**
-     * Client side: writes the synced offset into the client carriage, whose {@code LerpedFloat}
-     * interpolates between the previous and the newly received value for smooth rendering.
+     * Client side: hands a freshly synced server value to the client carriage, which starts (or
+     * re-targets) its interpolation towards it instead of snapping.
      */
     @Inject(method = "onSyncedDataUpdated", at = @At("TAIL"))
     private void kasuga$pullYOffset(EntityDataAccessor<?> key, CallbackInfo ci) {
@@ -267,7 +273,7 @@ public class CarriageContraptionEntityMixin implements CarriageContraptionEntity
         if (!entity.level().isClientSide())
             return;
         ((CarriageAccess) (Object) carriage)
-                .kasuga$setYOffset(entity.getEntityData().get(KSG_Y_OFFSET));
+                .kasuga$applySyncedYOffset(entity.getEntityData().get(KSG_Y_OFFSET));
     }
 
     @Override

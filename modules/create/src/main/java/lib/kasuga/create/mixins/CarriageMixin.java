@@ -60,12 +60,23 @@ public class CarriageMixin implements CarriageAccess {
     private List<BlockPos> ksg$redundantBogeyPositions;
 
     /**
-     * Vertical body offset. Lives on the carriage rather than the entity so every per-dimension
-     * entity of the carriage shares it, it survives world saves and it can be synced to clients
-     * (through the entity's synched data) from the server, which is the authoritative side.
+     * Server-authoritative vertical offset. A plain value: the server updates it once per tick and
+     * never interpolates. Lives on the carriage rather than the entity so every per-dimension
+     * entity of the carriage shares it and it survives world saves.
      */
     @Unique
-    private LerpedFloat ksg$yOffset;
+    private float ksg$yOffset;
+
+    /**
+     * Client-side smoothed offset. Null until the first sync on the client; it eases towards the
+     * last synced server value instead of snapping to it.
+     */
+    @Unique
+    private LerpedFloat ksg$clientYOffset;
+
+    /** Units per tick the client offset may move towards the synced value. */
+    @Unique
+    private static final float KSG_Y_OFFSET_CHASE_SPEED = 0.5f;
 
     /** Phase of the demo offset animation, advanced once per server tick. */
     @Unique
@@ -90,10 +101,12 @@ public class CarriageMixin implements CarriageAccess {
     }
 
     @Unique
-    private LerpedFloat ksg$yOffset() {
-        if (ksg$yOffset == null)
-            ksg$yOffset = LerpedFloat.linear();
-        return ksg$yOffset;
+    private LerpedFloat ksg$clientYOffset() {
+        if (ksg$clientYOffset == null) {
+            ksg$clientYOffset = LerpedFloat.linear();
+            ksg$clientYOffset.startWithValue(ksg$yOffset);
+        }
+        return ksg$clientYOffset;
     }
 
     @Override
@@ -118,22 +131,30 @@ public class CarriageMixin implements CarriageAccess {
 
     @Override
     public float kasuga$getYOffset() {
-        return ksg$yOffset().getValue();
+        return ksg$clientYOffset == null ? ksg$yOffset : ksg$clientYOffset.getValue();
     }
 
     @Override
     public float kasuga$getInterpolatedYOffset(float partialTicks) {
-        return ksg$yOffset().getValue(partialTicks);
-    }
-
-    @Override
-    public void kasuga$setYOffset(float value) {
-        ksg$yOffset().setValue(value);
+        return ksg$clientYOffset == null ? ksg$yOffset : ksg$clientYOffset.getValue(partialTicks);
     }
 
     @Override
     public void kasuga$restoreYOffset(float value) {
-        ksg$yOffset().startWithValue(value);
+        ksg$yOffset = value;
+        if (ksg$clientYOffset != null)
+            ksg$clientYOffset.startWithValue(value);
+    }
+
+    @Override
+    public void kasuga$applySyncedYOffset(float value) {
+        ksg$clientYOffset().chase(value, KSG_Y_OFFSET_CHASE_SPEED, LerpedFloat.Chaser.LINEAR);
+    }
+
+    @Override
+    public void kasuga$tickYOffsetInterpolation() {
+        if (ksg$clientYOffset != null)
+            ksg$clientYOffset.tickChaser();
     }
 
     /**
@@ -145,10 +166,11 @@ public class CarriageMixin implements CarriageAccess {
         if (level.isClientSide())
             return;
         if (!CreateConfig.isMultiBogeyCarriageEnabled()) {
-            ksg$yOffset().setValue(0);
+            ksg$yOffset = 0;
             return;
         }
-        ksg$yOffset().setValue(.5f * (float) Math.sin(ksg$yOffsetTick * 2 * Math.PI));
+        // TODO: replace the demo sine with the real posture computation.
+        ksg$yOffset = .5f * (float) Math.sin(ksg$yOffsetTick * 2 * Math.PI);
         ksg$yOffsetTick += 0.01f;
         if (ksg$yOffsetTick > 1) ksg$yOffsetTick = 0;
     }
@@ -161,11 +183,8 @@ public class CarriageMixin implements CarriageAccess {
     @Inject(method = "write", at = @At("RETURN"))
     private void kasuga$writeRedundantBogeys(DimensionPalette dimensions, HolderLookup.Provider registries,
                                              CallbackInfoReturnable<CompoundTag> cir) {
-        if (CreateConfig.isCarriageYOffestEnabled()) {
-            float value = ksg$yOffset().getValue();
-            if (value != 0)
-                cir.getReturnValue().putFloat(KSG_Y_OFFSET_KEY, value);
-        }
+        if (CreateConfig.isCarriageYOffestEnabled() && ksg$yOffset != 0)
+            cir.getReturnValue().putFloat(KSG_Y_OFFSET_KEY, ksg$yOffset);
         if (!CreateConfig.isMultiBogeyCarriageEnabled())
             return;
         List<CarriageBogey> bogeys = ksg$redundantBogeys();

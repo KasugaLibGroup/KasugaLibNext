@@ -31,18 +31,24 @@ public interface CarriageAccess {
     /** The registered interior bogey positions, in the carriage-local block frame. */
     List<BlockPos> kasuga$getRedundantBogeyPositions();
 
-    /** The carriage's vertical offset for the current tick; applied on both sides. */
+    /**
+     * The offset used for gameplay on this side: the authoritative plain value on the server, the
+     * smoothed value on the client.
+     */
     float kasuga$getYOffset();
 
-    /** The vertical offset interpolated between the previous and the current tick, for rendering. */
+    /** The offset for rendering: the plain value on the server, interpolated on the client. */
     float kasuga$getInterpolatedYOffset(float partialTicks);
 
-    /** Sets the offset for the current tick; the previous value becomes the last tick's. */
-    void kasuga$setYOffset(float value);
+    /** Restores the server-authoritative value from disk, without interpolation. */
+    void kasuga$restoreYOffset(float value);
 
     /**
-     * Sets the offset without a previous value, so the next frame does not interpolate from the
-     * default 0. Used when restoring from disk.
+     * Client side: starts (or re-targets) the interpolation towards a freshly synced server value.
+     * The client eases its rendered offset towards it instead of snapping.
      */
-    void kasuga$restoreYOffset(float value);
+    void kasuga$applySyncedYOffset(float value);
+
+    /** Client side: advances the sync interpolation by one tick. */
+    void kasuga$tickYOffsetInterpolation();
 }
