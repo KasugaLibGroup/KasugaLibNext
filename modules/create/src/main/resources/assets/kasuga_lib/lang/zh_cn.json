@@ -1,3 +1,7 @@
 {
-  "kasuga_lib.configuration.enable_multi_bogey_carriage": "启用多转向架车厢"
+  "kasuga_lib.configuration.enable_multi_bogey_carriage": "启用多转向架车厢",
+  "kasuga_lib.configuration.enable_carriage_yoffset": "启用车厢垂直偏移",
+  "kasuga_lib.configuration.max_bogey_offset": "转向架弯道最大侧移",
+  "kasuga_lib.configuration.max_carriage_y_offset": "车厢最大垂直偏移",
+  "kasuga_lib.configuration.derailed_on_bogey_offset_overflow": "转向架偏移超限时出轨"
 }

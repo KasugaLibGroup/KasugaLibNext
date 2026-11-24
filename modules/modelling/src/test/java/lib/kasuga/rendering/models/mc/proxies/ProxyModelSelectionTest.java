@@ -5,6 +5,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -15,7 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 
 class ProxyModelSelectionTest {
 
+    // Vanilla block states need the registry bootstrap supplied by the NeoForge test task.
     @Test
+    @Tag("minecraft-resource-integration")
     void selectsAWholeStableModelGroupFromBlockState() {
         CompiledModelGroup retracted = group(
                 "retracted", "models/retracted");

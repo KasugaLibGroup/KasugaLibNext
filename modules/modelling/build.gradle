@@ -211,6 +211,8 @@ neoForge {
                 systemProperty 'kasuga.testModelDepthBias', providers.gradleProperty('kasugaTestModelDepthBias').get()
             if (providers.gradleProperty('kasugaTestWorldLights').isPresent())
                 systemProperty 'kasuga.testWorldLights', providers.gradleProperty('kasugaTestWorldLights').get()
+            if (providers.gradleProperty('kasugaTestModelLifecycle').isPresent())
+                systemProperty 'kasuga.testModelLifecycle', providers.gradleProperty('kasugaTestModelLifecycle').get()
             if (providers.gradleProperty('kasugaTestModelLiveSync').isPresent())
                 systemProperty 'kasuga.testModelLiveSync', providers.gradleProperty('kasugaTestModelLiveSync').get()
 

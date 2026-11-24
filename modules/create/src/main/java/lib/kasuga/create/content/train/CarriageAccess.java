@@ -30,4 +30,25 @@ public interface CarriageAccess {
 
     /** The registered interior bogey positions, in the carriage-local block frame. */
     List<BlockPos> kasuga$getRedundantBogeyPositions();
+
+    /**
+     * The offset used for gameplay on this side: the authoritative plain value on the server, the
+     * smoothed value on the client.
+     */
+    float kasuga$getYOffset();
+
+    /** The offset for rendering: the plain value on the server, interpolated on the client. */
+    float kasuga$getInterpolatedYOffset(float partialTicks);
+
+    /** Restores the server-authoritative value from disk, without interpolation. */
+    void kasuga$restoreYOffset(float value);
+
+    /**
+     * Client side: starts (or re-targets) the interpolation towards a freshly synced server value.
+     * The client eases its rendered offset towards it instead of snapping.
+     */
+    void kasuga$applySyncedYOffset(float value);
+
+    /** Client side: advances the sync interpolation by one tick. */
+    void kasuga$tickYOffsetInterpolation();
 }

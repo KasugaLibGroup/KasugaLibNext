@@ -25,4 +25,5 @@ This directory explains algorithms, data flow, module boundaries, timing, and re
 | Stylized textures, material variants, and generation-based caching | [PBR](pbr.md) |
 | Weather density layers, ray marching, and shadowing | [Volumetric Clouds](volumetric-clouds.md) |
 | Content tree, property conversion, factories, and registration dispatch | [Data-Driven Registration](data-driven-registration.md) |
-| Create station assembly, multi-bogey capture, collapse, persistence, and sync | [Multi-Bogey Carriages](create/multi-bogey-carriage.en.md) |
+| Create station assembly, multi-bogey capture, collapse, persistence, and sync, curve tracking, and derailing | [Multi-Bogey Carriages](create/multi-bogey-carriage.en.md) |
+| Posture event, authoritative carriage state, client chasing, persistence, and render consumers | [Carriage Vertical Posture](create/carriage-posture.en.md) |

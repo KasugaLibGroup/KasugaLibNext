@@ -5,6 +5,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import lib.kasuga.rendering.output.mc.MinecraftWorldViews;
 import lib.kasuga.rendering.output.mc.MinecraftCameras;
+import lib.kasuga.rendering.output.mc.DistantWorldRendering;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.renderer.GameRenderer;
@@ -20,6 +21,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(GameRenderer.class)
 abstract class WorldViewGameRendererMixin {
+    @Inject(method = "getDepthFar", at = @At("RETURN"), cancellable = true)
+    private void kasuga$distantGeometryFarPlane(CallbackInfoReturnable<Float> callback) {
+        callback.setReturnValue(DistantWorldRendering.farPlane(callback.getReturnValueF()));
+    }
+
     @WrapOperation(method = "render", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/GameRenderer;renderLevel(Lnet/minecraft/client/DeltaTracker;)V"), require = 1)
     private void kasuga$worldViews(GameRenderer renderer, DeltaTracker delta, Operation<Void> original) {

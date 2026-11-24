@@ -21,7 +21,8 @@ public final class State<Owner> {
     final List<Consumer<StateContext<Owner>>> onEnter = new ArrayList<>();
     final List<Consumer<StateContext<Owner>>> onExit = new ArrayList<>();
     final List<Consumer<StateContext<Owner>>> onUpdate = new ArrayList<>();
-    final Pose.Builder pose = new Pose.Builder();
+    private final Pose.Builder pose = new Pose.Builder();
+    private Pose staticPose;
     AnimationSampler<?> clipSampler;
     Object clipData;
     boolean clipLoop;
@@ -72,11 +73,13 @@ public final class State<Owner> {
 
     public State<Owner> pose(Pose pose) {
         this.pose.merge(pose);
+        staticPose = null;
         return this;
     }
 
     public State<Owner> morph(Object id, float value, float factor) {
         this.pose.morph(id, value, factor);
+        staticPose = null;
         return this;
     }
 
@@ -86,6 +89,7 @@ public final class State<Owner> {
 
     public State<Owner> bone(String name, Transform transform, ApplyMode mode) {
         this.pose.bone(name, transform, mode);
+        staticPose = null;
         return this;
     }
 
@@ -95,11 +99,13 @@ public final class State<Owner> {
 
     public State<Owner> frame(Object materialRef, int frame) {
         this.pose.frame(materialRef, frame);
+        staticPose = null;
         return this;
     }
 
     public State<Owner> ikEnabled(String chain, boolean enabled) {
         this.pose.ikEnabled(chain, enabled);
+        staticPose = null;
         return this;
     }
 
@@ -155,6 +161,7 @@ public final class State<Owner> {
     }
 
     Pose buildPose() {
-        return pose.build();
+        if (staticPose == null) staticPose = pose.isEmpty() ? Pose.empty() : pose.build();
+        return staticPose;
     }
 }

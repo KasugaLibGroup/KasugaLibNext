@@ -1,6 +1,6 @@
 # How Multi-Bogey Carriages Work
 
-KasugaLibNext extends Create's station assembly path so a single carriage can use more than two bogeys. Create's methods are not replaced; the feature makes three minimal interventions. For usage and the config switch see the [guide](../../guides/create/multi-bogey-carriage.md).
+KasugaLibNext extends Create's station assembly path so a single carriage can use more than two bogeys. Create's methods are not replaced; the assembly path makes three minimal interventions. The rest of the feature covers the interior bogeys' motion and orientation, curve tracking, and the derailment guard. For usage and the config switches see the [guide](../../guides/create/multi-bogey-carriage.md). The carriage body's vertical posture relative to the bogeys is a separate system; see [How Carriage Posture Works](carriage-posture.md).
 
 ## Vanilla constraints
 
@@ -66,22 +66,56 @@ Only the server writes this NBT; client carriages come from `Train.STREAM_CODEC`
 - the client handler **replaces** both lists, making repeated or late syncs idempotent; unknown block types are skipped together with their positions;
 - client-side bogeys use the three-argument constructor, so their `TravellingPoint`s are empty.
 
-## Angles and rendering
+## Interior bogeys: motion, orientation, and curve tracking
 
 Client-side interior bogeys have no track points, so calling `CarriageBogey#updateAngles` directly would always hit the derailed fallback. `CarriageContraptionEntityMixin` runs after the second `updateAngles` call and computes:
 
-- wheel angle: the same integration as Create, `new = (old - 360 * distanceTo / (2π * radius)) % 360`;
-- yaw/pitch: interpolate between the leading and trailing bogeys with `t = along / bogeySpacing`. `along` is the relative position projected onto the assembly direction, exactly the bogey's distance from the leading bogey; exact on straight, level track and a first-order approximation on curves and slopes.
+**Wheel angle**: the same integration as Create, `new = (old - 360 · d / (2π · r)) % 360`, where `d` is the entity's real movement along the track this tick.
 
-The renderer passes the same projection to `CarriageContraptionEntityRenderer#translateBogey` and reuses its lighting and `isHiddenInPortal` logic. The Flywheel visualization only knows `carriage.bogeys`, so the renderer mixin draws the extra bogeys directly.
+**Orientation (yaw/pitch)**: starting from the carriage's leading wheel point, walk along the graph towards the trailing bogey by `half leading wheel spacing + along ± half this bogey's wheel spacing`, sampling the bogey's two wheel contact points, then apply vanilla `updateAngles`' formula (`Δ = front contact − rear contact`, `yaw = −(deg(atan2(Δz, Δx)) + 90)`, `pitch = deg(atan2(Δy, horizontal length))`).
 
-## Switch
+- the walk uses `TravellingPoint#travel`: curved edges map distance onto the Bezier parameter through `TrackEdge#incrementT → BezierConnection`, and at nodes `follow(trailing point)` picks the branch, so across an S-bend the sample is the real curve tangent at that spot;
+- each stride is at most 5 blocks so the distance-to-Bezier-parameter mapping stays accurate;
+- `along` is the relative position projected onto the assembly direction — the bogey's distance from the leading bogey;
+- when the client has no track graph yet, the train is derailed, the walk is blocked, or the sampled direction degenerates, it falls back to interpolating the end bogeys' angles.
 
-The `enable_multi_bogey_carriage` common config in `CreateConfig` is the master switch; every entry point returns to vanilla behaviour when it is off:
+**Curve offset**: the body is the chord between the two real bogeys while the track is curved, so interior bogeys need a lateral shift towards the outside of the turn to keep their wheels on the rails. Using the end bogeys' yaw difference `θ`, the arc is:
+
+```text
+L = bogeySpacing
+R = L / (2 · sin(|θ|/2))
+u = (t − 0.5) · L
+offset(t) = −sign(θ) · (sqrt(R² − u²) − R · cos(|θ|/2))
+```
+
+The height peaks at the chord midpoint and is 0 at the ends; positive is to the right of the leading-to-trailing chord, and the arc bulges to the outside of the turn. The result is clamped to `max_bogey_offset`, stored per bogey in a `LerpedFloat`, and interpolated with the partial tick when rendering.
+
+**Rendering**: `CarriageContraptionEntityRendererMixin` passes the same `along` projection to `CarriageContraptionEntityRenderer#translateBogey` as the chord position, and applies the lateral offset as a world-space horizontal translation before `translateBogey` — the local +X axis of `translateBogey`'s carriage frame maps to world `(sin viewYRot, 0, cos viewYRot)`. The Flywheel visualization only knows `carriage.bogeys`, so the renderer mixin draws the extra bogeys directly.
+
+## Derailment guard
+
+`CarriageMixin` also runs a check at the tail of `Carriage.manageEntities` (server, once per carriage per tick):
+
+- preconditions: multi-bogey on, `derailed_on_bogey_offset_overflow` on, the carriage has interior bogeys, the train is not derailed, and the graph plus the four track points of the end bogeys are valid;
+- the end headings are derived from the real track points (the server does not maintain the client-side yaw `LerpedFloat`s), using the same formula as `updateAngles`;
+- the arc height peaks at the chord midpoint, so the midpoint value `R · (1 − cos(|θ|/2))` is used; it is at least as large as what any interior bogey needs, covering every position;
+- above `max_bogey_offset`, the train derails through Create's own high-stress procedure: `speed = 0`, cancel navigation, `runtime.tick`, `derailed = true`, `status.highStress()`. Already-derailed trains skip the check.
+
+## Switches
+
+The multi-bogey-related common configs in `CreateConfig`:
+
+| Key | Effect |
+| --- | --- |
+| `enable_multi_bogey_carriage` | Master switch; when off, capture, assembly, persistence, sync, rendering, and angle computation all return to the vanilla path. |
+| `max_bogey_offset` | Interior-bogey curve offset limit and the derailment threshold. |
+| `derailed_on_bogey_offset_overflow` | Whether the required curve offset exceeding `max_bogey_offset` derails the train. |
+
+With `enable_multi_bogey_carriage` off:
 
 - capture no longer clamps the counter → vanilla `too_many_bogeys`;
 - station collapse returns the original `secondBogeyPos`;
 - NBT is neither written nor read;
 - the client drops incoming payloads and skips rendering and angle updates.
 
-The default is evaluated lazily via `ModConfigSpec.Builder#define(path, Supplier<Boolean>)`. Other mods can override it before configs are loaded with `KasugaLibCreateApi.setMultiBogeyCarriageDefault(boolean)`; an explicit value in the config file always wins.
+Defaults are evaluated lazily via `ModConfigSpec.Builder#define(path, Supplier<Boolean>)`. Other mods can override them before configs are loaded with `KasugaLibCreateApi.setMultiBogeyCarriageDefault` and `setDerailedOnBogeyOffsetDefault`; an explicit value in the config file always wins.

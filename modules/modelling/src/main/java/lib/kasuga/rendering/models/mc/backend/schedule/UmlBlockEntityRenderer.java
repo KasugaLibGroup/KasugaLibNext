@@ -20,7 +20,7 @@ import java.util.Objects;
  * therefore proves vanilla visibility, and that is exactly what we forward to
  * the {@link ModelRenderScheduler}: instances mounted with
  * {@code RenderScheduleMode.VANILLA_RENDERER} are drawn by the global
- * AFTER_ENTITIES pipeline only on frames their block entity actually rendered
+ * AFTER_BLOCK_ENTITIES pipeline only on frames their block entity actually rendered
  * — otherwise sampling and upload are skipped entirely.</p>
  *
  * <p>Register with {@code BlockEntityRenderers.register(type, context ->
@@ -57,7 +57,7 @@ public final class UmlBlockEntityRenderer<T extends BlockEntity> implements Bloc
     public void render(T blockEntity, float partialTick, PoseStack poseStack,
                        MultiBufferSource bufferSource, int packedLight, int packedOverlay) {
         ModelInstance instance = resolver.resolve(blockEntity);
-        if (instance != null) {
+        if (instance != null && !instance.isClosed()) {
             ModelRenderScheduler.markRenderedThisFrame(instance);
         }
     }

@@ -56,16 +56,29 @@ public final class KsgBbModelLoader implements ModelLoader<String, ResourceLocat
 
     @Override
     public Map<ResourceLocation, Model> load(ResourceLocation identifier, String input) {
-        BbModelDefinition definition;
-        try {
-            definition = BbModelDefinition.parse(input);
-        } catch (IllegalArgumentException | JsonParseException exception) {
-            throw new IllegalArgumentException("Invalid Blockbench model " + identifier, exception);
-        }
-
+        BbModelDefinition definition = parse(identifier, input);
         Map<Integer, Material> materials = buildMaterials(identifier, definition);
         Model model = buildSkeletonAndGeometry(definition, materials, materialSetBuilder.endMaterialSet());
         return Map.of(identifier, model);
+    }
+
+    /** Uses the rendering loader's geometry, bind pose and clips without decoding images or accessing an atlas. */
+    public static Model loadGeometry(ResourceLocation identifier, String input) {
+        BbModelDefinition definition = parse(identifier, input);
+        Material placeholder = new Material(new Texture[0], null);
+        Map<Integer, Material> materials = new HashMap<>();
+        for (BbModelDefinition.Texture texture : definition.textures()) {
+            materials.put(textureReference(texture), placeholder);
+        }
+        return buildSkeletonAndGeometry(definition, materials, new MaterialSet(List.of(), List.of(placeholder)));
+    }
+
+    private static BbModelDefinition parse(ResourceLocation identifier, String input) {
+        try {
+            return BbModelDefinition.parse(input);
+        } catch (IllegalArgumentException | JsonParseException exception) {
+            throw new IllegalArgumentException("Invalid Blockbench model " + identifier, exception);
+        }
     }
 
     /**

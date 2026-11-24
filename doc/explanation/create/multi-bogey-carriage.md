@@ -1,6 +1,6 @@
 # 多转向架车厢原理
 
-KasugaLibNext 在 Create 的车站装配路径上扩展出"一节车厢使用两个以上转向架"的能力，不改写 Create 的方法，只在三个位置做最小干预。使用方式与开关见[使用指南](../../guides/create/multi-bogey-carriage.md)。
+KasugaLibNext 在 Create 的车站装配路径上扩展出"一节车厢使用两个以上转向架"的能力，不改写 Create 的方法：装配路径上只做三处最小干预，其余部分是内部转向架的运动、朝向、弯道贴轨与出轨判定。使用方式与开关见[使用指南](../../guides/create/multi-bogey-carriage.md)。车体相对转向架的垂直姿态是独立系统，见[车厢垂直姿态原理](carriage-posture.md)。
 
 ## 原版限制
 
@@ -67,22 +67,56 @@ KasugaRedundantBogeys: [
 - 客户端处理器整体**替换**两个列表，重复或迟到的同步都是幂等的；未知方块类型连同位置一起跳过；
 - 客户端构造的转向架使用三参构造器，`TravellingPoint` 为空。
 
-## 角度与渲染
+## 内部转向架：运动、朝向与贴轨
 
 客户端内部转向架没有轨道点，直接调用 `CarriageBogey#updateAngles` 会一直命中"脱轨"分支。`CarriageContraptionEntityMixin` 在第二次 `updateAngles` 之后自行计算：
 
-- 车轮角：与 Create 相同的积分 `new = (old - 360 * distanceTo / (2π * radius)) % 360`；
-- yaw/pitch：按 `t = along / bogeySpacing` 在前、后转向架角度之间插值。`along` 是相对位置在装配方向上的投影，恰好等于该转向架相对前转向架的距离；直线水平轨道完全准确，曲线/坡道为一阶近似。
+**车轮角**：与 Create 相同的积分 `new = (old - 360 · d / (2π · r)) % 360`，`d` 是实体本 tick 沿轨道的真实位移。
 
-渲染端把同一投影值传给 `CarriageContraptionEntityRenderer#translateBogey`，并沿用它的光照与 `isHiddenInPortal` 逻辑。Flywheel 可视化只知道 `carriage.bogeys`，因此额外转向架由渲染 mixin 直接绘制。
+**朝向（yaw/pitch）**：从车体最前端轮点出发，沿轨道图朝后转向架方向行走 `前转向架半轮距 + along ± 该转向架半轮距`，得到该内部转向架的两个轮触点，再套用原版 `updateAngles` 的公式（`Δ = 前触点 − 后触点`，`yaw = −(deg(atan2(Δz, Δx)) + 90)`，`pitch = deg(atan2(Δy, 水平长度))`）。
+
+- 行走使用 `TravellingPoint#travel`：弯道段由 `TrackEdge#incrementT → BezierConnection` 把距离换算成贝塞尔参数，节点处由 `follow(后转向架后轮点)` 选择分支，S 弯跨节点时取到的是该处真实的曲线切线；
+- 每次步进不超过 5 格，保证距离到贝塞尔参数的映射准确；
+- `along` 是相对位置在装配方向上的投影，即该转向架相对前转向架的距离；
+- 客户端尚未拿到轨道图、列车已脱轨、行走被阻断或采样点退化时，回退到首尾转向架角度插值。
+
+**弯道侧移**：车体是首尾转向架之间的弦，轨道是曲线，内部转向架需要相对弦线向弯道外侧移动才能让车轮留在轨道上。以首尾 yaw 差 `θ` 构造圆弧：
+
+```text
+L = bogeySpacing
+R = L / (2 · sin(|θ|/2))
+u = (t − 0.5) · L
+offset(t) = −sign(θ) · (sqrt(R² − u²) − R · cos(|θ|/2))
+```
+
+拱高在弦中点最大、两端为 0；正方向为"沿 leading→trailing 弦的右手侧"，圆弧向弯道外侧凸出。结果夹紧到 `max_bogey_offset`，按格存入每架转向架的 `LerpedFloat`，渲染时按 partialTick 插值。
+
+**渲染**：`CarriageContraptionEntityRendererMixin` 沿用同一 `along` 投影作为弦向位置传给 `CarriageContraptionEntityRenderer#translateBogey`，并把侧移作为世界水平位移加在 `translateBogey` 之前——`translateBogey` 弦向坐标系的局部 +X 轴映射到世界 `(sin viewYRot, 0, cos viewYRot)`。Flywheel 可视化只知道 `carriage.bogeys`，因此额外转向架由渲染 mixin 直接绘制。
+
+## 出轨判定
+
+`CarriageMixin` 在 `Carriage.manageEntities` 尾部（服务端、每车厢每 tick）做一道判定：
+
+- 前置条件：多转向架开启、`derailed_on_bogey_offset_overflow` 开启、车厢有内部转向架、列车未出轨、轨道图与首尾转向架的四个轨道点有效；
+- 端部航向从真实轨道点推算（服务端不维护客户端的 yaw `LerpedFloat`），公式与 `updateAngles` 相同；
+- 拱高沿弦中间最大，因此直接取弦中点：`R · (1 − cos(|θ|/2))`，它不小于任何内部转向架实际需要的侧移，覆盖所有位置；
+- 超过 `max_bogey_offset` 时按 Create 自己的高应力出轨流程处理：`speed = 0`、取消导航、`runtime.tick`、`derailed = true`、`status.highStress()`；已出轨的列车跳过后续判定。
 
 ## 开关
 
-`CreateConfig` 的 common 配置 `enable_multi_bogey_carriage` 是总开关，关闭时所有入口直接返回原版行为：
+`CreateConfig` 的 common 配置中与多转向架相关的三项：
+
+| 键 | 作用 |
+| --- | --- |
+| `enable_multi_bogey_carriage` | 多转向架总开关，关闭时装配、捕获、持久化、同步、渲染与角度计算全部回到原版路径。 |
+| `max_bogey_offset` | 内部转向架弯道侧移上限，同时也是出轨判定的阈值。 |
+| `derailed_on_bogey_offset_overflow` | 弯道所需侧移超过 `max_bogey_offset` 时是否出轨。 |
+
+`enable_multi_bogey_carriage` 关闭时的回退点：
 
 - 捕获阶段不钳制计数 → 原版 `too_many_bogeys`；
 - 车站合并返回原始 `secondBogeyPos`；
 - NBT 不写、不读；
 - 客户端丢弃收到的数据包，渲染和角度计算跳过。
 
-默认值通过 `ModConfigSpec.Builder#define(path, Supplier<Boolean>)` 延迟求值，其他模组可在配置加载前用 `KasugaLibCreateApi.setMultiBogeyCarriageDefault(boolean)` 覆盖；配置文件中显式写入的值优先级最高。
+默认值通过 `ModConfigSpec.Builder#define(path, Supplier<Boolean>)` 延迟求值，其他模组可在配置加载前用 `KasugaLibCreateApi.setMultiBogeyCarriageDefault`、`setDerailedOnBogeyOffsetDefault` 覆盖；配置文件中显式写入的值优先级最高。
