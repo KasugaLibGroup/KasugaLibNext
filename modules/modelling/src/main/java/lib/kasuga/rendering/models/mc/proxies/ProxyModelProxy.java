@@ -57,22 +57,23 @@ public final class ProxyModelProxy {
         return defaultComposition(element);
     }
 
-    public static ProxyComposition<ProxyModelBlockEntity, ProxyModelInput, Void, Void, Void>
-    defaultComposition(ProxyModelBlockEntity element) {
+    public static <T extends ProxyModelBlockEntity>
+    ProxyComposition<T, ProxyModelInput, Void, Void, Void>
+    defaultComposition(T element) {
         return builder(element).build();
     }
 
-    public static CompositionBuilder builder(ProxyModelBlockEntity element) {
-        return new CompositionBuilder(element);
+    public static <T extends ProxyModelBlockEntity> CompositionBuilder<T> builder(T element) {
+        return new CompositionBuilder<>(element);
     }
 
-    private static Transform rootTransform(ProxyModelBlockEntity element) {
+    private static <T extends ProxyModelBlockEntity> Transform rootTransform(T element) {
         return rootTransform(
                 element, element.resolveGroup(element.getBlockState()).yOffset());
     }
 
-    private static Transform rootTransform(
-            ProxyModelBlockEntity element,
+    private static <T extends ProxyModelBlockEntity> Transform rootTransform(
+            T element,
             float groupYOffset
     ) {
         BlockPos pos = element.getBlockPos();
@@ -85,14 +86,19 @@ public final class ProxyModelProxy {
         } else {
             yaw += element.yawOffset();
         }
-        return applyBlockstateYaw(
-                new Transform().translate(
-                        pos.getX() + 0.5f,
-                        pos.getY() + groupYOffset,
-                        pos.getZ() + 0.5f
-                ),
-                yaw
-        );
+        return placementRoot(pos, groupYOffset, yaw, element.visualHostTransform());
+    }
+
+    static Transform placementRoot(
+            BlockPos pos,
+            float groupYOffset,
+            float yaw,
+            @Nullable Transform visualHost
+    ) {
+        Transform anchor = visualHost == null
+                ? new Transform().translate(pos.getX(), pos.getY(), pos.getZ())
+                : visualHost.copy();
+        return applyBlockstateYaw(anchor.translate(0.5f, groupYOffset, 0.5f), yaw);
     }
 
     /**
@@ -106,8 +112,8 @@ public final class ProxyModelProxy {
         return transform.rotate(0f, -yaw, 0f, true);
     }
 
-    public static final class CompositionBuilder {
-        private final ProxyModelBlockEntity element;
+    public static final class CompositionBuilder<T extends ProxyModelBlockEntity> {
+        private final T element;
         private final DeferredModelPoseTarget poseTarget = new DeferredModelPoseTarget();
         private final Visual visual;
         private final List<ProxyPlaybackRoot> playbackRoots = new ArrayList<>();
@@ -117,7 +123,7 @@ public final class ProxyModelProxy {
         @Nullable
         private PlaybackCommandApplierFactory commandApplierFactory;
 
-        private CompositionBuilder(ProxyModelBlockEntity element) {
+        private CompositionBuilder(T element) {
             this.element = Objects.requireNonNull(element, "element");
             this.visual = new Visual(element, poseTarget);
         }
@@ -150,12 +156,12 @@ public final class ProxyModelProxy {
             return visual::instance;
         }
 
-        public ProxyComposition<ProxyModelBlockEntity, ProxyModelInput, Void, Void, Void>
+        public ProxyComposition<T, ProxyModelInput, Void, Void, Void>
         build() {
             List<TargetBinding<?>> targets = new ArrayList<>(visual.targetBindings());
             targets.add(new TargetBinding<>(
                     poseTarget, poseEvaluator, new TargetPublicationFactory<>()));
-            return ProxyComposition.of(
+            return ProxyComposition.<T, ProxyModelInput, Void, Void, Void>of(
                     POLICY,
                     element -> new ProxyModelInput(element.getBlockState()),
                     new ProxyControllerPort<>() {
@@ -187,9 +193,9 @@ public final class ProxyModelProxy {
         }
     }
 
-    private static final class Visual
-            implements ProxyVisualPort<ProxyModelBlockEntity, Void> {
-        private final ProxyModelBlockEntity element;
+    private static final class Visual<T extends ProxyModelBlockEntity>
+            implements ProxyVisualPort<T, Void> {
+        private final T element;
         private final DeferredModelPoseTarget poseTarget;
         private final ProxyModelSelection selection;
         private final RigidPartVisualStage stage;
@@ -198,7 +204,7 @@ public final class ProxyModelProxy {
         private AnimationRenderPort renderPort;
 
         private Visual(
-                ProxyModelBlockEntity element,
+                T element,
                 DeferredModelPoseTarget poseTarget
         ) {
             this.element = element;
@@ -208,8 +214,8 @@ public final class ProxyModelProxy {
             stage = createStage(element, activeGroup);
         }
 
-        private static RigidPartVisualStage createStage(
-                ProxyModelBlockEntity element,
+        private static <U extends ProxyModelBlockEntity> RigidPartVisualStage createStage(
+                U element,
                 CompiledModelGroup group
         ) {
             Level level = element.getLevel();
@@ -217,7 +223,7 @@ public final class ProxyModelProxy {
                 throw new IllegalStateException("proxy model block entity requires a level");
             }
             return new RigidPartVisualStage(
-                    ProxyIdentity.ofBlock(level, element.getBlockPos()).key(),
+                    element.visualIdentity(),
                     group,
                     () -> null,
                     rootTransform(element, group.yOffset())
@@ -234,7 +240,7 @@ public final class ProxyModelProxy {
         }
 
         @Override
-        public boolean isReady(ProxyModelBlockEntity ignored) {
+        public boolean isReady(T ignored) {
             return true;
         }
 
@@ -251,7 +257,7 @@ public final class ProxyModelProxy {
         }
 
         @Override
-        public void tick(ProxyModelBlockEntity current) {
+        public void tick(T current) {
             CompiledModelGroup selected = selection.resolve(current.getBlockState());
             if (!selected.id().equals(activeGroup.id())) {
                 if (!stage.replaceGroup(
@@ -275,7 +281,7 @@ public final class ProxyModelProxy {
         }
 
         @Override
-        public boolean rebind(ProxyModelBlockEntity current) {
+        public boolean rebind(T current) {
             CompiledModelGroup selected = selection.resolve(current.getBlockState());
             if (!selected.id().equals(activeGroup.id())) {
                 if (!stage.replaceGroup(

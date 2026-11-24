@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /** Block entity host configured by the {@code proxy_model_be} data-driven factory. */
 public class ProxyModelBlockEntity extends BlockEntity implements ProxySessionHost {
@@ -23,6 +24,10 @@ public class ProxyModelBlockEntity extends BlockEntity implements ProxySessionHo
     private final Map<String, Float> facingYaw;
     @Nullable
     private ProxySession<?, ?, ?, ?, ?> proxySession;
+    @Nullable
+    private ResourceLocation visualHostIdentity;
+    @Nullable
+    private Transform visualHostTransform;
 
     public ProxyModelBlockEntity(
             BlockEntityType<?> type,
@@ -97,6 +102,40 @@ public class ProxyModelBlockEntity extends BlockEntity implements ProxySessionHo
 
     public ProxyModelSelection selection() {
         return selection;
+    }
+
+    /**
+     * Binds a borrowed external host's world-space anchor pose. Block position and BlockState stay
+     * local to that host; the existing composition and animation scope remain their owners.
+     */
+    public void bindVisualHost(ResourceLocation identity, Transform anchorTransform) {
+        Objects.requireNonNull(identity, "identity");
+        Objects.requireNonNull(anchorTransform, "anchorTransform");
+        if (!anchorTransform.transform().isFinite() || !anchorTransform.normal().isFinite()) {
+            throw new IllegalArgumentException("visual host transform must be finite");
+        }
+        if (!identity.equals(visualHostIdentity)) {
+            closeProxySession();
+            visualHostIdentity = identity;
+        }
+        visualHostTransform = anchorTransform.copy();
+    }
+
+    /** Ends the external attachment before the virtual BE or its owning structure is discarded. */
+    public void releaseVisualHost() {
+        closeProxySession();
+        visualHostIdentity = null;
+        visualHostTransform = null;
+    }
+
+    public ResourceLocation visualIdentity() {
+        return visualHostIdentity != null
+                ? visualHostIdentity
+                : ProxyIdentity.ofBlock(Objects.requireNonNull(getLevel(), "level"), getBlockPos()).key();
+    }
+
+    public @Nullable Transform visualHostTransform() {
+        return visualHostTransform == null ? null : visualHostTransform.copy();
     }
 
     public CompiledModelGroup resolveGroup(BlockState state) {

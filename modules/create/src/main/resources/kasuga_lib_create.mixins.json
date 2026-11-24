@@ -25,6 +25,7 @@
   "client": [
     "client.BezierConnectionMixin",
     "client.CarriageContraptionEntityRendererMixin",
+    "client.ContraptionInteractionShapeMixin",
     "client.ModernBezierGirdersMixin",
     "client.ModernBezierSegmentsMixin"
   ]

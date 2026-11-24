@@ -112,6 +112,21 @@ public final class ProxyModelBlockFactories {
         return registration;
     }
 
+    /**
+     * Public registration-time model configuration for consuming-mod proxy-model hosts.
+     */
+    public record ModelSettings(
+            ProxyModelSelection selection,
+            float yawOffset,
+            Map<String, Float> facingYaw
+    ) {
+    }
+
+    public static ModelSettings parseModelSettings(@Nullable JsonObject params) {
+        ModelParams parsed = ModelParams.parse(params);
+        return new ModelSettings(parsed.selection, parsed.yawOffset, parsed.facingYaw);
+    }
+
     static final class ModelParams {
         final ProxyModelSelection selection;
         final float yawOffset;
