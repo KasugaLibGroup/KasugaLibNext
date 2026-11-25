@@ -32,6 +32,11 @@ public final class WorldDisplayScene extends WorldDisplayTarget {
         for (WorldDisplayTarget child : children) result.addAll(child.lights());
         return result;
     }
+    @Override protected List<WeatherFilter> contentWeatherFilters() {
+        List<WeatherFilter> result = new ArrayList<>();
+        for (WorldDisplayTarget child : children) result.addAll(child.weatherFilters());
+        return result;
+    }
     @Override protected void closeContent() {
         RuntimeException failure=null;
         for(var c:children)try { c.close(); }catch(RuntimeException e){if(failure==null)failure=e;else failure.addSuppressed(e);}

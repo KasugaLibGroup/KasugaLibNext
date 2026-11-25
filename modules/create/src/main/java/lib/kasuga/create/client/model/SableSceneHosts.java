@@ -46,7 +46,7 @@ public final class SableSceneHosts {
         return Bridge.contraption(level, entity);
     }
 
-    static final class Bridge {
+    public static final class Bridge {
         private Bridge() {}
 
         static Optional<SceneHost> block(ClientLevel level, BlockPos anchor) {
@@ -71,7 +71,7 @@ public final class SableSceneHosts {
             return Optional.of(track(resolver, Vec3.ZERO, CreateSceneHosts.contraption(entity)));
         }
 
-        static ScenePose anchored(dev.ryanhcode.sable.companion.math.Pose3dc pose, Vec3 anchor) {
+        public static ScenePose anchored(dev.ryanhcode.sable.companion.math.Pose3dc pose, Vec3 anchor) {
             // Project the distant storage anchor in doubles before reducing to a nearby float basis.
             Vec3 origin = pose.transformPosition(anchor);
             var orientation = pose.orientation();

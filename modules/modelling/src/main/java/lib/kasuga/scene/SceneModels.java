@@ -14,9 +14,15 @@ import lib.kasuga.rendering.output.mc.MinecraftWorldViews;
 import lib.kasuga.rendering.effect.EffectHandle;
 import lib.kasuga.rendering.effect.builtin.light.WorldLight;
 import lib.kasuga.rendering.effect.builtin.light.WorldLights;
+import lib.kasuga.rendering.effect.builtin.weather.WeatherDepthPassContext;
+import lib.kasuga.rendering.effect.builtin.weather.WeatherFilterEffect;
+import lib.kasuga.rendering.effect.builtin.weather.WeatherFilters;
 import lib.kasuga.rendering.lighting.LightFrame;
 import lib.kasuga.rendering.models.mc.scene.display.WorldDisplayTarget;
 import lib.kasuga.rendering.models.mc.scene.display.WorldLightTarget;
+import lib.kasuga.rendering.models.mc.scene.display.WorldWeatherFilterTarget;
+import lib.kasuga.rendering.weather.WeatherFilterFrame;
+import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -54,6 +60,7 @@ public final class SceneModels implements AutoCloseable {
     private long resourceGeneration=-1;
     private long displayTick;
     private float renderDistance;
+    private boolean occludeWeather = true;
 
     private SceneModels(ClientLevel level) {
         this.level = java.util.Objects.requireNonNull(level);
@@ -74,6 +81,17 @@ public final class SceneModels implements AutoCloseable {
         DistantWorldRendering.setRange(id, blocks);
         renderDistance = blocks;
         return this;
+    }
+
+    /** Controls whether geometry in this scene automatically occludes rain and snow. Enabled by default. */
+    public SceneModels occludeWeather(boolean value) {
+        if (closed) throw new IllegalStateException("Model scene is closed");
+        occludeWeather = value;
+        return this;
+    }
+
+    public boolean occludesWeather() {
+        return occludeWeather;
     }
     /** Takes ownership. Position stays double precision until the camera has been subtracted. */
     public Entry add(MinecraftModelSource source, Vec3 position) {
@@ -110,6 +128,90 @@ public final class SceneModels implements AutoCloseable {
         }
         return java.util.Optional.ofNullable(nearest);
     }
+    private static boolean sameWorld(ClientLevel sceneLevel, ClientLevel renderLevel) {
+        return renderLevel == sceneLevel || (MinecraftWorldViews.sourceLevel() == sceneLevel
+                && renderLevel.dimension().equals(sceneLevel.dimension()));
+    }
+
+    public static boolean hasWeatherOccluders(ClientLevel level, Vec3 camera, double radius, float partialTick) {
+        for (SceneModels scene : List.copyOf(ACTIVE)) {
+            if (scene.closed || !scene.occludeWeather || !sameWorld(scene.level, level)) continue;
+            for (Entry entry : List.copyOf(scene.models)) {
+                Frame frame = entry.weatherFrame(partialTick);
+                if (frame != null && overlapsHorizontally(frame, camera, radius)) return true;
+            }
+        }
+        return false;
+    }
+
+    public static void renderWeatherDepth(WeatherDepthPassContext context) {
+        Vec3 camera = context.camera();
+        float partialTick = context.partialTick();
+        double radius = context.horizontalRadius();
+        for (SceneModels scene : List.copyOf(ACTIVE)) {
+            if (scene.closed || !scene.occludeWeather || !sameWorld(scene.level, context.level())) continue;
+            long generation = lib.kasuga.rendering.models.mc.scene.ModelPreviewResources.generation();
+            if (generation != scene.resourceGeneration) {
+                if (scene.buffers != null) scene.buffers.close();
+                scene.buffers = null;
+                scene.resourceGeneration = generation;
+            }
+            for (Entry entry : List.copyOf(scene.models)) {
+                Frame frame = entry.weatherFrame(partialTick);
+                if (frame == null || !overlapsHorizontally(frame, camera, radius)) continue;
+                context.poseStack().pushPose();
+                try {
+                    context.poseStack().mulPose(frame.pose.relativeTo(camera));
+                    frame.snapshot.render(new MinecraftModelSource.Context(
+                            context.poseStack(),
+                            context.buffers(),
+                            context.projectionMatrix(),
+                            partialTick,
+                            LightTexture.FULL_BRIGHT,
+                            context.viewMatrix()
+                    ));
+                } finally {
+                    context.poseStack().popPose();
+                }
+            }
+        }
+    }
+
+    public static java.util.OptionalDouble sampleWeatherRoof(ClientLevel level, double worldX, double minY, double maxY,
+                                                              double worldZ, float partialTick) {
+        double best = Double.NEGATIVE_INFINITY;
+        Vec3 top = new Vec3(worldX, maxY, worldZ);
+        Vec3 bottom = new Vec3(worldX, minY, worldZ);
+        for (SceneModels scene : List.copyOf(ACTIVE)) {
+            if (scene.closed || !scene.occludeWeather || !sameWorld(scene.level, level)) continue;
+            for (Entry entry : List.copyOf(scene.models)) {
+                Frame frame = entry.weatherFrame(partialTick);
+                if (frame == null) continue;
+                var worldBounds = frame.snapshot.bounds().transform(frame.pose.transform())
+                        .move(frame.pose.origin().x, frame.pose.origin().y, frame.pose.origin().z);
+                if (worldX < worldBounds.minX() || worldX > worldBounds.maxX()
+                        || worldZ < worldBounds.minZ() || worldZ > worldBounds.maxZ()
+                        || maxY < worldBounds.minY() || minY > worldBounds.maxY()) {
+                    continue;
+                }
+                var hit = frame.snapshot.pick(frame.pose.toLocal(top), frame.pose.toLocal(bottom)).orElse(null);
+                if (hit == null) continue;
+                double hitY = frame.pose.toWorld(hit.location()).y;
+                if (hitY >= minY && hitY <= maxY && hitY > best) {
+                    best = hitY;
+                }
+            }
+        }
+        return best > Double.NEGATIVE_INFINITY ? java.util.OptionalDouble.of(best) : java.util.OptionalDouble.empty();
+    }
+
+    private static boolean overlapsHorizontally(Frame frame, Vec3 camera, double radius) {
+        var bounds = frame.snapshot.bounds().transform(frame.pose.transform())
+                .move(frame.pose.origin().x, frame.pose.origin().y, frame.pose.origin().z);
+        return bounds.maxX() >= camera.x - radius && bounds.minX() <= camera.x + radius
+                && bounds.maxZ() >= camera.z - radius && bounds.minZ() <= camera.z + radius;
+    }
+
     private void render(WorldRenderPipelineContext context) {
         boolean sameWorld = context.level() == level || (MinecraftWorldViews.sourceLevel() == level
                 && context.level().dimension().equals(level.dimension()));
@@ -197,9 +299,11 @@ public final class SceneModels implements AutoCloseable {
         private MinecraftModelSource.Snapshot lastSnapshot;
         private LayerLayout layout = LayerLayout.ASSEMBLED;
         private boolean visible = true;
+        @Getter
         private boolean closed;
         private final Set<net.minecraft.client.gui.components.Renderable> mountedPanels = new LinkedHashSet<>();
         private final Map<WorldLightTarget, EffectHandle<WorldLight>> mountedLights = new LinkedHashMap<>();
+        private final Map<WorldWeatherFilterTarget, EffectHandle<WeatherFilterEffect>> mountedWeatherFilters = new LinkedHashMap<>();
         Entry(SceneModels owner, MinecraftModelSource source, Vec3 position) {
             this.owner = owner; this.source = source; placement = new ScenePlacement(position);
         }
@@ -212,17 +316,28 @@ public final class SceneModels implements AutoCloseable {
         }
         public Entry follow(SceneHost host) { requireOpen(); placement.follow(host); lastSnapshot = null; return this; }
         public ScenePose lastPose() { return placement.lastFrame(); }
-        public boolean isClosed() { return closed; }
         Frame frame(float partialTick, boolean mainView) {
             if (closed) return null;
             var pose = mainView ? placement.capture(partialTick) : placement.sample(partialTick);
             if (pose == null) { close(); return null; }
             if (!visible) return null;
             syncLights(pose);
+            syncWeatherFilters(pose);
             var snapshot = source.snapshot(layout, partialTick);
             if (closed) return null;
             if (mainView) { lastSnapshot = snapshot; syncPanels(pose); }
             return new Frame(pose, snapshot);
+        }
+        Frame weatherFrame(float partialTick) {
+            if (closed || !visible || !placement.isAlive()) return null;
+            ScenePose pose = placement.followsHost() && placement.lastFrame() != null
+                    ? placement.lastFrame()
+                    : placement.sample(partialTick);
+            if (pose == null) return null;
+            MinecraftModelSource.Snapshot snapshot = lastSnapshot != null
+                    ? lastSnapshot
+                    : source.snapshot(layout, partialTick);
+            return snapshot == null ? null : new Frame(pose, snapshot);
         }
         Frame pickingFrame(float partialTick) {
             if (closed) return null;
@@ -234,7 +349,7 @@ public final class SceneModels implements AutoCloseable {
         public Entry layers(LayerLayout value) { requireOpen(); layout = java.util.Objects.requireNonNull(value); return this; }
         public Entry visible(boolean value) {
             requireOpen(); visible = value;
-            if (!visible) { removePanels(); removeLights(); }
+            if (!visible) { removePanels(); removeLights(); removeWeatherFilters(); }
             return this;
         }
         private void requireOpen() { if (closed) throw new IllegalStateException("Scene entry is closed"); }
@@ -242,11 +357,34 @@ public final class SceneModels implements AutoCloseable {
             if (closed) return;
             closed = true; placement.expire(); lastSnapshot = null;
             if (owner != null) owner.models.remove(this);
-            try { removePanels(); } finally { try { removeLights(); } finally { source.close(); } }
+            try { removePanels(); } finally { try { removeLights(); } finally { try { removeWeatherFilters(); } finally { source.close(); } } }
         }
         private void removeLights() {
             for (EffectHandle<WorldLight> handle : mountedLights.values()) handle.remove();
             mountedLights.clear();
+        }
+        private void removeWeatherFilters() {
+            for (EffectHandle<WeatherFilterEffect> handle : mountedWeatherFilters.values()) handle.remove();
+            mountedWeatherFilters.clear();
+        }
+        private void syncWeatherFilters(ScenePose pose) {
+            if (!(source instanceof WorldDisplayTarget display)) return;
+            List<WorldDisplayTarget.WeatherFilter> filters = display.weatherFilters();
+            Set<WorldWeatherFilterTarget> current = new LinkedHashSet<>();
+            for (WorldDisplayTarget.WeatherFilter filter : filters) {
+                current.add(filter.target());
+                EffectHandle<WeatherFilterEffect> handle = mountedWeatherFilters.get(filter.target());
+                if (handle == null || !handle.isActive()) {
+                    handle = WeatherFilters.spawn(owner.level, filter.volume());
+                    mountedWeatherFilters.put(filter.target(), handle);
+                }
+                Matrix4d transform = new Matrix4d().translation(pose.origin().x, pose.origin().y, pose.origin().z)
+                        .mul(new Matrix4d(pose.transform())).mul(new Matrix4d(filter.transform()));
+                handle.effect().frame(new WeatherFilterFrame(filter.volume(), transform));
+            }
+            for (WorldWeatherFilterTarget target : List.copyOf(mountedWeatherFilters.keySet())) {
+                if (!current.contains(target)) mountedWeatherFilters.remove(target).remove();
+            }
         }
         private void syncLights(ScenePose pose) {
             if (!(source instanceof WorldDisplayTarget display)) return;

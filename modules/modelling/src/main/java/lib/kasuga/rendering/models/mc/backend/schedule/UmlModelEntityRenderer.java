@@ -35,6 +35,12 @@ public abstract class UmlModelEntityRenderer<T extends Entity> extends EntityRen
     @Nullable
     protected abstract ModelInstance resolveModel(T entity);
 
+    /** Public accessor for world systems (such as weather occlusion) inspecting the mounted model. */
+    @Nullable
+    public final ModelInstance mountedModel(T entity) {
+        return resolveModel(entity);
+    }
+
     /** Fallback texture for vanilla overlay paths that query it. */
     protected abstract ResourceLocation modelTexture(T entity);
 
