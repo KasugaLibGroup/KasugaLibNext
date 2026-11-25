@@ -6,6 +6,8 @@ plugins {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
+def lombokCoordinate = "org.projectlombok:lombok:${providers.gradleProperty('lombok_version').get()}"
+
 // Every subproject gets a UNIQUE jar name derived from its gradle project name. moddev derives the run
 // module-layer module name from the jar file name, so two jars sharing a name (e.g. several
 // `kasuga_lib-*.jar`) collapse into one module and break classloading (NoClassDefFoundError: NeoForge).
@@ -15,6 +17,15 @@ subprojects {
     plugins.withId('base') {
         base {
             archivesName = "kasuga-${project.name}"
+        }
+    }
+    plugins.withType(JavaPlugin) {
+        repositories {
+            mavenCentral()
+        }
+        sourceSets.configureEach { SourceSet sourceSet ->
+            dependencies.add(sourceSet.compileOnlyConfigurationName, lombokCoordinate)
+            dependencies.add(sourceSet.annotationProcessorConfigurationName, lombokCoordinate)
         }
     }
 }

@@ -16,9 +16,15 @@ public final class CreateConfig implements Configurable {
 
     private static final Lazy<CreateConfig> INSTANCE = Lazy.of(() -> KasugaLib.getBean(CreateConfig.class));
 
-    private ModConfigSpec.BooleanValue contraptionLod, multiBogeyCarriage, carriageYOffset, derailedOnBogeyOffsetOverflow;
+    private ModConfigSpec.BooleanValue contraptionLod;
+    private ModConfigSpec.BooleanValue multiBogeyCarriage;
+    private ModConfigSpec.BooleanValue carriageYOffset;
+    private ModConfigSpec.BooleanValue derailedOnBogeyOffsetOverflow;
+    private ModConfigSpec.BooleanValue contraptionWeatherFilter;
+    private ModConfigSpec.BooleanValue sableWeatherFilter;
 
-    private ModConfigSpec.DoubleValue maxBogeyOffset, maxCarriageYOffset;
+    private ModConfigSpec.DoubleValue maxBogeyOffset;
+    private ModConfigSpec.DoubleValue maxCarriageYOffset;
 
     /** Whether carriages may capture and use more than the vanilla two bogeys. */
     public static boolean isMultiBogeyCarriageEnabled() {
@@ -43,6 +49,27 @@ public final class CreateConfig implements Configurable {
 
     public static boolean isContraptionLodEnabled() {
         return INSTANCE.get().contraptionLod.getAsBoolean();
+    }
+
+    public static boolean isContraptionWeatherFilterEnabled() {
+        try {
+            CreateConfig config = INSTANCE.get();
+            if (config.contraptionWeatherFilter != null) {
+                return config.contraptionWeatherFilter.getAsBoolean();
+            }
+        } catch (RuntimeException ignored) {
+            // The common config may not have been loaded yet.
+        }
+        return KasugaLibCreateApi.getContraptionWeatherFilterDefault();
+    }
+
+    public static boolean isSableWeatherFilterEnabled() {
+        try {
+            CreateConfig config = INSTANCE.get();
+            return config.sableWeatherFilter == null || config.sableWeatherFilter.getAsBoolean();
+        } catch (RuntimeException ignored) {
+            return true;
+        }
     }
 
     @Override
@@ -74,5 +101,9 @@ public final class CreateConfig implements Configurable {
                 .define("derailed_on_bogey_offset_overflow", KasugaLibCreateApi::getDerailedOnBogeyOffsetDefault);
         contraptionLod = builder.comment("Send distant render meshes for active Create contraptions.")
                 .define("enable_contraption_lod", true);
+        contraptionWeatherFilter = builder.comment("Automatically occlude rain and snow inside Create contraptions (e.g. trains).")
+                .define("enable_contraption_weather_filter", KasugaLibCreateApi::getContraptionWeatherFilterDefault);
+        sableWeatherFilter = builder.comment("Automatically occlude rain and snow inside Sable / Aeronautics physics sublevels.")
+                .define("enable_sable_weather_filter", true);
     }
 }

@@ -11,6 +11,8 @@ public final class KasugaLibCreateApi {
 
     private static volatile boolean derailedOnBogeyOffsetDefault = false;
 
+    private static volatile boolean contraptionWeatherFilterDefault = true;
+
     private KasugaLibCreateApi() {
     }
 
@@ -31,6 +33,14 @@ public final class KasugaLibCreateApi {
         derailedOnBogeyOffsetDefault = enabled;
     }
 
+    /**
+     * Overrides the default of the {@code enable_contraption_weather_filter} common config entry.
+     * Call during mod construction, before configs load. An explicit config value takes priority.
+     */
+    public static void setContraptionWeatherFilterDefault(boolean enabled) {
+        contraptionWeatherFilterDefault = enabled;
+    }
+
     /** Current default used when the config entry is absent. */
     public static boolean getMultiBogeyCarriageDefault() {
         return multiBogeyCarriageDefault;
@@ -39,4 +49,8 @@ public final class KasugaLibCreateApi {
     public static boolean getCarriageYOffsetDefault() {return carriageYOffsetDefault;}
 
     public static boolean getDerailedOnBogeyOffsetDefault() { return derailedOnBogeyOffsetDefault; }
+
+    public static boolean getContraptionWeatherFilterDefault() {
+        return contraptionWeatherFilterDefault;
+    }
 }

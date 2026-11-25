@@ -36,7 +36,8 @@ public class KasugaLibMixinPlugin extends ServiceMixinPlugin {
                     "modelling.WorldViewQualityMixin", "modelling.WorldViewLeafQualityMixin", "modelling.WorldViewAssetsMixin",
                     "modelling.PeelShaderLoaderMixin",
                     "modelling.PeelChunkRendererMixin",
-                    "modelling.PeelWorldRendererMixin"));
+                    "modelling.PeelWorldRendererMixin",
+                    "modelling.WeatherLevelRendererMixin"));
             try (var iris = MixinService.getService().getResourceAsStream("net/irisshaders/iris/Iris.class")) {
                 if (iris != null) mixins.addAll(List.of(
                     "modelling.WorldViewIrisMixin", "modelling.WorldViewIrisStateAccessor",

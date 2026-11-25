@@ -54,7 +54,7 @@ public class BlockModelSource extends LayeredModelSource {
         this(host, infos, origin, true);
     }
 
-    private BlockModelSource(Level host, List<StructureBlockInfo> infos, BlockPos origin, boolean includeBlockEntities) {
+    public BlockModelSource(Level host, List<StructureBlockInfo> infos, BlockPos origin, boolean includeBlockEntities) {
         this.origin = origin.immutable();
         if (infos.size() > MinecraftModelSources.MAX_BLOCKS) throw new IllegalArgumentException("Too many structure blocks");
         var states = new LinkedHashMap<BlockPos, BlockState>();

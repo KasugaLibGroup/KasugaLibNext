@@ -1,15 +1,15 @@
 package lib.kasuga.utils.path;
 
+import lombok.Setter;
+
 import java.util.*;
 import java.util.function.Function;
 
 public class PathMatcher {
+    @Setter
     PathEntryFilterTreeNode root;
+    @Setter
     private boolean noExplore = false;
-
-    public void setNoExplore(boolean noExplore) {
-        this.noExplore = noExplore;
-    }
 
     public PathMatcher(PathEntryFilterTreeNode root) {
         this.root = root;
@@ -259,9 +259,5 @@ public class PathMatcher {
                 );
             }
         }
-    }
-
-    public void setRoot(PathEntryFilterTreeNode root) {
-        this.root = root;
     }
 }

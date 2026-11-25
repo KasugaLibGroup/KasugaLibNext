@@ -10,6 +10,7 @@ import lib.kasuga.registration.core.RegisterContext;
 import lib.kasuga.registration.core.ScopeHelper;
 import lib.kasuga.registration.minecraft.block.BlockReg;
 import lib.kasuga.registration.minecraft.item.ItemReg;
+import lombok.Getter;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 
@@ -23,7 +24,9 @@ public final class TrackReg<T extends TrackBlock> extends Reg<TrackReg<T>, T> {
     }
 
     private final TrackMaterialReg material;
+    @Getter
     private final BlockReg<T> blockReg;
+    @Getter
     private final ItemReg<TrackBlockItem> itemReg;
     private CreateClientBridge clientBridge = CreateClientBridge.noop();
 
@@ -60,14 +63,6 @@ public final class TrackReg<T extends TrackBlock> extends Reg<TrackReg<T>, T> {
 
     public TrackMaterialReg getMaterialReg() {
         return material;
-    }
-
-    public BlockReg<T> getBlockReg() {
-        return blockReg;
-    }
-
-    public ItemReg<TrackBlockItem> getItemReg() {
-        return itemReg;
     }
 
     @Override

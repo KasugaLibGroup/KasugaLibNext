@@ -1,5 +1,7 @@
 package lib.kasuga.structure;
 
+import lombok.Getter;
+
 import java.util.Objects;
 
 /**
@@ -7,6 +9,7 @@ import java.util.Objects;
  * @param <K> Type of first data.
  * @param <V> Type of second data.
  */
+@Getter
 public class Pair<K, V> {
     K first;
     V second;
@@ -17,15 +20,6 @@ public class Pair<K, V> {
 
     public static <K, V> Pair<K, V> of(K first, V second) {
         return new Pair<K, V>(first, second);
-    }
-
-
-    public K getFirst() {
-        return first;
-    }
-
-    public V getSecond() {
-        return second;
     }
 
     public Object get(boolean isFirst) {

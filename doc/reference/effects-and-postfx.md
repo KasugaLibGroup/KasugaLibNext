@@ -325,6 +325,15 @@ PostProcessTargetDescriptor gbuffer = PostProcessTargetDescriptor.builder(scene.
 
 完整的三阶段几何/体积/呈现示例见 [Nebula demo](../guides/nebula-demo.md)。
 
+## 世界空间天气滤镜（室内挡雨 / 降雪过滤）
+
+- `WeatherFilters` 为空腔实体（例如 Create 列车车厢、Sable/Aeronautics 物理船体、`SceneModels` 场景模型）提供 3D 空间天气遮挡：在 `LevelRenderer#renderSnowAndRain` 阶段按需生成以相机为中心的顶视正交深度图，并在 `kasuga_lib:weather/rain_filter` 片元着色器中滤除屋顶下方及显式 OBB 滤镜体内的雨雪片段；启用 Iris 光影包时自动回退到 CPU 列高度裁剪。
+- `WeatherFilterVolume` 描述可旋转/倾斜的局部 OBB 滤镜体，支持 `strength`（0.0–1.0 过滤比例）与 `feather` 边缘过渡；可通过 `WeatherFilters.spawn(clientLevel, volume)` 直接生成，或通过 `WorldWeatherFilterTarget` 挂入 `WorldDisplayScene`，继承父级 `SceneModels` / `SceneHost` 的位姿与生命周期。
+- `SceneModels.occludeWeather(boolean)` 默认开启自动遮雨；Create 模块自动接入 `AbstractContraptionEntity` 与可选的 Sable `ClientSubLevelAccess`。
+- Create 车厢的玻璃按碰撞轮廓遮挡降水，车窗和天窗在主画面中保持透明。可在 `config/kasuga_lib-common.toml` 中设置 `enable_contraption_weather_filter`。该配置默认开启，整合模组可在构造期间调用 `KasugaLibCreateApi.setContraptionWeatherFilterDefault(boolean)` 指定缺省值。配置文件已有的值优先。
+- 可选实体类型过滤：`WeatherFilters.includeEntityTypes(...)`、`WeatherFilters.excludeEntityTypes(...)`、`WeatherFilters.registerEntityFilter(...)`、`WeatherFilters.setOptionalEntityTypeFilter(...)`、实体标签 `#kasuga_lib:occludes_weather` 以及客户端配置 `WeatherFilterConfig`。
+- `LevelRenderer#tickRain` 联动同一套零回读 CPU 高度查询：在动态屋顶遮挡处和高强度显式滤镜体内抑制原版雨溅粒子。相机处于遮挡下时将雨声切换为闷响 `WEATHER_RAIN_ABOVE`。
+
 ## 开箱即用的 PostFX 预设
 
 `PostFxPresetDemo` 只用一条生成的 shader 注册，且该注册跨重载保持有效。参数块选择不同的调色设置，切换预设不会重新注册或重新编译 shader。
