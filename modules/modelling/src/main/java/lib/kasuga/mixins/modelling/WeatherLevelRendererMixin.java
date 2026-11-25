@@ -121,7 +121,7 @@ abstract class WeatherLevelRendererMixin {
                     target = "Lnet/minecraft/client/multiplayer/ClientLevel;addParticle(Lnet/minecraft/core/particles/ParticleOptions;DDDDDD)V"
             )
     )
-    private void kasuga$filterAndSnapRainParticles(
+    private void kasuga$filterRainParticles(
             ClientLevel level,
             ParticleOptions options,
             double x,
@@ -130,13 +130,13 @@ abstract class WeatherLevelRendererMixin {
             double xSpeed,
             double ySpeed,
             double zSpeed,
-            Operation<Void> original
+            Operation<Void> original,
+            @Local(argsOnly = true) Camera camera
     ) {
-        double resolvedY = WeatherFilters.resolveRainParticleY(level, x, y, z);
-        if (!WeatherFilters.shouldSpawnRainParticle(level, x, resolvedY, z)) {
+        if (!WeatherFilters.shouldSpawnVanillaRainSplash(level, x, y, z, camera.getPosition().y + 10.0)) {
             return;
         }
-        original.call(level, options, x, resolvedY, z, xSpeed, ySpeed, zSpeed);
+        original.call(level, options, x, y, z, xSpeed, ySpeed, zSpeed);
     }
 
     @WrapOperation(

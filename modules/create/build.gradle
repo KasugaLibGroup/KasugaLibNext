@@ -112,6 +112,7 @@ neoForge {
         clientHeadless {
             client()
             gameDirectory = file(providers.gradleProperty('kasugaClientDirectory').getOrElse('run/headless-client'))
+            programArguments.addAll '--width', '1280', '--height', '720'
             systemProperty 'kasuga.headless', providers.gradleProperty('kasugaHeadlessBackend').getOrElse('hidden')
             systemProperty 'kasuga.headless.fps', '60'
             systemProperty 'java.awt.headless', 'true'
@@ -157,6 +158,9 @@ neoForge {
             systemProperty 'kasuga.testContraptionLod', providers.gradleProperty('kasugaTestContraptionLod').getOrElse('false')
             systemProperty 'kasuga.testContraptionLod.voxy', providers.gradleProperty('kasugaTestContraptionLodVoxy').getOrElse('false')
             systemProperty 'kasuga.testSableScene', providers.gradleProperty('kasugaTestSableScene').getOrElse('false')
+            systemProperty 'kasuga.captureWeatherDemo', providers.gradleProperty('kasugaCaptureWeatherDemo').getOrElse('false')
+            def weatherCaptureDir = providers.gradleProperty('kasugaWeatherCaptureDir')
+            if (weatherCaptureDir.isPresent()) systemProperty 'kasuga.weatherCaptureDir', file(weatherCaptureDir.get()).absolutePath
             def previewSchematic = providers.gradleProperty('kasugaPreviewSchematic')
             if (previewSchematic.isPresent()) systemProperty 'kasuga.minecraftPreview.schematic', file(previewSchematic.get()).absolutePath
             def previewOutput = providers.gradleProperty('kasugaMinecraftPreviewOutput')

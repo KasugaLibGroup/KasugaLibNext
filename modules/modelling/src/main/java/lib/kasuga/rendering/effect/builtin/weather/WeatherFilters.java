@@ -414,6 +414,15 @@ public final class WeatherFilters {
         return true;
     }
 
+    /** Avoid spawning vanilla splashes that can fall through a dynamic roof. */
+    public static boolean shouldSpawnVanillaRainSplash(ClientLevel level, double x, double y, double z, double maxRoofY) {
+        if (!WeatherFilterConfig.isWeatherFilterEnabled()) {
+            return true;
+        }
+        return shouldSpawnRainParticle(level, x, y, z)
+                && sampleHighestRoof(level, x, y - 0.05, maxRoofY, z, 1.0f).isEmpty();
+    }
+
     public static boolean isPositionSheltered(@Nullable ClientLevel level, Vec3 position) {
         if (!WeatherFilterConfig.isWeatherFilterEnabled()) {
             return false;

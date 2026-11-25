@@ -7,7 +7,6 @@ import dev.ryanhcode.sable.companion.SubLevelAccess;
 import dev.ryanhcode.sable.companion.math.BoundingBox3d;
 import dev.ryanhcode.sable.companion.math.BoundingBox3dc;
 import dev.ryanhcode.sable.companion.math.Pose3dc;
-import lib.kasuga.KasugaLib;
 import lib.kasuga.create.CreateConfig;
 import lib.kasuga.create.client.model.SableSceneHosts;
 import lib.kasuga.rendering.effect.builtin.weather.WeatherDepthPassContext;
@@ -29,11 +28,9 @@ import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
@@ -50,7 +47,6 @@ import java.util.UUID;
  * Optional Sable / Aeronautics bridge for weather occlusion.
  * Isolated from {@link CreateWeatherOccluders} so Create integration loads without Sable Companion.
  */
-@EventBusSubscriber(modid = KasugaLib.MODID, value = Dist.CLIENT)
 public final class SableWeatherBridge {
     private static final int MAX_PLOT_SPAN = 48;
     private static final long REFRESH_INTERVAL_TICKS = 10L;
@@ -67,6 +63,9 @@ public final class SableWeatherBridge {
         }
         registered = true;
         WeatherFilters.registerOccluder(new SableWeatherOccluder());
+        NeoForge.EVENT_BUS.addListener(SableWeatherBridge::onClientTick);
+        NeoForge.EVENT_BUS.addListener(SableWeatherBridge::onLevelUnload);
+        NeoForge.EVENT_BUS.addListener(SableWeatherBridge::onLoggingOut);
     }
 
     /**
@@ -125,8 +124,7 @@ public final class SableWeatherBridge {
         return OptionalDouble.empty();
     }
 
-    @SubscribeEvent
-    public static void onClientTick(ClientTickEvent.Post event) {
+    private static void onClientTick(ClientTickEvent.Post event) {
         if (!SableSceneHosts.isAvailable()) {
             return;
         }
@@ -146,15 +144,13 @@ public final class SableWeatherBridge {
         }
     }
 
-    @SubscribeEvent
-    public static void onLevelUnload(LevelEvent.Unload event) {
+    private static void onLevelUnload(LevelEvent.Unload event) {
         if (event.getLevel() instanceof ClientLevel) {
             clearCaches();
         }
     }
 
-    @SubscribeEvent
-    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+    private static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         clearCaches();
     }
 

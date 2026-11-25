@@ -1,6 +1,7 @@
 package lib.kasuga.create.client.weather;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.Contraption;
 import lib.kasuga.KasugaLib;
@@ -12,6 +13,7 @@ import lib.kasuga.rendering.effect.builtin.weather.WeatherDepthPassContext;
 import lib.kasuga.rendering.effect.builtin.weather.WeatherFilters;
 import lib.kasuga.rendering.effect.builtin.weather.WeatherOccluder;
 import lib.kasuga.rendering.models.mc.scene.BlockModelSource;
+import lib.kasuga.rendering.models.mc.scene.CachedBlockGeometry;
 import lib.kasuga.rendering.models.mc.scene.LayerLayout;
 import lib.kasuga.rendering.models.mc.scene.MinecraftModelSource;
 import lib.kasuga.rendering.models.mc.scene.MinecraftModelSources;
@@ -20,8 +22,11 @@ import lib.kasuga.scene.SceneHost;
 import lib.kasuga.scene.ScenePose;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Blocks;
@@ -35,6 +40,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.common.Tags;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import org.jetbrains.annotations.Nullable;
 
@@ -211,17 +217,10 @@ public final class CreateWeatherOccluders {
                     continue;
                 }
                 ContraptionCacheEntry entry = resolveEntry(level, entity);
-                if (entry.modelSource == null) {
-                    continue;
-                }
-                MinecraftModelSource.Snapshot snapshot = entry.modelSource.snapshot(LayerLayout.ASSEMBLED, partialTick);
-                if (snapshot == null) {
-                    continue;
-                }
                 context.poseStack().pushPose();
                 try {
                     context.poseStack().mulPose(pose.relativeTo(camera));
-                    snapshot.render(new MinecraftModelSource.Context(
+                    entry.renderDepth(new MinecraftModelSource.Context(
                             context.poseStack(),
                             context.buffers(),
                             context.projectionMatrix(),
@@ -300,6 +299,8 @@ public final class CreateWeatherOccluders {
         final long resourceGeneration;
         final @Nullable BlockModelSource modelSource;
         final BlockGetter blockGetter;
+        @Nullable
+        private CachedBlockGeometry glassDepth;
         final int minBX;
         final int minBY;
         final int minBZ;
@@ -414,8 +415,45 @@ public final class CreateWeatherOccluders {
             );
         }
 
+        private void renderDepth(MinecraftModelSource.Context context) {
+            if (modelSource != null) {
+                MinecraftModelSource.Snapshot snapshot = modelSource.snapshot(LayerLayout.ASSEMBLED, context.partialTick());
+                if (snapshot != null) {
+                    snapshot.render(context);
+                }
+            }
+            if (glassDepth == null) {
+                glassDepth = CachedBlockGeometry.build(this::renderGlassDepth);
+            }
+            glassDepth.render(context);
+        }
+
+        private void renderGlassDepth(MinecraftModelSource.Context context) {
+            // The glass texture can discard fragments even in a depth-only pass. Rasterize
+            // its collision shape without an alpha test, like the CPU roof query.
+            for (StructureBlockInfo info : contraption.getBlocks().values()) {
+                BlockState state = info.state();
+                if (!state.is(Tags.Blocks.GLASS_BLOCKS) && !state.is(Tags.Blocks.GLASS_PANES)) {
+                    continue;
+                }
+                BlockPos pos = info.pos();
+                for (AABB box : state.getCollisionShape(blockGetter, pos).toAabbs()) {
+                    VertexConsumer vertices = context.buffers().getBuffer(RenderType.debugQuads());
+                    for (Direction face : Direction.values()) {
+                        LevelRenderer.renderFace(context.pose(), vertices, face,
+                                (float) (pos.getX() + box.minX), (float) (pos.getY() + box.minY), (float) (pos.getZ() + box.minZ),
+                                (float) (pos.getX() + box.maxX), (float) (pos.getY() + box.maxY), (float) (pos.getZ() + box.maxZ),
+                                1.0f, 1.0f, 1.0f, 1.0f);
+                    }
+                }
+            }
+        }
+
         @Override
         public void close() {
+            if (glassDepth != null) {
+                glassDepth.close();
+            }
             if (modelSource != null) {
                 modelSource.close();
             }

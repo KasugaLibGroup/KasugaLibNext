@@ -179,8 +179,12 @@ final class CreateAndSableWeatherTest {
             }
         };
 
+        assertFalse(SableWeatherBridge.class.isAnnotationPresent(net.neoforged.fml.common.EventBusSubscriber.class));
         Class<?> isolated = Class.forName(targetName, true, noSableLoader);
         assertNotNull(isolated.getMethod("ensureRegistered"));
+        assertTrue(isolated.getDeclaredMethods().length > 0);
+        Class<?> raycastIsolated = Class.forName(ContraptionWeatherRaycast.class.getName(), true, noSableLoader);
+        assertTrue(raycastIsolated.getDeclaredMethods().length > 0);
     }
 
     private static Entity dummyEntity(EntityType<?> type, boolean removed, boolean spectator) throws Exception {

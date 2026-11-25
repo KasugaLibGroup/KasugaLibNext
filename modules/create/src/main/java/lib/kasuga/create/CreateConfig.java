@@ -54,10 +54,13 @@ public final class CreateConfig implements Configurable {
     public static boolean isContraptionWeatherFilterEnabled() {
         try {
             CreateConfig config = INSTANCE.get();
-            return config.contraptionWeatherFilter == null || config.contraptionWeatherFilter.getAsBoolean();
+            if (config.contraptionWeatherFilter != null) {
+                return config.contraptionWeatherFilter.getAsBoolean();
+            }
         } catch (RuntimeException ignored) {
-            return true;
+            // The common config may not have been loaded yet.
         }
+        return KasugaLibCreateApi.getContraptionWeatherFilterDefault();
     }
 
     public static boolean isSableWeatherFilterEnabled() {
@@ -99,7 +102,7 @@ public final class CreateConfig implements Configurable {
         contraptionLod = builder.comment("Send distant render meshes for active Create contraptions.")
                 .define("enable_contraption_lod", true);
         contraptionWeatherFilter = builder.comment("Automatically occlude rain and snow inside Create contraptions (e.g. trains).")
-                .define("enable_contraption_weather_filter", true);
+                .define("enable_contraption_weather_filter", KasugaLibCreateApi::getContraptionWeatherFilterDefault);
         sableWeatherFilter = builder.comment("Automatically occlude rain and snow inside Sable / Aeronautics physics sublevels.")
                 .define("enable_sable_weather_filter", true);
     }
