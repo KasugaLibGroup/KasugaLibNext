@@ -166,12 +166,6 @@ dependencies {
     // (the gameTest source set inherits main's compileClasspath); at runtime the library shadow "all" jar
     // (runtimeOnly above) provides the whole kasuga_lib as a SINGLE module — no separate module jars that
     // would split packages on the JPMS layer.
-
-    compileOnly("org.projectlombok:lombok:1.18.42")
-    annotationProcessor("org.projectlombok:lombok:1.18.42")
-
-    testCompileOnly("org.projectlombok:lombok:1.18.42")
-    testAnnotationProcessor("org.projectlombok:lombok:1.18.42")
 }
 
 

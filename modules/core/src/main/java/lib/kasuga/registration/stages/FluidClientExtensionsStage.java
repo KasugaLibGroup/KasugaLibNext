@@ -1,6 +1,8 @@
 package lib.kasuga.registration.stages;
 
 import lib.kasuga.registration.minecraft.fluid.FluidTypeReg;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 
 /**
@@ -10,16 +12,10 @@ import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsE
  * {@code FluidType} gets its still / flowing / overlay sprites, tint and fog, including types
  * produced by a custom factory that does not extend the default managed type.
  */
+@Getter
+@RequiredArgsConstructor
 public class FluidClientExtensionsStage {
     private final RegisterClientExtensionsEvent event;
-
-    public FluidClientExtensionsStage(RegisterClientExtensionsEvent event) {
-        this.event = event;
-    }
-
-    public RegisterClientExtensionsEvent getEvent() {
-        return event;
-    }
 
     /**
      * Registers the managed extensions for one fluid type.

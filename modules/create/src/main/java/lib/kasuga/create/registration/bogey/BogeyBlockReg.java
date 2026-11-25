@@ -7,6 +7,7 @@ import lib.kasuga.create.registration.CreateRegistrationStages;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.core.RegisterContext;
 import lib.kasuga.registration.minecraft.block.BlockReg;
+import lombok.Getter;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 
@@ -20,6 +21,7 @@ public final class BogeyBlockReg<T extends AbstractBogeyBlock<?>> extends Reg<Bo
     }
 
     private final BogeySizeReg size;
+    @Getter
     private final BlockReg<T> blockReg;
 
     public BogeyBlockReg(String name, BogeySizeReg size, BogeyBlockFactory<T> factory) {
@@ -57,10 +59,6 @@ public final class BogeyBlockReg<T extends AbstractBogeyBlock<?>> extends Reg<Bo
 
     public BogeySizeReg getSizeReg() {
         return size;
-    }
-
-    public BlockReg<T> getBlockReg() {
-        return blockReg;
     }
 
     ResourceLocation resolveId() {

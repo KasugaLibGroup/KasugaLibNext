@@ -461,12 +461,6 @@ dependencies {
     renderHarnessImplementation 'org.lwjgl:lwjgl-glfw:3.3.3'
     renderHarnessImplementation 'org.lwjgl:lwjgl-opengl:3.3.3'
 
-    compileOnly("org.projectlombok:lombok:1.18.42")
-    annotationProcessor("org.projectlombok:lombok:1.18.42")
-
-    testCompileOnly("org.projectlombok:lombok:1.18.42")
-    testAnnotationProcessor("org.projectlombok:lombok:1.18.42")
-
     compileOnly("libs:iris:neoforge-mc1.21.1-1.8.12")
     compileOnly("libs:sodium:neoforge-mc1.21.1-0.6.13")
     // Optional renderer integrations belong to development runs only. Keeping

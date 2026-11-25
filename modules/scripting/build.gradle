@@ -132,9 +132,6 @@ dependencies {
         exclude group : 'org.slf4j', module: 'slf4j-api'
     }
 
-    compileOnly("org.projectlombok:lombok:1.18.42")
-    annotationProcessor("org.projectlombok:lombok:1.18.42")
-
     implementation project(":modules:inject")
     implementation project(":modules:utils")
     testImplementation project(":modules:core")

@@ -1,5 +1,7 @@
 package lib.kasuga.content.graph;
 
+import lombok.Getter;
+
 import java.util.*;
 
 /**
@@ -27,8 +29,11 @@ public class GraphCycleDetector<T> {
     /**
      * Result of a DFS cycle detection scan.
      */
+    @Getter
     public static class CycleResult<T> {
+        /** All detected cycles. Each cycle is a list of nodes forming the cycle path. */
         private final List<List<T>> cycles;
+        /** All nodes that participate in at least one cycle. */
         private final Set<T> nodesInCycles;
 
         public CycleResult(List<List<T>> cycles) {
@@ -37,16 +42,6 @@ public class GraphCycleDetector<T> {
             for (List<T> cycle : cycles) {
                 nodesInCycles.addAll(cycle);
             }
-        }
-
-        /** All detected cycles. Each cycle is a list of nodes forming the cycle path. */
-        public List<List<T>> getCycles() {
-            return cycles;
-        }
-
-        /** All nodes that participate in at least one cycle. */
-        public Set<T> getNodesInCycles() {
-            return nodesInCycles;
         }
 
         /** Whether any cycle was detected. */
@@ -59,8 +54,12 @@ public class GraphCycleDetector<T> {
      * Result of a topological sort operation.
      */
     public static class TopoResult<T> {
+        /** Nodes in topological order (parents before children). */
+        @Getter
         private final List<T> sorted;
         private final boolean hasCycle;
+        /** Nodes that could not be sorted because they participate in cycles. */
+        @Getter
         private final Set<T> nodesNotSorted;
 
         public TopoResult(List<T> sorted, Set<T> allNodes) {
@@ -72,19 +71,9 @@ public class GraphCycleDetector<T> {
             this.hasCycle = !nodesNotSorted.isEmpty();
         }
 
-        /** Nodes in topological order (parents before children). */
-        public List<T> getSorted() {
-            return sorted;
-        }
-
         /** Whether the sort was incomplete due to cycles. */
         public boolean hasCycle() {
             return hasCycle;
-        }
-
-        /** Nodes that could not be sorted because they participate in cycles. */
-        public Set<T> getNodesNotSorted() {
-            return nodesNotSorted;
         }
     }
 

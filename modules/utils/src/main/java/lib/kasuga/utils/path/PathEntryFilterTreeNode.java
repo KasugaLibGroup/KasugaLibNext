@@ -1,10 +1,12 @@
 package lib.kasuga.utils.path;
 
+import lombok.Getter;
 
 import java.util.*;
 import java.util.function.Function;
 
 public class PathEntryFilterTreeNode {
+    @Getter
     private PathFilter filter;
 
     private final Map<PathFilter, PathEntryFilterTreeNode> children;
@@ -20,10 +22,6 @@ public class PathEntryFilterTreeNode {
         this.filter = newFilter;
         this.isTerminal = isTerminal;
         this.children = children;
-    }
-
-    public PathFilter getFilter() {
-        return filter;
     }
 
     public void addChild(PathEntryFilterTreeNode child) {
