@@ -1,0 +1,4 @@
+{
+  "kasuga_lib.oit.fallback.title": "Kasuga model transparency",
+  "kasuga_lib.oit.fallback.iris": "Using sorted transparency with Iris %s. Overlapping translucent models may look different. Details are in the game log."
+}

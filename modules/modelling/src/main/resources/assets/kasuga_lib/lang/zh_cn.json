@@ -1,0 +1,4 @@
+{
+  "kasuga_lib.oit.fallback.title": "Kasuga 模型透明渲染",
+  "kasuga_lib.oit.fallback.iris": "当前 Iris %s 已回退到排序透明渲染。半透明模型重叠处的效果可能不同，详情见游戏日志。"
+}
