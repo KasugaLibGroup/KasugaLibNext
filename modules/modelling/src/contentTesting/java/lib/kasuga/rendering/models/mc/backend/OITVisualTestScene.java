@@ -31,6 +31,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import org.slf4j.Logger;
+import test.kasuga.modelling.oit.OitWorldBlendFixture;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -119,6 +120,12 @@ public final class OITVisualTestScene {
                                     success(context, "Kasuga OIT visual test disabled");
                                     return 1;
                                 }))
+                                .then(Commands.literal("world_model").executes(context -> {
+                                    OitWorldBlendFixture.install();
+                                    OitWorldBlendFixture.show(true);
+                                    success(context, "Showing three overlapping BLEND layers through the world renderer");
+                                    return 1;
+                                }))
                                 .then(Commands.literal("status").executes(context -> {
                                     context.getSource().sendSuccess(() -> Component.literal(statusLine()), false);
                                     return enabled ? 1 : 0;
@@ -176,6 +183,7 @@ public final class OITVisualTestScene {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         if (level != activeLevel) {
+            OitWorldBlendFixture.close();
             activeLevel = level;
             if (level == null) {
                 enabled = false;
@@ -235,6 +243,7 @@ public final class OITVisualTestScene {
     }
 
     static void disable() {
+        OitWorldBlendFixture.close();
         enabled = false;
         SCREENSHOT_RUN.cancel();
         report = RenderReport.inactive();

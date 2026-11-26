@@ -3,15 +3,11 @@ package lib.kasuga.rendering.models.mc.backend;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.BufferUploader;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.logging.LogUtils;
-import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
+import lib.kasuga.rendering.models.mc.backend.data_type.OitCompositeShaderInstance;
+import lib.kasuga.rendering.models.mc.compat.iris.IrisOitCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.ShaderInstance;
 import net.neoforged.neoforge.client.GlStateBackup;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
@@ -48,13 +44,11 @@ final class OitRenderer implements AutoCloseable {
      */
     boolean render(MCBackend backend, MCBackendContext context) {
         boolean iris = BackendInstance.isIrisEnabled();
-        if (!canUse(iris)) return false;
+        if (iris ? irisDisabled || IrisOitCompat.framebufferUnavailable() : nativeDisabled) return false;
 
         RenderTarget mainTarget = Minecraft.getInstance().getMainRenderTarget();
-        ShaderInstance composite = RenderState.OIT_COMPOSITE_SHADER_INSTANCE;
         if (!mainTarget.useDepth || mainTarget.frameBufferId < 0
-                || mainTarget.width <= 0 || mainTarget.height <= 0
-                || composite == null) {
+                || mainTarget.width <= 0 || mainTarget.height <= 0) {
             return false;
         }
 
@@ -68,6 +62,14 @@ final class OitRenderer implements AutoCloseable {
             // geometry. In particular, Iris transform feedback runs only once.
             List<MCBackend.PreparedModelDraw> models = backend.prepareTranslucent(context);
             if (models.isEmpty()) return true;
+            if (!canUse(iris)) {
+                if (iris) IrisOitCompat.reportFallback("OIT render types or framebuffer capabilities unavailable", null);
+                return false;
+            }
+            if (!(RenderState.OIT_COMPOSITE_SHADER_INSTANCE instanceof OitCompositeShaderInstance composite)) {
+                if (iris) IrisOitCompat.reportFallback("OIT composite shader unavailable after resource reload", null);
+                return false;
+            }
             destination = captureDestination(mainTarget, iris);
             if (destination == null) return false;
             if (target == null) target = new OitTarget();
@@ -111,8 +113,11 @@ final class OitRenderer implements AutoCloseable {
                 }
                 target = null;
             }
-            LOGGER.warn("Disabling Kasuga {} weighted OIT after a rendering failure; "
-                    + "using sorted translucent fallback", iris ? "Iris" : "native", exception);
+            if (iris) {
+                IrisOitCompat.reportFallback("OIT rendering failed", exception);
+            } else {
+                LOGGER.warn("Disabling native weighted OIT after a rendering failure, using sorted translucency", exception);
+            }
             // If the resolve was already entered, the main target may have
             // been touched. Do not draw the fallback over a partial resolve.
             return resolveAttempted;
@@ -121,10 +126,6 @@ final class OitRenderer implements AutoCloseable {
             RenderSystem.restoreGlState(backup);
             if (destination != null) {
                 destination.bind();
-            } else if (iris) {
-                IrisCompat.bindWorldFramebuffer();
-            } else {
-                mainTarget.bindWrite(true);
             }
         }
     }
@@ -159,17 +160,14 @@ final class OitRenderer implements AutoCloseable {
             mainTarget.bindWrite(true);
             return new Destination(mainTarget.frameBufferId, mainTarget.width, mainTarget.height);
         }
-        if (!IrisCompat.bindWorldFramebuffer()) {
+        if (!IrisOitCompat.bindWorldFramebuffer()) {
             return null;
         }
         int framebuffer = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
         return new Destination(framebuffer, mainTarget.width, mainTarget.height);
     }
 
-    private void resolve(Destination destination, ShaderInstance shader) {
-        OitTarget resolvedTarget = target;
-        if (resolvedTarget == null) return;
-
+    private void resolve(Destination destination, OitCompositeShaderInstance shader) {
         destination.bind();
         RenderSystem.disableDepthTest();
         GL11.glDisable(GL11.GL_DEPTH_TEST);
@@ -179,55 +177,19 @@ final class OitRenderer implements AutoCloseable {
         GL11.glDisable(GL11.GL_CULL_FACE);
         RenderSystem.enableBlend();
         GL11.glEnable(GL11.GL_BLEND);
+        GL14.glBlendEquation(GL14.GL_FUNC_ADD);
         RenderSystem.blendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
                 GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
                 GlStateManager.SourceFactor.ONE,
                 GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
         GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
                 GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        shader.setSampler("AccumulationSampler", resolvedTarget.accumulationTextureId());
-        shader.setSampler("RevealageSampler", resolvedTarget.revealageTextureId());
-        try {
-            shader.apply();
-
-            // Iris' unknown-shader compatibility hook can bind its default
-            // target from inside ShaderInstance.apply(). Rebind the exact
-            // destination captured before depth copy, then reassert state.
-            destination.bind();
-            RenderSystem.disableDepthTest();
-            GL11.glDisable(GL11.GL_DEPTH_TEST);
-            RenderSystem.depthMask(false);
-            GL11.glDepthMask(false);
-            RenderSystem.disableCull();
-            GL11.glDisable(GL11.GL_CULL_FACE);
-            RenderSystem.enableBlend();
-            GL11.glEnable(GL11.GL_BLEND);
-            GL14.glBlendEquation(GL14.GL_FUNC_ADD);
-            RenderSystem.blendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                    GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
-                    GlStateManager.SourceFactor.ONE,
-                    GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
-            GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
-                    GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-
-            BufferBuilder builder = RenderSystem.renderThreadTesselator().begin(
-                    VertexFormat.Mode.QUADS, DefaultVertexFormat.BLIT_SCREEN);
-            builder.addVertex(0.0f, 0.0f, 0.0f);
-            builder.addVertex(1.0f, 0.0f, 0.0f);
-            builder.addVertex(1.0f, 1.0f, 0.0f);
-            builder.addVertex(0.0f, 1.0f, 0.0f);
-            BufferUploader.draw(builder.buildOrThrow());
-        } finally {
-            shader.clear();
-            destination.bind();
-        }
+        shader.draw(target.accumulationTextureId(), target.revealageTextureId());
     }
 
     private boolean canUse(boolean iris) {
-        if ((iris ? irisDisabled : nativeDisabled)
-                || RenderState.OIT_ACCUMULATION_RENDER_TYPE == null
-                || RenderState.OIT_REVEALAGE_RENDER_TYPE == null
-                || RenderState.OIT_COMPOSITE_SHADER_INSTANCE == null) {
+        if (RenderState.OIT_ACCUMULATION_RENDER_TYPE == null
+                || RenderState.OIT_REVEALAGE_RENDER_TYPE == null) {
             return false;
         }
         if (iris && (RenderState.IRIS_OIT_ACCUMULATION_RENDER_TYPE == null

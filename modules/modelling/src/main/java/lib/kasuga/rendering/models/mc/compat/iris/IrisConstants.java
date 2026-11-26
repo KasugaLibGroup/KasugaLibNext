@@ -3,8 +3,6 @@ package lib.kasuga.rendering.models.mc.compat.iris;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.irisshaders.iris.Iris;
-import net.irisshaders.iris.compat.SkipList;
-import net.irisshaders.iris.pipeline.IrisRenderingPipeline;
 import net.irisshaders.iris.pbr.loader.PBRTextureLoaderRegistry;
 import net.irisshaders.iris.vertices.ImmediateState;
 import net.irisshaders.iris.vertices.IrisVertexFormats;
@@ -13,19 +11,6 @@ public class IrisConstants {
 
     public static void register() {
         PBRTextureLoaderRegistry.INSTANCE.register(KasugaTextureAtlas.class, new KasugaPBRLoader());
-    }
-
-    public static void allowShaderClass(Class<?> shaderClass) {
-        SkipList.shouldSkipList.put(shaderClass, SkipList.NONE_FORCE);
-    }
-
-    public static boolean bindWorldFramebuffer() {
-        var pipeline = Iris.getPipelineManager().getPipelineNullable();
-        if (!(pipeline instanceof IrisRenderingPipeline irisPipeline)) {
-            return false;
-        }
-        irisPipeline.bindDefault();
-        return true;
     }
 
     public static VertexFormat getIrisFormat(VertexFormat format) {

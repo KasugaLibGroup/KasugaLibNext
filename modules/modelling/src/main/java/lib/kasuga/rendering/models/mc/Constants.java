@@ -194,10 +194,6 @@ public class Constants {
             throw new RuntimeException("Failed to load shader 'ksglib_global_batch'", e);
         }
         try {
-            // Iris normally suppresses unknown core shaders while a shader
-            // pack owns world rendering. Register this one narrow exception:
-            // the OIT resolve explicitly targets Iris' active world buffer.
-            IrisCompat.allowOitCompositeShader();
             ShaderInstance shaderInstance = new OitCompositeShaderInstance(
                     provider, ResourceLocation.tryBuild("kasuga_lib", "ksglib_oit_composite"),
                     DefaultVertexFormat.BLIT_SCREEN
@@ -208,6 +204,7 @@ public class Constants {
             // OIT is an optional acceleration/quality path. Keep the ordinary
             // sorted translucent renderer usable when a resource pack or
             // platform rejects the resolve shader.
+            RenderState.OIT_COMPOSITE_SHADER_INSTANCE = null;
             LOGGER.warn("Weighted OIT composite shader is unavailable; using sorted translucent fallback", e);
         }
         RenderShaderRegistry.registerShaders(event);
