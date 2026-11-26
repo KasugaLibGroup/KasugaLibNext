@@ -1,7 +1,10 @@
-package lib.kasuga.rendering.models.mc.compat.iris;
+package lib.kasuga.compat.iris;
 
+import com.mojang.blaze3d.platform.NativeImage;
+import lib.kasuga.core.compat.CompatCapability;
 import lib.kasuga.mixins.client.AccessorTextureAtlas;
 import lib.kasuga.rendering.models.mc.Constants;
+import lib.kasuga.rendering.models.mc.compat.iris.KasugaTextureAtlas;
 import lib.kasuga.rendering.models.mc.source.texture.CombinedTextureManager;
 import lib.kasuga.structure.Pair;
 import net.irisshaders.iris.pbr.loader.AtlasPBRLoader;
@@ -13,11 +16,57 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.metadata.animation.FrameSize;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.server.packs.resources.ResourceMetadata;
 
+import java.lang.reflect.Constructor;
 import java.util.Map;
 import java.util.Objects;
 
-public class KasugaPBRLoader implements PBRTextureLoader<KasugaTextureAtlas> {
+final class KasugaPBRLoader implements PBRTextureLoader<KasugaTextureAtlas> {
+    private final Constructor<?> spriteContents;
+    private final Constructor<?> atlasSprite;
+
+    private KasugaPBRLoader(Constructor<?> spriteContents, Constructor<?> atlasSprite) {
+        this.spriteContents = spriteContents;
+        this.atlasSprite = atlasSprite;
+    }
+
+    static KasugaPBRLoader register() throws ReflectiveOperationException {
+        Class<?> contentsClass = CompatCapability.requireClass(AtlasPBRLoader.class.getName() + "$PBRSpriteContents",
+                AtlasPBRLoader.class.getClassLoader());
+        Constructor<?> contents = contentsClass.getDeclaredConstructor(
+                ResourceLocation.class, FrameSize.class, NativeImage.class, ResourceMetadata.class, PBRType.class);
+        Constructor<?> sprite = AtlasPBRLoader.PBRTextureAtlasSprite.class.getDeclaredConstructor(
+                ResourceLocation.class, contents.getDeclaringClass(), int.class, int.class, int.class, int.class,
+                TextureAtlasSprite.class);
+        contents.setAccessible(true);
+        sprite.setAccessible(true);
+
+        PBRAtlasTexture.class.getConstructor(TextureAtlas.class, PBRType.class);
+        CompatCapability.requireMethod(TextureAtlasExtension.class, "getOrCreatePBRHolder", PBRAtlasHolder.class);
+        CompatCapability.requireMethod(SpriteContentsExtension.class, "getOrCreatePBRHolder", PBRSpriteHolder.class);
+        CompatCapability.requireMethod(PBRAtlasHolder.class, "setNormalAtlas", void.class, PBRAtlasTexture.class);
+        CompatCapability.requireMethod(PBRAtlasHolder.class, "setSpecularAtlas", void.class, PBRAtlasTexture.class);
+        CompatCapability.requireMethod(PBRSpriteHolder.class, "setNormalSprite", void.class, TextureAtlasSprite.class);
+        CompatCapability.requireMethod(PBRSpriteHolder.class, "setSpecularSprite", void.class, TextureAtlasSprite.class);
+        CompatCapability.requireMethod(PBRAtlasTexture.class, "getType", PBRType.class);
+        CompatCapability.requireMethod(PBRAtlasTexture.class, "addSprite", void.class, sprite.getDeclaringClass());
+        CompatCapability.requireMethod(PBRAtlasTexture.class, "tryUpload", boolean.class, int.class, int.class, int.class);
+
+        KasugaPBRLoader loader = new KasugaPBRLoader(contents, sprite);
+        PBRTextureLoaderRegistry.INSTANCE.register(KasugaTextureAtlas.class, loader);
+        return loader;
+    }
+
+    Object createSpriteContent(ResourceLocation name, FrameSize size, NativeImage image, ResourceMetadata metadata,
+                               Object type) throws ReflectiveOperationException {
+        return spriteContents.newInstance(name, size, image, metadata, type);
+    }
+
+    Object createAtlasSprite(ResourceLocation name, Object contents, int width, int height, int x, int y,
+                             TextureAtlasSprite sprite) throws ReflectiveOperationException {
+        return atlasSprite.newInstance(name, contents, width, height, x, y, sprite);
+    }
 
     @Override
     public void load(KasugaTextureAtlas kasugaCheatTexture, ResourceManager resourceManager, PBRTextureConsumer pbrTextureConsumer) {
@@ -54,7 +103,7 @@ public class KasugaPBRLoader implements PBRTextureLoader<KasugaTextureAtlas> {
 
                 try {
                     Objects.requireNonNull(sprite.contents());
-                    Object content = IrisCompat.createPBRSpriteContent(
+                    Object content = createSpriteContent(
                             spriteId,
                             new FrameSize(
                                     sprite.contents().width(),
@@ -64,7 +113,7 @@ public class KasugaPBRLoader implements PBRTextureLoader<KasugaTextureAtlas> {
                             sprite.contents().metadata(),
                             pbrTexture.getType()
                     );
-                    Object pbrSprite = IrisCompat.createPBRTextureAtlasSprite(
+                    Object pbrSprite = createAtlasSprite(
                             spriteId, content, width, height,
                             sprite.getX(), sprite.getY(), sprite
                     );

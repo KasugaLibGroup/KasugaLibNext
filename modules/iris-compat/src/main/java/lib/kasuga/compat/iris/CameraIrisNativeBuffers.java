@@ -1,4 +1,4 @@
-package lib.kasuga.rendering.output.mc;
+package lib.kasuga.compat.iris;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.irisshaders.batchedentityrendering.impl.MemoryTrackingBuffer;
 final class CameraIrisNativeBuffers {

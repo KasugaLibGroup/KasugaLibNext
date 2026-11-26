@@ -1,9 +1,9 @@
 package lib.kasuga.rendering.output.mc.iris;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import lib.kasuga.mixins.modelling.WorldViewIrisCounterAccessor;
-import lib.kasuga.mixins.modelling.WorldViewIrisStateAccessor;
-import lib.kasuga.mixins.modelling.WorldViewIrisTimeAccessor;
+import lib.kasuga.compat.iris.mixin.WorldViewIrisCounterAccessor;
+import lib.kasuga.compat.iris.mixin.WorldViewIrisStateAccessor;
+import lib.kasuga.compat.iris.mixin.WorldViewIrisTimeAccessor;
 import lib.kasuga.rendering.output.camera.CameraRenderSettings;
 import net.irisshaders.iris.gl.program.ProgramUniforms;
 import net.irisshaders.iris.gl.shader.StandardMacros;
@@ -18,7 +18,7 @@ import java.io.IOException;
 import java.nio.file.*;
 
 /** Optional Iris adapter. Each instance owns its pack, pipelines, uniforms and material map. */
-public final class CameraIrisSession implements AutoCloseable {
+public final class CameraIrisSession implements lib.kasuga.rendering.output.mc.CameraShaderSession {
     private static final ThreadLocal<CameraIrisSession> ACTIVE = new ThreadLocal<>();
     private static final ThreadLocal<WorldRenderingSettings> MATERIALS = new ThreadLocal<>();
     private final WorldRenderingSettings materials = new WorldRenderingSettings();
@@ -83,7 +83,7 @@ public final class CameraIrisSession implements AutoCloseable {
         if (closed) throw new IllegalStateException("Camera Iris session closed");
         return new Scope();
     }
-    public final class Scope implements AutoCloseable {
+    public final class Scope implements lib.kasuga.rendering.output.mc.CameraShaderSession.Scope {
         private final CameraIrisSession previous = ACTIVE.get();
         private final CameraIrisShadowState previousShadows = CameraIrisShadowState.capture();
         private final WorldRenderingSettings previousMaterials = MATERIALS.get();
@@ -111,6 +111,10 @@ public final class CameraIrisSession implements AutoCloseable {
             if (previousMaterials == null) MATERIALS.remove(); else MATERIALS.set(previousMaterials);
         }
     }
+    @Override public void finish() {
+        pipelines.getPipeline().ifPresent(pipeline -> pipeline.finalizeGameRendering());
+    }
+
     @Override public void close() throws IOException {
         RenderSystem.assertOnRenderThread();
         if (closed) return;

@@ -363,6 +363,10 @@ public class MCBackend extends Backend<MCBridge, BackendInstance, MCBackendConte
         }
 
         try {
+            if (IrisCompat.isUsingShaderPack() && !IrisCompat.supportsModelRendering()) {
+                if (!getRenderingObjects().isEmpty()) IrisCompat.reportUnsupportedModelFormat();
+                return;
+            }
             if (pass == ModelRenderPass.TRANSLUCENT && layeredTransparency.handled()) return;
             if (pass == ModelRenderPass.TRANSLUCENT && oitRenderer.render(this, context)) {
                 return;

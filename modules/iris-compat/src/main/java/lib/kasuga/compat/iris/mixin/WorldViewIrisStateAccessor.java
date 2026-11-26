@@ -1,4 +1,4 @@
-package lib.kasuga.mixins.modelling;
+package lib.kasuga.compat.iris.mixin;
 
 import net.irisshaders.iris.uniforms.CapturedRenderingState;
 import org.spongepowered.asm.mixin.Mixin;

@@ -59,6 +59,7 @@ tasks.register('renderingReleaseCheck') {
             ':modules:render-core:assemble',
             ':modules:render-opengl:assemble',
             ':modules:modelling:modelUnitTest',
+            ':modules:iris-compat:test',
             ':modules:modelling:compileContentTestingJava',
             ':modules:modelling:jar',
             ':modules:modelling:sourcesJar',

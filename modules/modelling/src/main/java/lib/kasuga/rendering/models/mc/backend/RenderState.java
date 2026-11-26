@@ -10,7 +10,6 @@ import lib.kasuga.KasugaLib;
 import lib.kasuga.core.rendering.BufferBuilderSupplier;
 import lib.kasuga.rendering.models.mc.Constants;
 import lib.kasuga.rendering.models.mc.backend.data_type.KasugaTextureStateShard;
-import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
 import lib.kasuga.rendering.models.mc.source.texture.CombinedTextureManager;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
@@ -265,7 +264,7 @@ public class RenderState {
     }
 
     public static RenderType getRenderType(ModelRenderPass pass) {
-        return getRenderType(IrisCompat.isUsingShaderPack(), pass);
+        return getRenderType(BackendInstance.isIrisEnabled(), pass);
     }
 
     public static RenderType getRenderType(boolean iris, ModelRenderPass pass) {

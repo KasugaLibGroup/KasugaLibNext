@@ -1,4 +1,4 @@
-package lib.kasuga.rendering.models.mc.backend.vbuffer;
+package lib.kasuga.compat.iris.vertex;
 
 import org.joml.Vector2f;
 import org.junit.jupiter.api.Test;

@@ -1,4 +1,4 @@
-package lib.kasuga.mixins.modelling;
+package lib.kasuga.compat.iris.mixin;
 
 import lib.kasuga.rendering.output.mc.iris.CameraIrisSession;
 import net.irisshaders.iris.Iris;

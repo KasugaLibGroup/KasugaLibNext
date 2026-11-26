@@ -1,4 +1,4 @@
-package lib.kasuga.mixins.modelling;
+package lib.kasuga.compat.iris.mixin;
 import lib.kasuga.rendering.output.mc.iris.CameraIrisSession;
 import net.irisshaders.iris.shaderpack.materialmap.*;
 import net.caffeinemc.mods.sodium.client.render.chunk.vertex.format.ChunkVertexType;

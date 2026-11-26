@@ -7,7 +7,6 @@ import lib.kasuga.mixins.client.AccessorBufferBuilder;
 import lib.kasuga.mixins.client.AccessorByteBufferBuilder;
 import lib.kasuga.mixins.client.AccessorVertexBuffer;
 import lib.kasuga.rendering.models.mc.backend.data_type.KasugaShaderInstance;
-import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
 import lib.kasuga.rendering.models.uml.backend.VersionedBackendRenderable;
 import lib.kasuga.rendering.models.uml.bridge.Bridge;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
@@ -258,12 +257,12 @@ public class KsgVertexBuffer implements AutoCloseable, VersionedBackendRenderabl
     }
 
     public static boolean isGpuSkinningEnabled() {
-        if (IrisCompat.isUsingShaderPack()) return false;
+        if (BackendInstance.isIrisEnabled()) return false;
         return isGpuSkinningRequested();
     }
 
     public static boolean isIrisGpuSkinningEnabled() {
-        return IrisCompat.isUsingShaderPack() && isGpuSkinningRequested();
+        return BackendInstance.isIrisEnabled() && isGpuSkinningRequested();
     }
 
     private static boolean isGpuSkinningRequested() {

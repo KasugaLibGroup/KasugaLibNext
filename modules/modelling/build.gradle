@@ -19,7 +19,7 @@ repositories {
     maven { url = "https://maven.createmod.net" } // Create, Ponder, Flywheel
     maven { url = "https://maven.ithundxr.dev/snapshots" } // Registrate
     flatDir {
-        dir 'libs'
+        dirs 'libs', project(':modules:iris-compat').file('libs')
     }
 }
 
@@ -461,14 +461,32 @@ dependencies {
     renderHarnessImplementation 'org.lwjgl:lwjgl-glfw:3.3.3'
     renderHarnessImplementation 'org.lwjgl:lwjgl-opengl:3.3.3'
 
-    compileOnly("libs:iris:neoforge-mc1.21.1-1.8.12")
     compileOnly("libs:sodium:neoforge-mc1.21.1-0.6.13")
+    // Only the opted-in Iris smoke fixtures inspect Iris internals directly.
+    contentTestingCompileOnly(project(':modules:iris-compat'))
+    contentTestingCompileOnly("libs:iris:neoforge-mc1.21.1-1.8.12")
     // Optional renderer integrations belong to development runs only. Keeping
     // them on localRuntime preserves the client test setup without publishing
     // the non-resolvable flatDir coordinates to downstream consumers.
     if (providers.gradleProperty('kasugaRendererMods').getOrElse('true').toBoolean()) {
         localRuntime("libs:iris:neoforge-mc1.21.1-1.8.12")
         localRuntime("libs:sodium:neoforge-mc1.21.1-0.6.13")
+    }
+}
+
+// Keep the adapter in modelling's dev mod layer and distribution artifacts without
+// adding it to modelling's main compile classpath.
+Project irisCompat = project(':modules:iris-compat')
+irisCompat.plugins.withId('java-library') {
+    SourceSet irisMain = irisCompat.sourceSets.main
+    neoForge.mods.named(mod_id) {
+        sourceSet(irisMain)
+    }
+    tasks.named('jar', Jar).configure {
+        from(irisMain.output)
+    }
+    tasks.named('shadowJar').configure {
+        from(irisMain.output)
     }
 }
 

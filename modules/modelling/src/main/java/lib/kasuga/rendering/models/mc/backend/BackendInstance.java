@@ -9,7 +9,6 @@ import lib.kasuga.rendering.models.mc.backend.data_type.KasugaShaderInstance;
 import lib.kasuga.rendering.models.mc.backend.transform.BoneTransformTBO;
 import lib.kasuga.rendering.models.mc.backend.transform.TransformFeedbackProgram;
 import lib.kasuga.rendering.models.mc.backend.vbuffer.IVertexBuffer;
-import lib.kasuga.rendering.models.mc.backend.vbuffer.IrisVertexBuffer;
 import lib.kasuga.rendering.models.mc.backend.vbuffer.VanillaVertexBuffer;
 import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
 import lib.kasuga.rendering.models.uml.dynamic.ModelInstance;
@@ -257,7 +256,7 @@ public class BackendInstance implements AutoCloseable {
     }
 
     public static boolean isIrisEnabled() {
-        return IrisCompat.isUsingShaderPack();
+        return IrisCompat.isUsingShaderPack() && IrisCompat.supportsModelRendering();
     }
 
     public static VertexFormat getFormat() {
@@ -330,7 +329,7 @@ public class BackendInstance implements AutoCloseable {
         @Nullable
         private final VanillaGpuSkinningContext vanillaContext;
         @Nullable
-        private final IrisVertexBuffer irisBuffer;
+        private final IVertexBuffer irisBuffer;
         private final VanillaVertexBuffer vanillaBuffer;
         @Nullable
         private final TransformFeedbackProgram program;
@@ -342,19 +341,19 @@ public class BackendInstance implements AutoCloseable {
                 this.program = null;
                 this.irisContext = null;
                 this.vanillaContext = null;
-                this.irisBuffer = !nativeOnly && isIrisInstalled()
-                        ? new IrisVertexBuffer(data, getFormat(true), 10000, 64, executor) : null;
+                this.irisBuffer = !nativeOnly && IrisCompat.supportsModelRendering()
+                        ? IrisCompat.createVertexBuffer(data, getFormat(true), 10000, 64, executor) : null;
                 this.cpuContext = new CpuSkinningContext(this::getVertexBuffer, null);
                 return;
             }
 
             this.cpuContext = null;
-            if (!nativeOnly && isIrisInstalled()) {
+            if (!nativeOnly && IrisCompat.supportsModelRendering()) {
                 this.program = new TransformFeedbackProgram(SKINNING_PROGRAM_LOCATION,
                         data::getBuffer, bufOffsets, data.getVertexSize());
                 this.irisContext = new IrisGpuSkinningContext(getFormat(true),
                         this::getVertexBuffer, null, tbo, program);
-                this.irisBuffer = new IrisVertexBuffer(data, getFormat(true),
+                this.irisBuffer = IrisCompat.createVertexBuffer(data, getFormat(true),
                         10000, 64, executor);
             } else {
                 this.program = null;
