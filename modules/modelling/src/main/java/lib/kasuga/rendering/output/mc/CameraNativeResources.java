@@ -2,6 +2,7 @@ package lib.kasuga.rendering.output.mc;
 
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import lib.kasuga.mixins.modelling.*;
+import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
 import net.minecraft.client.renderer.*;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -23,7 +24,7 @@ final class CameraNativeResources {
         ((CameraBufferPool) buffers.sectionBufferPool()).kasuga$close();
     }
     private static void collect(MultiBufferSource.BufferSource source, Set<ByteBufferBuilder> nativeBuffers) {
-        if (net.neoforged.fml.ModList.get().isLoaded("iris")) CameraIrisNativeBuffers.close(source);
+        IrisCompat.closeCameraBuffers(source);
         var access = (WorldViewNativeBuffersAccessor) source;
         nativeBuffers.add(access.kasuga$shared());
         if (access.kasuga$fixed() != null) nativeBuffers.addAll(access.kasuga$fixed().values());

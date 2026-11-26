@@ -1,4 +1,6 @@
 {
   "kasuga_lib.oit.fallback.title": "Kasuga 模型透明渲染",
-  "kasuga_lib.oit.fallback.iris": "当前 Iris %s 已回退到排序透明渲染。半透明模型重叠处的效果可能不同，详情见游戏日志。"
+  "kasuga_lib.oit.fallback.iris": "当前 Iris %s 已回退到排序透明渲染。半透明模型重叠处的效果可能不同，详情见游戏日志。",
+  "kasuga_lib.iris.models.unavailable.title": "Kasuga 世界模型已暂停渲染",
+  "kasuga_lib.iris.models.unavailable.message": "Iris %s 的顶点格式不兼容。关闭光影可恢复 Kasuga 世界模型渲染。"
 }

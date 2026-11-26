@@ -1,4 +1,6 @@
 {
   "kasuga_lib.oit.fallback.title": "Kasuga model transparency",
-  "kasuga_lib.oit.fallback.iris": "Using sorted transparency with Iris %s. Overlapping translucent models may look different. Details are in the game log."
+  "kasuga_lib.oit.fallback.iris": "Using sorted transparency with Iris %s. Overlapping translucent models may look different. Details are in the game log.",
+  "kasuga_lib.iris.models.unavailable.title": "Kasuga world models paused",
+  "kasuga_lib.iris.models.unavailable.message": "Iris %s has an incompatible vertex format. Turn off shaders to restore Kasuga world models."
 }

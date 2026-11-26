@@ -17,7 +17,6 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -803,54 +802,10 @@ public final class DirectoryVfs implements VirtualFileSystem {
         }
     }
 
-    private sealed interface StagedOp {
-        record PutBytes(VfsPath path, byte[] bytes) implements StagedOp {}
-        record PutStream(VfsPath path, VfsWriteTransaction.ContentSource source) implements StagedOp {}
-        record Mkdirs(VfsPath dir) implements StagedOp {}
-        record Delete(VfsPath path) implements StagedOp {}
-        record Move(VfsPath from, VfsPath to) implements StagedOp {}
-    }
-
-    private final class DirectoryTransaction implements VfsWriteTransaction {
-        private final List<StagedOp> ops = new ArrayList<>();
-        private boolean committed = false;
-        private boolean rolledBack = false;
-        private VfsPreparedTransaction reservation;
+    private final class DirectoryTransaction extends StagedVfsTransaction {
         private final Map<StagedOp, StagedFile> staged = new java.util.IdentityHashMap<>();
 
-        @Override
-        public VfsWriteTransaction putBytes(VfsPath path, byte[] content) {
-            ensureActive();
-            ops.add(new StagedOp.PutBytes(Objects.requireNonNull(path, "path"), Arrays.copyOf(content, content.length)));
-            return this;
-        }
-
         @Override public Object coordinationKey() { return DirectoryVfs.this; }
-
-        @Override public VfsWriteTransaction putStream(VfsPath path, ContentSource source) {
-            ensureActive(); ops.add(new StagedOp.PutStream(Objects.requireNonNull(path), Objects.requireNonNull(source))); return this;
-        }
-
-        @Override
-        public VfsWriteTransaction mkdirs(VfsPath dir) {
-            ensureActive();
-            ops.add(new StagedOp.Mkdirs(Objects.requireNonNull(dir, "dir")));
-            return this;
-        }
-
-        @Override
-        public VfsWriteTransaction delete(VfsPath path) {
-            ensureActive();
-            ops.add(new StagedOp.Delete(Objects.requireNonNull(path, "path")));
-            return this;
-        }
-
-        @Override
-        public VfsWriteTransaction move(VfsPath from, VfsPath to) {
-            ensureActive();
-            ops.add(new StagedOp.Move(Objects.requireNonNull(from, "from"), Objects.requireNonNull(to, "to")));
-            return this;
-        }
 
         @Override
         public VfsChangeEvent commit() throws IOException {
@@ -879,15 +834,7 @@ public final class DirectoryVfs implements VirtualFileSystem {
             try {
                 ensureNotClosed();
                 validateSequenceLocked();
-                List<VfsPath> affected = new ArrayList<>();
-                for (StagedOp op : ops) {
-                    if (op instanceof StagedOp.PutBytes put) affected.add(put.path());
-                    else if (op instanceof StagedOp.PutStream put) affected.add(put.path());
-                    else if (op instanceof StagedOp.Mkdirs mk) affected.add(mk.dir());
-                    else if (op instanceof StagedOp.Delete del) affected.add(del.path());
-                    else if (op instanceof StagedOp.Move mv) { affected.add(mv.from()); affected.add(mv.to()); }
-                }
-                DirectoryTransactionJournal journal = new DirectoryTransactionJournal(realRoot, affected);
+                DirectoryTransactionJournal journal = new DirectoryTransactionJournal(realRoot, affectedPaths());
                 List<PathIndex.Entry<FileFingerprint>> previousBaseline = new ArrayList<>();
                 for (VfsPath path : journal.roots()) previousBaseline.addAll(baseline.subtree(path));
                 reservation = new VfsPreparedTransaction() {
@@ -905,7 +852,7 @@ public final class DirectoryVfs implements VirtualFileSystem {
                         for (StagedOp op : ops) {
                             if (op instanceof StagedOp.PutBytes put) changes.addAll(applyWriteBytesLocked(put.path(), put.bytes()));
                             else if (op instanceof StagedOp.PutStream put) changes.addAll(installStagedFileLocked(put.path(), staged.get(op)));
-                            else if (op instanceof StagedOp.Mkdirs mk) changes.addAll(applyMkdirsLocked(mk.dir()));
+                            else if (op instanceof StagedOp.Mkdirs mk) changes.addAll(applyMkdirsLocked(mk.path()));
                             else if (op instanceof StagedOp.Delete del) changes.addAll(applyDeleteLocked(del.path()));
                             else if (op instanceof StagedOp.Move mv) changes.addAll(applyMoveLocked(mv.from(), mv.to()));
                         }
@@ -960,11 +907,9 @@ public final class DirectoryVfs implements VirtualFileSystem {
         private void validateSequenceLocked() throws IOException {
             TransactionTree view = new TransactionTree(DirectoryVfs.this);
             for (StagedOp op : ops) {
-                if (op instanceof StagedOp.PutBytes put) { resolveSafePhysicalPath(put.path()); view.put(put.path(), put.bytes()); }
-                else if (op instanceof StagedOp.PutStream put) { resolveSafePhysicalPath(put.path()); view.putStream(put.path(), put.source()); }
-                else if (op instanceof StagedOp.Mkdirs mk) { resolveSafePhysicalPath(mk.dir()); view.mkdirs(mk.dir()); }
-                else if (op instanceof StagedOp.Delete del) { resolveSafePhysicalPath(del.path()); view.delete(del.path()); }
-                else if (op instanceof StagedOp.Move mv) { resolveSafePhysicalPath(mv.from()); resolveSafePhysicalPath(mv.to()); view.move(mv.from(), mv.to()); }
+                resolveSafePhysicalPath(op.path());
+                if (op instanceof StagedOp.Move move) resolveSafePhysicalPath(move.to());
+                view.apply(op);
             }
         }
 
@@ -983,17 +928,6 @@ public final class DirectoryVfs implements VirtualFileSystem {
                 }
                 staged.clear(); ops.clear();
                 if (failure != null) throw new java.io.UncheckedIOException(failure);
-            }
-        }
-
-        @Override
-        public void close() {
-            rollback();
-        }
-
-        private void ensureActive() {
-            if (committed || rolledBack || reservation != null) {
-                throw new IllegalStateException("Transaction already finished");
             }
         }
     }

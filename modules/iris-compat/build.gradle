@@ -1,0 +1,44 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.107'
+}
+
+version = mod_version
+group = mod_group_id
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = project.neo_version
+    parchment {
+        mappingsVersion = project.parchment_mappings_version
+        minecraftVersion = project.parchment_minecraft_version
+    }
+}
+
+dependencies {
+    // Modelling bundles this adapter at packaging time. Compile against its classes only
+    // so the adapter never depends on the modelling jar it is included in.
+    compileOnly(project(':modules:modelling')) {
+        attributes {
+            attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements, LibraryElements.CLASSES))
+        }
+    }
+    compileOnly project(':modules:core')
+    compileOnly project(':modules:inject')
+    compileOnly project(':modules:utils')
+    compileOnly files('libs/iris-neoforge-mc1.21.1-1.8.12.jar')
+    compileOnly files(project(':modules:modelling').file('libs/sodium-neoforge-mc1.21.1-0.6.13.jar'))
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.7.1'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation project(':modules:modelling')
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+test {
+    useJUnitPlatform()
+}

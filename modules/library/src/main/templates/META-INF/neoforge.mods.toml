@@ -21,6 +21,9 @@ license="${mod_license}"
 config="${mod_id}.mixins.json"
 
 [[mixins]]
+config="${mod_id}_iris.mixins.json"
+
+[[mixins]]
 config="${mod_id}_create.mixins.json"
 
 # A list of mods - how many allowed here is determined by the individual mod loader

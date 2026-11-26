@@ -1,0 +1,5 @@
+plugins {
+    id 'base'
+}
+
+description = 'Source archive for the legacy modelling UI prototype'

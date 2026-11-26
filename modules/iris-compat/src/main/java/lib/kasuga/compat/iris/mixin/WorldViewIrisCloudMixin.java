@@ -1,4 +1,4 @@
-package lib.kasuga.mixins.modelling;
+package lib.kasuga.compat.iris.mixin;
 
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;

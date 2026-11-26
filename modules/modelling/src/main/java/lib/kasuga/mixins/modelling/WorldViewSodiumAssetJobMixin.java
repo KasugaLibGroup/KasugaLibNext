@@ -21,7 +21,7 @@ abstract class WorldViewSodiumAssetJobMixin {
     @Unique private CameraRenderSettings kasuga$settings;
     @Inject(method = "<init>", at = @At("RETURN"))
     private void kasuga$capture(CallbackInfo ci) { kasuga$assets = CameraAssets.current(); kasuga$scene = CameraSceneRenderers.current(); kasuga$settings = MinecraftWorldViews.currentSettings(); }
-    @WrapMethod(method = "execute")
+    @WrapMethod(method = "execute(Lnet/caffeinemc/mods/sodium/client/render/chunk/compile/ChunkBuildContext;)V", require = 0)
     private void kasuga$assets(ChunkBuildContext context, Operation<Void> original) {
         try (var ignored = CameraAssets.use(kasuga$assets); var settings = new CameraRenderContext(kasuga$settings); var scene = CameraSceneRenderers.use(kasuga$scene)) { original.call(context); }
     }

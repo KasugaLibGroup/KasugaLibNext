@@ -55,6 +55,42 @@ public abstract class GpuBuffer<T extends GpuBuffer<T>> implements GpuObject<T> 
         }
     }
 
+    protected final void allocateStorage(T buffer, int target, int id, ByteBuffer data) {
+        context.enter(buffer);
+        try {
+            GL15.glBindBuffer(target, id);
+            if (data == null) {
+                GL15.glBufferData(target, size, usage);
+            } else {
+                GL15.glBufferData(target, data, usage);
+            }
+        } finally {
+            context.exit(buffer);
+        }
+    }
+
+    protected final void resizeStorage(T buffer, int target, int id, long newSize, boolean preserve, String invalidSizeMessage) {
+        if (newSize == size) return;
+        if (newSize <= 0) throw new IllegalArgumentException(invalidSizeMessage);
+        context.enter(buffer);
+        try {
+            resizeStorage(target, id, newSize, preserve);
+        } finally {
+            context.exit(buffer);
+        }
+    }
+
+    protected final void updateStorage(T buffer, int target, int id, long offset, ByteBuffer data, String invalidRangeMessage) {
+        if (offset + data.remaining() > size) throw new IllegalArgumentException(invalidRangeMessage);
+        context.enter(buffer);
+        try {
+            GL15.glBindBuffer(target, id);
+            GL15.glBufferSubData(target, offset, data);
+        } finally {
+            context.exit(buffer);
+        }
+    }
+
     /** Resizes bound storage, retaining only the surviving prefix with a matching native allocator/free. */
     protected void resizeStorage(int target, int id, long newSize, boolean preserve) {
         GL15.glBindBuffer(target, id);

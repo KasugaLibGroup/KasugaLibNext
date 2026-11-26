@@ -1,10 +1,12 @@
-package lib.kasuga.rendering.models.mc.backend.vbuffer;
+package lib.kasuga.compat.iris.vertex;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
 import lib.kasuga.mixins.client.AccessorByteBufferBuilder;
 import lib.kasuga.mixins.client.AccessorBufferBuilder;
 import lib.kasuga.rendering.models.mc.backend.FlatModelData;
+import lib.kasuga.rendering.models.mc.backend.vbuffer.FencedVertexBuffer;
+import lib.kasuga.rendering.models.mc.backend.vbuffer.IVertexBuffer;
 import lombok.Getter;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.jetbrains.annotations.Nullable;

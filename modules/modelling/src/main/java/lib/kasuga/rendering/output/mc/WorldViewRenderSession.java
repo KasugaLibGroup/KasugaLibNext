@@ -3,11 +3,10 @@ package lib.kasuga.rendering.output.mc;
 import com.mojang.blaze3d.systems.RenderSystem;
 import lib.kasuga.mixins.modelling.WorldViewMinecraftAccessor;
 import lib.kasuga.rendering.output.camera.CameraRenderSettings;
-import lib.kasuga.rendering.output.mc.iris.CameraIrisSession;
+import lib.kasuga.rendering.models.mc.compat.iris.IrisCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.RenderBuffers;
-import net.neoforged.fml.ModList;
 import java.io.IOException;
 import lib.kasuga.rendering.output.WorldCameraView;
 import lib.kasuga.rendering.output.mc.stream.CameraChunkClient;
@@ -18,7 +17,7 @@ final class WorldViewRenderSession implements AutoCloseable {
     private final RenderBuffers buffers;
     private LevelRenderer renderer;
     private CameraSceneRenderers scene;
-    private final CameraIrisSession iris;
+    private final CameraShaderSession iris;
     private final CameraAssets assets;
     private CameraChunkClient.Session world;
     private final CameraRenderSettings settings;
@@ -26,9 +25,7 @@ final class WorldViewRenderSession implements AutoCloseable {
 
     WorldViewRenderSession(CameraRenderSettings settings) throws IOException {
         this.settings = settings;
-        if (!ModList.get().isLoaded("iris") && settings.shader().pack() != null)
-            throw new IllegalStateException("This camera requires Iris");
-        iris = ModList.get().isLoaded("iris") ? new CameraIrisSession(settings.shader()) : null;
+        iris = IrisCompat.openCamera(settings.shader());
         CameraAssets acquired = null;
         try {
             acquired = CameraAssets.acquire(settings);
@@ -60,7 +57,7 @@ final class WorldViewRenderSession implements AutoCloseable {
         private final LevelRenderer previousRenderer = mc.levelRenderer;
         private final ClientLevel previousLevel = mc.level;
         private final RenderBuffers previousBuffers = access.kasuga$getRenderBuffers();
-        private final CameraIrisSession.Scope irisScope;
+        private final CameraShaderSession.Scope irisScope;
         private final CameraAssets.Scope assetScope;
         private final CameraRenderContext context;
         private final CameraSceneRenderers.Scope sceneScope;
@@ -71,7 +68,7 @@ final class WorldViewRenderSession implements AutoCloseable {
             context = new CameraRenderContext(settings);
             assetScope = assets.enter();
             sceneScope = CameraSceneRenderers.use(scene);
-            CameraIrisSession.Scope entered;
+            CameraShaderSession.Scope entered;
             try { entered = iris == null ? null : iris.enter(); }
             catch (RuntimeException failure) {
                 sceneScope.close(); assetScope.close(); context.close();
@@ -91,7 +88,7 @@ final class WorldViewRenderSession implements AutoCloseable {
             } catch (RuntimeException failure) { close(); throw failure; }
         }
         void finish() {
-            if (iris != null) iris.pipelines().getPipeline().ifPresent(p -> p.finalizeGameRendering());
+            if (iris != null) iris.finish();
         }
         @Override public void close() {
             if (restored) return;

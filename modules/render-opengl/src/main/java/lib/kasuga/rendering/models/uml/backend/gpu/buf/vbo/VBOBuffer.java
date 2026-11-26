@@ -18,43 +18,20 @@ public class VBOBuffer extends GpuBuffer<VBOBuffer> {
     public VBOBuffer(long size, int usage) {
         super(size, usage, TYPE, new VBOContext());
         this.id = GL15.glGenBuffers();
-
-        context.enter(this);
-        try {
-            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, id);
-            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, size, usage);
-        } finally {
-            context.exit(this);
-        }
+        allocateStorage(this, GL15.GL_ARRAY_BUFFER, id, null);
     }
 
     public VBOBuffer(ByteBuffer byteData, int usage) {
         super(byteData.remaining(), usage, TYPE, new VBOContext());
         id = GL15.glGenBuffers();
-
-        context.enter(this);
-        try {
-            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, id);
-            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, byteData, usage);
-        } finally {
-            context.exit(this);
-        }
+        allocateStorage(this, GL15.GL_ARRAY_BUFFER, id, byteData);
     }
 
     @Override
     public void resize(long newSize, boolean copyDataToNewBuffer) {
         checkOpen(CLOSE_MSG);
-        if (newSize == size) return;
-        if (newSize <= 0) {
-            throw new IllegalArgumentException("Buffer size must be greater than zero.");
-        }
-
-        context.enter(this);
-        try {
-            resizeStorage(GL15.GL_ARRAY_BUFFER, id, newSize, copyDataToNewBuffer);
-        } finally {
-            context.exit(this);
-        }
+        resizeStorage(this, GL15.GL_ARRAY_BUFFER, id, newSize, copyDataToNewBuffer,
+                "Buffer size must be greater than zero.");
     }
 
     @Override
@@ -73,32 +50,15 @@ public class VBOBuffer extends GpuBuffer<VBOBuffer> {
     @Override
     public void updateAll(ByteBuffer data) {
         checkOpen(CLOSE_MSG);
-        if (data.remaining() > size) {
-            throw new IllegalArgumentException("Data size exceeds buffer capacity.");
-        }
-
-        context.enter(this);
-        try {
-            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, id);
-            GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, 0, data);
-        } finally {
-            context.exit(this);
-        }
+        updateStorage(this, GL15.GL_ARRAY_BUFFER, id, 0, data,
+                "Data size exceeds buffer capacity.");
     }
 
     @Override
     public void updateRange(ByteBuffer data, long offset) {
         checkOpen(CLOSE_MSG);
-        if (data.remaining() + offset > size) {
-            throw new IllegalArgumentException("Data range exceeds buffer capacity.");
-        }
-        context.enter(this);
-        try {
-            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, id);
-            GL15.glBufferSubData(GL15.GL_ARRAY_BUFFER, offset, data);
-        } finally {
-            context.exit(this);
-        }
+        updateStorage(this, GL15.GL_ARRAY_BUFFER, id, offset, data,
+                "Data range exceeds buffer capacity.");
     }
 
     @Override
