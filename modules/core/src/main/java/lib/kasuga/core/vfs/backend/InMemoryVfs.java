@@ -9,7 +9,6 @@ import java.io.OutputStream;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.NoSuchFileException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -402,56 +401,11 @@ public final class InMemoryVfs implements VirtualFileSystem {
         return changes;
     }
 
-    private sealed interface StagedOp {
-        record PutBytes(VfsPath path, byte[] bytes) implements StagedOp {}
-        record PutStream(VfsPath path, VfsWriteTransaction.ContentSource source) implements StagedOp {}
-        record Mkdirs(VfsPath dir) implements StagedOp {}
-        record Delete(VfsPath path) implements StagedOp {}
-        record Move(VfsPath from, VfsPath to) implements StagedOp {}
-    }
-
-    private final class InMemoryTransaction implements VfsWriteTransaction {
-        private final List<StagedOp> ops = new ArrayList<>();
-        private boolean committed = false;
-        private boolean rolledBack = false;
-        private VfsPreparedTransaction reservation;
+    private final class InMemoryTransaction extends StagedVfsTransaction {
         private final Map<StagedOp, MemoryContent> contents = new IdentityHashMap<>();
 
         @Override
-        public VfsWriteTransaction putBytes(VfsPath path, byte[] content) {
-            ensureActive();
-            ops.add(new StagedOp.PutBytes(Objects.requireNonNull(path, "path"), Arrays.copyOf(content, content.length)));
-            return this;
-        }
-
-        @Override
         public Object coordinationKey() { return InMemoryVfs.this; }
-
-        @Override
-        public VfsWriteTransaction putStream(VfsPath path, ContentSource source) {
-            ensureActive(); ops.add(new StagedOp.PutStream(Objects.requireNonNull(path), Objects.requireNonNull(source))); return this;
-        }
-
-        @Override
-        public VfsWriteTransaction mkdirs(VfsPath dir) {
-            ensureActive();
-            ops.add(new StagedOp.Mkdirs(Objects.requireNonNull(dir, "dir")));
-            return this;
-        }
-
-        @Override
-        public VfsWriteTransaction delete(VfsPath path) {
-            ensureActive();
-            ops.add(new StagedOp.Delete(Objects.requireNonNull(path, "path")));
-            return this;
-        }
-
-        @Override
-        public VfsWriteTransaction move(VfsPath from, VfsPath to) {
-            ensureActive();
-            ops.add(new StagedOp.Move(Objects.requireNonNull(from, "from"), Objects.requireNonNull(to, "to")));
-            return this;
-        }
 
         @Override
         public VfsChangeEvent commit() throws IOException {
@@ -478,18 +432,9 @@ public final class InMemoryVfs implements VirtualFileSystem {
             try {
                 ensureNotClosed();
                 TransactionTree view = new TransactionTree(InMemoryVfs.this);
-                List<VfsPath> affected = new ArrayList<>();
-                for (StagedOp op : ops) {
-                    if (op instanceof StagedOp.PutBytes put) {
-                        view.put(put.path(), put.bytes()); affected.add(put.path());
-                    } else if (op instanceof StagedOp.PutStream put) {
-                        view.putStream(put.path(), put.source()); affected.add(put.path());
-                    } else if (op instanceof StagedOp.Mkdirs mk) { view.mkdirs(mk.dir()); affected.add(mk.dir()); }
-                    else if (op instanceof StagedOp.Delete del) { view.delete(del.path()); affected.add(del.path()); }
-                    else if (op instanceof StagedOp.Move mv) { view.move(mv.from(), mv.to()); affected.add(mv.from()); affected.add(mv.to()); }
-                }
+                for (StagedOp op : ops) view.apply(op);
                 List<VfsPath> roots = new ArrayList<>();
-                for (VfsPath path : affected) {
+                for (VfsPath path : affectedPaths()) {
                     VfsPath cursor = VfsPath.ROOT;
                     for (String part : path.segments()) { cursor = cursor.resolve(part); if (!nodes.containsKey(cursor)) break; }
                     if (!cursor.isRoot()) roots.add(cursor);
@@ -510,7 +455,7 @@ public final class InMemoryVfs implements VirtualFileSystem {
                         for (StagedOp op : ops) {
                             if (op instanceof StagedOp.PutBytes put) allChanges.addAll(applyPutContent(nodes, put.path(), contents.get(op)));
                             else if (op instanceof StagedOp.PutStream put) allChanges.addAll(applyPutContent(nodes, put.path(), contents.get(op)));
-                            else if (op instanceof StagedOp.Mkdirs mk) allChanges.addAll(applyMkdirs(nodes, mk.dir()));
+                            else if (op instanceof StagedOp.Mkdirs mk) allChanges.addAll(applyMkdirs(nodes, mk.path()));
                             else if (op instanceof StagedOp.Delete del) allChanges.addAll(applyDelete(nodes, del.path()));
                             else if (op instanceof StagedOp.Move mv) allChanges.addAll(applyMove(nodes, mv.from(), mv.to()));
                         }
@@ -565,17 +510,6 @@ public final class InMemoryVfs implements VirtualFileSystem {
                 }
                 rolledBack = true;
                 contents.clear(); ops.clear();
-            }
-        }
-
-        @Override
-        public void close() {
-            rollback();
-        }
-
-        private void ensureActive() {
-            if (committed || rolledBack || reservation != null) {
-                throw new IllegalStateException("Transaction already finished");
             }
         }
     }

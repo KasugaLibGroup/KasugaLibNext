@@ -7,7 +7,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.NoSuchFileException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -413,73 +412,24 @@ public final class MountTableVfs implements VirtualFileSystem {
         return prefixed;
     }
 
-    private sealed interface StagedOp {
-        record PutBytes(VfsPath path, byte[] bytes) implements StagedOp {}
-        record PutStream(VfsPath path, VfsWriteTransaction.ContentSource source) implements StagedOp {}
-        record Mkdirs(VfsPath dir) implements StagedOp {}
-        record Delete(VfsPath path) implements StagedOp {}
-        record Move(VfsPath from, VfsPath to) implements StagedOp {}
-    }
-
-    private final class MountTableTransaction implements VfsWriteTransaction {
-        private final List<StagedOp> ops = new ArrayList<>();
-        private boolean committed = false;
-        private boolean rolledBack = false;
-
-        @Override
-        public VfsWriteTransaction putBytes(VfsPath path, byte[] content) {
-            ensureActive();
-            ops.add(new StagedOp.PutBytes(Objects.requireNonNull(path, "path"), Arrays.copyOf(content, content.length)));
-            return this;
-        }
-
-        @Override public VfsWriteTransaction putStream(VfsPath path, ContentSource source) {
-            ensureActive(); ops.add(new StagedOp.PutStream(Objects.requireNonNull(path), Objects.requireNonNull(source))); return this;
-        }
-
-        @Override
-        public VfsWriteTransaction mkdirs(VfsPath dir) {
-            ensureActive();
-            ops.add(new StagedOp.Mkdirs(Objects.requireNonNull(dir, "dir")));
-            return this;
-        }
-
-        @Override
-        public VfsWriteTransaction delete(VfsPath path) {
-            ensureActive();
-            ops.add(new StagedOp.Delete(Objects.requireNonNull(path, "path")));
-            return this;
-        }
-
-        @Override
-        public VfsWriteTransaction move(VfsPath from, VfsPath to) {
-            ensureActive();
-            ops.add(new StagedOp.Move(Objects.requireNonNull(from, "from"), Objects.requireNonNull(to, "to")));
-            return this;
-        }
-
+    private final class MountTableTransaction extends StagedVfsTransaction {
         @Override
         public VfsChangeEvent commit() throws IOException {
             ensureActive();
             // Validate every target mount before starting any backend write
             for (StagedOp op : ops) {
-                if (op instanceof StagedOp.PutBytes put) {
-                    requireWritableMount(put.path());
-                } else if (op instanceof StagedOp.PutStream put) {
-                    requireWritableMount(put.path());
-                } else if (op instanceof StagedOp.Mkdirs mk) {
-                    requireWritableMount(mk.dir());
-                } else if (op instanceof StagedOp.Delete del) {
-                    if (isMountOrAncestor(del.path())) {
-                        throw new VfsException("Cannot delete active mount point or its ancestor: " + del.path());
+                VfsPath path = op.path();
+                if (op instanceof StagedOp.Delete && isMountOrAncestor(path)) {
+                    throw new VfsException("Cannot delete active mount point or its ancestor: " + path);
+                }
+                if (op instanceof StagedOp.Move move) {
+                    if (isMountOrAncestor(path) || isMountOrAncestor(move.to())) {
+                        throw new VfsException("Cannot move active mount point or its ancestor: " + path);
                     }
-                    requireWritableMount(del.path());
-                } else if (op instanceof StagedOp.Move mv) {
-                    if (isMountOrAncestor(mv.from()) || isMountOrAncestor(mv.to())) {
-                        throw new VfsException("Cannot move active mount point or its ancestor: " + mv.from());
-                    }
-                    requireWritableMount(mv.from());
-                    requireWritableMount(mv.to());
+                    requireWritableMount(path);
+                    requireWritableMount(move.to());
+                } else {
+                    requireWritableMount(path);
                 }
             }
 
@@ -493,29 +443,9 @@ public final class MountTableVfs implements VirtualFileSystem {
             List<VfsChangeEvent.EntryChange> changes = new ArrayList<>();
             try {
                 for (StagedOp op : ops) {
-                    if (op instanceof StagedOp.PutBytes put) {
-                        MountResolution r = requireWritableMount(put.path());
-                        MountGroup group = group(groups, r, crossBackendMove);
-                        if (group.tree != null) group.tree.put(r.relativePath(), put.bytes());
-                        group.tx.putBytes(r.relativePath(), put.bytes());
-                    } else if (op instanceof StagedOp.PutStream put) {
-                        MountResolution r = requireWritableMount(put.path());
-                        MountGroup group = group(groups, r, crossBackendMove);
-                        if (group.tree != null) group.tree.putStream(r.relativePath(), put.source());
-                        group.tx.putStream(r.relativePath(), put.source());
-                    } else if (op instanceof StagedOp.Mkdirs mk) {
-                        MountResolution r = requireWritableMount(mk.dir());
-                        MountGroup group = group(groups, r, crossBackendMove);
-                        if (group.tree != null) group.tree.mkdirs(r.relativePath());
-                        group.tx.mkdirs(r.relativePath());
-                    } else if (op instanceof StagedOp.Delete del) {
-                        MountResolution r = requireWritableMount(del.path());
-                        MountGroup group = group(groups, r, crossBackendMove);
-                        if (group.tree != null) group.tree.delete(r.relativePath());
-                        group.tx.delete(r.relativePath());
-                    } else if (op instanceof StagedOp.Move mv) {
-                        MountResolution from = requireWritableMount(mv.from());
-                        MountResolution to = requireWritableMount(mv.to());
+                    MountResolution from = requireWritableMount(op.path());
+                    if (op instanceof StagedOp.Move move) {
+                        MountResolution to = requireWritableMount(move.to());
                         MountGroup source = group(groups, from, crossBackendMove);
                         MountGroup destination = group(groups, to, crossBackendMove);
                         if (from.backend() == to.backend()) {
@@ -526,6 +456,23 @@ public final class MountTableVfs implements VirtualFileSystem {
                             source.tree.delete(from.relativePath());
                             source.tx.delete(from.relativePath());
                         }
+                        continue;
+                    }
+
+                    MountGroup group = group(groups, from, crossBackendMove);
+                    VfsPath path = from.relativePath();
+                    if (op instanceof StagedOp.PutBytes put) {
+                        if (group.tree != null) group.tree.put(path, put.bytes());
+                        group.tx.putBytes(path, put.bytes());
+                    } else if (op instanceof StagedOp.PutStream put) {
+                        if (group.tree != null) group.tree.putStream(path, put.source());
+                        group.tx.putStream(path, put.source());
+                    } else if (op instanceof StagedOp.Mkdirs) {
+                        if (group.tree != null) group.tree.mkdirs(path);
+                        group.tx.mkdirs(path);
+                    } else if (op instanceof StagedOp.Delete) {
+                        if (group.tree != null) group.tree.delete(path);
+                        group.tx.delete(path);
                     }
                 }
                 transactionChanges.set(changes);
@@ -565,17 +512,6 @@ public final class MountTableVfs implements VirtualFileSystem {
             if (!committed && !rolledBack) {
                 rolledBack = true;
                 ops.clear();
-            }
-        }
-
-        @Override
-        public void close() {
-            rollback();
-        }
-
-        private void ensureActive() {
-            if (committed || rolledBack) {
-                throw new IllegalStateException("Transaction already finished");
             }
         }
     }

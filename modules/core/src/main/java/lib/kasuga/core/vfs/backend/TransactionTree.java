@@ -1,6 +1,7 @@
 package lib.kasuga.core.vfs.backend;
 
 import lib.kasuga.core.vfs.*;
+import lib.kasuga.core.vfs.backend.StagedVfsTransaction.StagedOp;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -25,6 +26,16 @@ final class TransactionTree {
     private final Node root = new Node(true, VfsPath.ROOT, null);
 
     TransactionTree(VirtualFileSystem backend) { this.backend = backend; }
+
+    void apply(StagedOp op) throws IOException {
+        switch (op) {
+            case StagedOp.PutBytes put -> put(put.path(), put.bytes());
+            case StagedOp.PutStream put -> putStream(put.path(), put.source());
+            case StagedOp.Mkdirs mkdirs -> mkdirs(mkdirs.path());
+            case StagedOp.Delete delete -> delete(delete.path());
+            case StagedOp.Move move -> move(move.from(), move.to());
+        }
+    }
 
     private Node child(Node parent, String name) throws IOException {
         if (!parent.directory) throw new FileAlreadyExistsException(name, null, "Ancestor is a file");

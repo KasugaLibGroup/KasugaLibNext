@@ -58,16 +58,8 @@ public class TBOBuffer extends GpuBuffer<TBOBuffer> {
     @Override
     public void resize(long newSize, boolean copyDataToNewBuffer) {
         checkOpen(CLOSE_MSG);
-        if (newSize == size) return;
-        if (newSize <= 0) {
-            throw new IllegalArgumentException("New size must be greater than zero.");
-        }
-        context.enter(this);
-        try {
-            resizeStorage(GL31.GL_TEXTURE_BUFFER, bufferId, newSize, copyDataToNewBuffer);
-        } finally {
-            context.exit(this);
-        }
+        resizeStorage(this, GL31.GL_TEXTURE_BUFFER, bufferId, newSize, copyDataToNewBuffer,
+                "New size must be greater than zero.");
     }
 
     @Override
@@ -87,30 +79,14 @@ public class TBOBuffer extends GpuBuffer<TBOBuffer> {
     @Override
     public void updateAll(ByteBuffer data) {
         checkOpen(CLOSE_MSG);
-        if (data.remaining() > size) {
-            throw new IllegalArgumentException("Data size exceeds buffer capacity.");
-        }
-        context.enter(this);
-        try {
-            GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER, bufferId);
-            GL15.glBufferSubData(GL31.GL_TEXTURE_BUFFER, 0, data);
-        } finally {
-            context.exit(this);
-        }
+        updateStorage(this, GL31.GL_TEXTURE_BUFFER, bufferId, 0, data,
+                "Data size exceeds buffer capacity.");
     }
 
     public void updateRange(ByteBuffer data, long offset) {
         checkOpen(CLOSE_MSG);
-        if (offset + data.remaining() > size) {
-            throw new IllegalArgumentException("Data range exceeds buffer capacity.");
-        }
-        context.enter(this);
-        try {
-            GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER, bufferId);
-            GL15.glBufferSubData(GL31.GL_TEXTURE_BUFFER, offset, data);
-        } finally {
-            context.exit(this);
-        }
+        updateStorage(this, GL31.GL_TEXTURE_BUFFER, bufferId, offset, data,
+                "Data range exceeds buffer capacity.");
     }
 
     @Override
