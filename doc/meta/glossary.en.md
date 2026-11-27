@@ -207,7 +207,7 @@ These keep their original form in both languages; the examples are the forms tha
 | JSON keys / field names | `on_register`, `on_reload`, `state_vars`, `bone_mask`, `cross_fade_seconds`, `alphaCutoff`, `include_secondary_bodies`, `model_scale`, `registry_groups`, `state_machines`, `animation_clips`, `ik_enabled` |
 | Commands | `/reload`, `/kasuga_data errors`, `/kasuga_ragdoll deploy`, `/kasuga_physics block [1-32]`, `/ksglib debug oit`, `/kasuga_pbr status` |
 | Module / directory names | `modules/modelling`, `modules/render-core`, `modules/render-opengl`, `modules/data-driven`, `modules/formula`, `external/slp/javet`, `contentTesting` |
-| Version strings | `Minecraft 1.21.1`, `NeoForge 21.1.203`, `Parchment 2024.11.17`, `Java 21`, `GLSL 150`, `Iris 1.8.12`, Box3D commit `30c67b5e6d0a3a66f0f506c69ce9e9e0587e3b7c` |
+| Version strings | `Minecraft 1.21.1`, `NeoForge 21.1.203`, `Parchment 2024.11.17`, `Java 21`, `GLSL 150`, `Iris 1.8.12`, Box3D commit `336263320469e5e9febfe18697ab562488f7e97a` |
 | Abbreviations | FSM, IK, PBR, OIT, WBOIT, MRT, AO, FBO, VBO, TBO, UBO, SSBO, VAO, CCD, AABB, UV, SSS, LabPBR, LRU, LOD, MMD, PMX, PMD, VMD, VPD, glTF, BE (block entity), D1–D6 |
 | Technologies / library names | OpenGL, LWJGL, JOML, Blaze3D, Micronaut, DataFixerUpper, Box3D, Caliko, Iris, Sodium, Blockbench, NeoForge, Fabric, Gradle, JUnit |
 | Model format names | `.bbmodel`, `.geo.json`, `.obj`, `.glb`, `.gltf`, `.mmd.zip`, `.pmx`, `.pmd`, `.vmd`, `.vpd` |

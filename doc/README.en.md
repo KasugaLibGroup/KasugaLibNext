@@ -1,16 +1,16 @@
 # KasugaLibNext Documentation
 
-This site is the development documentation for KasugaLibNext and its downstream mods, aimed at mod authors who want to integrate rendering, modelling, and data-driven capabilities.
+This site is the development documentation for KasugaLibNext and its downstream mods, aimed at mod authors who want to integrate core registration, dependency injection, scripting, rendering, modelling, data-driven content, and Create integration.
 
 ## Site Structure
 
 | Section | Intended reader | Content |
 | --- | --- | --- |
-| [getting-started/](getting-started/) | First-time integration | Setting up a project from scratch and getting the first example running |
-| [guides/](guides/) | Arriving with a concrete task | Getting-started tutorials, example recipes, and verification steps |
-| [reference/](reference/) | Looking up signatures | APIs, configuration schema, commands, and failure behavior |
-| [explanation/](explanation/) | Wanting to understand the mechanics | Module boundaries, data flow, algorithms, and resource ownership |
-| [meta/](meta/) | Project and versions | Compatibility matrix, migration guides, licenses, contributor documentation, and verification records |
+| [getting-started/](getting-started/) | First-time integration | Dependencies and runtime environment, minimal example project, and installation/deployment |
+| [guides/](guides/) | Arriving with a concrete task | Data-driven walkthroughs, content and Proxy integration, world display and lights, model collision, recipes, and verification |
+| [reference/](reference/) | Looking up signatures | APIs, configuration schemas, commands, and failure behavior across Core/Inject/Utils, scripting, Gradle/packaging, data-driven, models, rendering, and Create |
+| [explanation/](explanation/) | Wanting to understand the mechanics | Threading model, data-driven v2, Proxy, animation scope/targets, render pipelines, physics, and module boundaries |
+| [meta/](meta/) | Project and versions | Compatibility matrix, migration guides, changelog, licenses, contributor docs, known limitations, consumers, glossary, and benchmark records |
 
 ## Documentation Maintenance
 

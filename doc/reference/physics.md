@@ -6,7 +6,7 @@ Kasuga modelling 的原生物理由官方 Box3D C17 引擎负责。Java 层只�
 碰撞数据、动画目标与骨骼写回；没有 Java 备用积分器或接触求解器。
 
 当前 vendored 版本固定为 Box3D 官方 `main` 提交
-`30c67b5e6d0a3a66f0f506c69ce9e9e0587e3b7c`。源码与许可证分别位于
+`336263320469e5e9febfe18697ab562488f7e97a`。源码与许可证分别位于
 `modules/modelling/src/main/native/box3d` 和 `modules/modelling/THIRD_PARTY_NOTICES.md`。
 
 CMake 与 Box3D 原生库都是可选能力。构建机找不到 CMake 时，Gradle 会输出 warning、跳过

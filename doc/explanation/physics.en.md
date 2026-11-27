@@ -18,7 +18,7 @@ flowchart LR
     G --> H[Render upload]
 ```
 
-When physics owns the pose, animation target evaluation takes on the IK work for this frame. After the physics writeback only the hierarchy is rebuilt; IK must not be solved again, and the original animation must not be
+`SkeletonInstance` has three motion states: `ANIMATED`, `RELAXED`, and `DRIVEN`; the standard IK slot solves same-frame targets for all states, and the physics adapter consumes only the results. After the physics writeback only the hierarchy is rebuilt; IK must not be solved again, and the original animation must not be
 re-applied over the physics results. Targets can be reused by the epoch of bone input changes; while the input stays unchanged during one physics step there is no need to rebuild the whole animation hierarchy for every
 fixed substep. The final pose revision is reused by the later upload.
 
@@ -52,5 +52,8 @@ This client-side local simulation provides no server-authoritative entities, sav
 ## Active Ragdoll and Boundaries
 
 The active controller turns the same-frame animation/IK targets into bounded PD spring forces and torques, and Box3D still handles contacts and joints.
-The controller changes targets and applies forces; it cannot directly override the native integration. Physics must not freeze because of render frustum culling.
+Targets are set in the pre-IK phase; the controller applies forces from the solved targets on each fixed step and cannot directly override the native integration. Physics must not freeze because of render frustum culling.
 A world keeps only one drag constraint; fluid buoyancy and per-vertex PMX soft bodies are still not integrated.
+
+A shared world provides a cross-instance barrier through the standard pipeline: submit all targets first, advance the world once, then commit all final poses and anchors.
+Scenes own the native world, and clustering assigns instances to scenes; migrating between scenes does not change the skeleton's motion state.

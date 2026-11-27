@@ -1,7 +1,5 @@
 # 世界空间 UI 输入设计
 
-[English](world-ui-input.en.md)。
-
 目标是在世界 UI 前打开透明输入 Screen，使玩家可以自由移动系统光标。
 默认准心模式与自由光标模式共用后续平面命中和事件路由。
 接口、单位、接入示例与验收命令见 [API](../reference/world-ui-input.md)。

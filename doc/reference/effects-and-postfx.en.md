@@ -325,6 +325,15 @@ Within a pass that declares a read, `fullscreen(...).colorSampler("NormalSampler
 
 See the [Nebula demo](../guides/nebula-demo.md) for a complete geometry/volume/presentation graph.
 
+## World-Space Weather Filters (Indoor Rain / Snow Occlusion)
+
+- `WeatherFilters` provides 3D spatial weather occlusion for hollow bodies (such as Create train carriages, Sable/Aeronautics physics hulls, and `SceneModels` scene models): during `LevelRenderer#renderSnowAndRain`, it generates an on-demand camera-centered top-down orthographic depth map and discards rain/snow fragments beneath roofs or inside explicit OBB filter volumes in the `kasuga_lib:weather/rain_filter` fragment shader; when an Iris shader pack is enabled, it automatically falls back to CPU column-height clamping.
+- `WeatherFilterVolume` describes a rotatable/tiltable local OBB filter volume with `strength` (`0.0–1.0` filtering ratio) and `feather` edge transition; volumes can be spawned directly via `WeatherFilters.spawn(clientLevel, volume)` or mounted into a `WorldDisplayScene` through `WorldWeatherFilterTarget`, inheriting the parent `SceneModels` / `SceneHost` pose and lifecycle.
+- `SceneModels.occludeWeather(boolean)` enables automatic rain occlusion by default; the Create module integrates `AbstractContraptionEntity` and optional Sable `ClientSubLevelAccess` sublevels automatically.
+- Create carriage glass blocks precipitation along its collision shape while windows and skylights stay transparent in the main frame. `config/kasuga_lib-common.toml` exposes `enable_contraption_weather_filter` (enabled by default; integrating mods can set the default during construction via `KasugaLibCreateApi.setContraptionWeatherFilterDefault(boolean)`, with existing config file values taking precedence) and `enable_sable_weather_filter` (default `true`, controlling automatic precipitation occlusion inside Sable / Aeronautics physics sublevels).
+- Optional entity-type filtering is available through `WeatherFilters.includeEntityTypes(...)`, `WeatherFilters.excludeEntityTypes(...)`, `WeatherFilters.registerEntityFilter(...)`, `WeatherFilters.setOptionalEntityTypeFilter(...)`, the `#kasuga_lib:occludes_weather` entity tag, and client config `WeatherFilterConfig` (`enable_weather_filter`, `included_entity_types`, `excluded_entity_types`).
+- `LevelRenderer#tickRain` shares the same zero-readback CPU height query: it suppresses vanilla rain splashes under dynamic roof occlusion and inside high-strength explicit filter volumes, and switches rain audio to muffled `WEATHER_RAIN_ABOVE` when the camera is sheltered.
+
 ## Ready-to-Run PostFX Presets
 
 `PostFxPresetDemo` uses one generated shader registration that stays active across reloads. Parameter blocks select different color settings. Preset selection does not register or compile the shader again.

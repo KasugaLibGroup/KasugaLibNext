@@ -2,52 +2,51 @@
 
 ## 13. Reload API
 
-The reload domain is orchestrated by data-driven's `ReloadOrchestrator`, and the extension point is `ReloadHandler` (symmetric with `TypeHandler` in the registration phase). The orchestrator does not know any type name — it walks `ReloadHandlerRegistry` and treats each handler's `typeName()` as a legal top-level key.
+The reload domain is orchestrated by data-driven's `ReloadOrchestrator`, using `ReloadHandler` as its extension point (symmetric with `TypeHandler` at registration time). The orchestrator hardcodes no type names — it iterates `ReloadHandlerRegistry` and accepts each handler's `typeName()` as a valid top-level key.
 
-### 13.1 ReloadHandler (the Extension Point)
+### 13.1 ReloadHandler (Extension Point)
 
-`reload/ReloadHandler.java:41`. One handler owns the decode/register of one reload type; functionally it corresponds to that type's "old decoder + registration step + wrap-up validation".
+`reload/ReloadHandler.java:41`. Each handler owns decode, register, and post-reload validation for one reload type.
 
 ```java
 public interface ReloadHandler<T> {
-    String typeName();                                    // :50 top-level key, also the dedup collision space
-    default String describeFile() { return "reload-domain file"; }  // :60 the noun used in decode diagnostics
-    default Set<String> globDirectories() { return Set.of(); }      // :72 default empty = index only
-    void clearBucket();                                   // :85 once per cycle, before register
-    Decoded<T> decode(JsonObject root);                   // :97 pure decode; delegates to the existing decodeFile
-    void register(T payload);                             // :107 registers the last-wins winner
-    default void afterReload(List<Reloaded<T>> registered) {}  // :117 cross-type validation
+    String typeName();                                              // :50 top-level key and dedup collision space
+    default String describeFile() { return "reload-domain file"; }  // :60 noun in decode diagnostics
+    default Set<String> globDirectories() { return Set.of(); }      // :72 empty = index-only
+    void clearBucket();                                             // :85 once per cycle before discovery
+    Decoded<T> decode(JsonObject root);                             // :97 pure decode; no file I/O
+    void register(T payload);                                       // :107 registers last-wins winners
+    default void afterReload(List<Reloaded<T>> registered) {}       // :117 cross-type validation
 }
 ```
 
 | Method | Responsibility and constraints | Failure behavior |
 |------|-----------|---------|
-| `typeName()` | The top-level JSON key it claims, e.g. `"state_machines"`; unique in the registry, and also the collision space for deduplication | A later registration under the same name replaces the earlier one in place |
-| `describeFile()` | The noun used in decode diagnostics, e.g. `"state machine file"` → `"Failed to decode state machine file '<path>'"` | Defaults to `"reload-domain file"`; a handler whose diagnostic text is pinned by a test should override it |
-| `globDirectories()` | Extra directories under `data/<ns>/` discovered by directory glob; default empty = index-only | Return an ordered collection so that discovery order is preserved |
-| `clearBucket()` | Once per cycle, before discovery. **Drops only the reload source** ("script wins"), so it delegates to the bucket's `clearResource()` | An exception is isolated in place by the orchestrator (`runClear`, `:250-261`) and recorded under `Domain.RELOAD_DATA`; the other handlers carry on |
-| `decode(root)` | `root` is guaranteed to be a JSON object. **Must not read files** (the orchestrator owns I/O) and **must not throw for malformed content** (return it as `Decoded.errors()`) | A thrown exception is isolated per file and recorded by the orchestrator |
-| `register(payload)` | Called only for the last-wins winner, and only after the whole discovery round has finished | You should throw (the orchestrator isolates it and attributes it by namespace); do not swallow |
-| `afterReload(registered)` | Called once every handler's registration stage is done, and only for the entries registered this round; cross-type validation belongs here | A thrown exception is attributed to the library mod (`KasugaLib.MODID`) and does not block later handlers |
+| `typeName()` | Claimed top-level JSON key (e.g. `"state_machines"`); unique key and dedup space | Re-registering the same name replaces in place |
+| `describeFile()` | Noun inserted into decode error messages (e.g. `"state machine file"`) | Defaults to `"reload-domain file"` |
+| `globDirectories()` | Directories under `data/<ns>/` scanned via glob; empty default = index-only | Return an ordered set to keep discovery order |
+| `clearBucket()` | Runs once per cycle before discovery; must clear only reload entries (keep SCRIPT) | Exceptions are isolated by `runClear` (`:250-258`) under `Domain.RELOAD_DATA` |
+| `decode(root)` | `root` is guaranteed to be a JSON object; do no file I/O and return errors in `Decoded.errors()` | Exceptions are isolated per file and recorded |
+| `register(payload)` | Called only for last-wins winners after discovery completes | Throw on failure so orchestrator attributes to namespace |
+| `afterReload(registered)` | Called after every handler finishes `register`, only for entries registered this cycle | Exceptions attribute to `KasugaLib.MODID` without blocking later handlers |
 
 ### 13.2 ReloadHandlerRegistry
 
-`reload/ReloadHandlerRegistry.java:27`. `ReloadHandlerRegistry` is the reload-side counterpart of `TypeHandlerRegistry`: static, indexed by `typeName()`, order-preserving via `LinkedHashMap`.
+`reload/ReloadHandlerRegistry.java:27`. Static `LinkedHashMap` keyed by `typeName()`, preserving registration order.
 
 ```java
 public static void register(ReloadHandler<?> handler);       // :37
 public static ReloadHandler<?> get(String typeName);         // :45
-public static Collection<ReloadHandler<?>> all();            // :50 immutable view, keeps registration order
-public static void clearForTest();                           // :58 test only, never called in production
+public static Collection<ReloadHandler<?>> all();            // :50 immutable view in registration order
+public static void clearForTest();                           // :58 tests only
 ```
 
-- **Order carries weight**: the orchestrator walks `all()` to decide the dispatch order and the register order, and together they decide cross-type last-wins. If you need a specific order (for example state machines before clips), register in that order.
-- **Registration is idempotent by type name**: registering the same `typeName` again replaces it in place and keeps the original position; a `@Context` bean re-running in tests therefore does not produce duplicate keys.
-- `clearForTest()` is a hook for tests (`TypeHandlerRegistry` has no counterpart, so handlers registered by a test leak into later tests, a documented design pitfall); production code does not call it.
+- **Order matters**: dispatch and registration order follow `all()`.
+- **Idempotent replacement**: re-registering an existing `typeName` replaces in place at the original position.
 
 ### 13.3 Decoded / Entry
 
-`reload/Decoded.java:19`. The result of one `decode`: the decoded entries plus human-readable diagnostics.
+`reload/Decoded.java:19`:
 
 ```java
 public record Decoded<T>(List<Entry<T>> entries, List<String> errors) {   // :19
@@ -56,160 +55,254 @@ public record Decoded<T>(List<Entry<T>> entries, List<String> errors) {   // :19
 }
 ```
 
-- `Entry.id` is the entry's effective id within the handler type (the key for the deduplication decision); payload is the value handed back to `register`. The handler picks the identity itself; the orchestrator never knows how a handler assembles the id.
-- Whole file rejected → only `errors`; `entries` is empty.
+- `Entry.id` is the deduplication key within the handler type; rejected files produce empty `entries` and non-empty `errors`.
 
 ### 13.4 Reloaded
 
-`reload/Reloaded.java:14`. A payload that passed deduplication and has been handed to `register`, plus the namespace it came from. The orchestrator carries it through the wrap-up stage so that the handler's `afterReload` can attribute diagnostics to the mod that produced the entry — a generic handler cannot get that namespace from the payload itself.
+`reload/Reloaded.java:14`:
 
 ```java
 public record Reloaded<T>(String modId, T payload) {}
 ```
 
+Pairs a surviving registered `payload` with its source namespace `modId` for `afterReload` attribution.
+
 ### 13.5 ReloadOrchestrator
 
-`reload/ReloadOrchestrator.java:121`. It implements `ScopedResourceManagerConsumer` and `ScopedResourcePackListener` and is the only orchestrator in the reload domain. The DI entry point `ReloadOrchestrator()` (`:133`) registers into `ResourceSystem` through `init()` (`:155`); the host entry point `ReloadOrchestrator(ReloadHandler<?>...)` (`:145`) first registers the handlers passed in, then runs cycles — tests, or a host that brings its own buckets, use it to bypass the modelling-side registrar bean.
+`reload/ReloadOrchestrator.java:121`. Implements `ScopedResourceManagerConsumer` and `ScopedResourcePackListener`.
 
 ```java
-public ReloadOrchestrator()                                      // :133 DI entry point
-public ReloadOrchestrator(ReloadHandler<?>... handlers)          // :145 registers, then runs
+public ReloadOrchestrator()                                      // :133 DI entry point, registered via init():155
+public ReloadOrchestrator(ReloadHandler<?>... handlers)          // :145 registers handlers, then runs
 public void reload(ResourceManager resourceManager)              // :186
-public static String indexResourcePath(String modId)             // :290
+public static String indexResourcePath(String modId)             // :290 -> "kasuga_lib/data_driven"
 ```
 
-- The set of top-level keys is **no longer a hard-coded constant**: it is derived by `knownTypeNames()` (`:473`) from `ReloadHandlerRegistry.all()`. Adding a type = registering a handler, not editing the orchestrator.
-- The registration-type examples in the D9 reverse hint are derived by `registrationFieldsExample()` (`:488`) from `TypeHandlerRegistry.all()` (a top-level registration type = a handler with no parent); nothing is invented when the registry is empty.
-- `reload(ResourceManager)` is the per-cycle entry point, wrapped in a final fallback catch (`:188-190`): every `RuntimeException` that escapes the guards of the individual stages is attributed to the library's own mod id (`KasugaLib.MODID`) and recorded in a bucket. Because the method sits on the reload listener path and the buckets were already cleared before that stage, exceptions must not escape.
-- `indexResourcePath(modId)` drops the first two segments from `JsonTreeBuilder.indexDirectorySegments(modId)` and returns the pack-stack path `kasuga_lib/data_driven`. It shares the same source as the registration side's directory spelling.
-
-The stage order of one cycle (`runCycle`, `:194`):
-
-1. **Build the cycle**: create one `HandlerCycle` per handler in the registry (`:199-201`).
-2. **Clear the buckets**: call `runClear(entry)` → `clearBucket()` for each handler, exactly once per round (`:213-215`; `runClear`, `:250-261`). Only the reload source is cleared, so entries registered by a script or by code are untouched; an exception thrown by one `clearBucket()` is isolated in place and recorded, while the other handlers clear as usual.
-3. **Aggregate the glob directories**: collect each handler's `globDirectories()` into a deduplicated ordered set (`:222-225`); a directory shared by two handlers is listed once, and files are routed by their top-level key.
-4. **Per-namespace discovery** (`collectNamespace`, `:266`): first `readReloadPaths` reads that namespace's index manifest `on_reload`, then `collectGlob` (`:348-367`) scans the aggregated directories (skipping paths already listed by an index), and finally `collectIndex` (`:369`) reads the files that `on_reload` points to.
-5. **Registration stage**: call `register(entry)` for each handler (`:507-526`), in registry order; glob candidates come first and index candidates after (`HandlerCycle.candidates()`, `:595`). Within the same type the later entry is last-wins.
-6. **Wrap-up stage**: call `runAfterReload(entry)` for each handler (`:530-538`), only for the entries actually registered this round, and after all the registers have completed — only then can a cross-type validation see another handler's bucket.
-
-**Dispatch** (`dispatch`, `:429`): routing by top-level key. An unknown top-level key is reported as an error first, with the D9 reverse hint attached (`:439-446`); for every non-unknown key, each handler is checked in turn for `root.has(typeName())`, and on a hit the content is `decode`d, wrapping the `Decoded.Entry` into `DuplicateIdResolver.Candidate(typeName, id, label, new Reloaded<>(namespace, payload))`.
-
-**Deduplication** (`resolveAndReport`, `:545`): uses the shared `DuplicateIdResolver`. The loser **never enters the handler's `register`** ("loser never has a side effect"), and each conflict logs a WARN plus one bucket entry, attributed to the mod the loser lives in.
-
-Neither `indexResourcePath` nor `runCycle` has any special dependency beyond Minecraft; `reload` needs a `ResourceManager`.
+- Legal top-level keys come dynamically from `knownTypeNames()` (`:528`) via `ReloadHandlerRegistry.all()`, while D9 registration-type examples come from `registrationFieldsExample()` (`:543`) via `TypeHandlerRegistry.all()`.
+- `reload(ResourceManager)` includes a final safety catch (`:188-193`) attributing escaped exceptions to `KasugaLib.MODID`.
+- Cycle stages (`runCycle`, `:198`):
+  1. Clear `Diagnostics.clear(Domain.RELOAD_DATA)` (`:208`) and create `HandlerCycle` (`:633`) per handler;
+  2. Call `runClear` → `clearBucket()` per handler (`:250-258`);
+  3. Collect unique `globDirectories()` across handlers;
+  4. Per-namespace discovery (`collectNamespace`, `:266`): `readReloadPaths` (`:307`) reads `on_reload` manifests → `collectGlob` (`:365`) scans globs skipping indexed paths (enforcing `ManagedReloadAllowlist` when managed) → `collectIndex` (`:392`) reads explicit indexed files with allowlist validation;
+  5. Dispatch and decode (`dispatch`, `:484`; `readAndDispatch`, `:460`): unknown top-level keys report with D9 hint (`:494-501`), matching handlers run `decode`;
+  6. Deduplicate (`resolveAndReport`, `:602`) and call `register` (`:562`) with glob candidates first, index candidates second (last-wins; losers never reach `handler.register`);
+  7. Run `runAfterReload` (`:585`).
 
 ### 13.6 Exception Guards
 
-Four layers of participant-level guards plus one fallback layer:
-
 | Layer | Scope | Source |
 |----|------|------|
-| Per handler, bucket clearing | `clearBucket()` throws | `runClear:250-261` |
-| Per file | Read and decode exceptions, including the decoder itself throwing | `readAndDispatch:405-415` |
-| Per namespace | The discovery mechanism itself (directory glob, manifest read) throws | `collectNamespace:266-288` |
-| Per entry | Registering a single entry throws | `register:507-526` |
-| Per handler, wrap-up | `afterReload` throws | `runAfterReload:530-538` |
-| Fallback | Exceptions none of the above could attribute | `reload:186-193` |
-
-When every entry in a cycle fails, the bucket stays in its cleared state, and that is intentional: empty is the truthful outcome, and the errors are in the diagnostics bucket.
+| Per handler clear | `clearBucket()` throws | `runClear:250-258` |
+| Per file | I/O or decode failure | `readAndDispatch:460-476` |
+| Per namespace | Glob listing or manifest read failure | `collectNamespace:266-288` |
+| Allowlist violation | Managed pack attempts unauthorized index/content | `collectIndex:430-434` |
+| Per entry | Single `register` throws | `register:562-580` |
+| Per handler wrap-up | `afterReload` throws | `runAfterReload:585-600` |
+| Fallback | Uncaught exception attributed to `KasugaLib.MODID` | `reload:186-193` |
 
 ### 13.7 StateMachineDefinitionLoader
 
-It stays in modelling, demoted to a pure file-level decoder: it no longer holds a listener, does not clear buckets, and does not list files (`StateMachineDefinitionLoader.java:14-33`).
+Pure file decoder (`modules/modelling/.../dynamic/fsm/StateMachineDefinitionLoader.java:36-103`):
 
 ```java
-public static final String PATH = "state_machines";                     // :39
-public static final String FIELD_STATE_MACHINES = "state_machines";     // :42
-public record DecodedFile(List<StateMachineDefinition> definitions, List<String> errors) {}  // :55
-public static DecodedFile decodeFile(JsonElement json);                  // :67
+public static final String PATH = "state_machines";                                        // :39
+public static final String FIELD_STATE_MACHINES = "state_machines";                        // :42
+public record DecodedFile(List<StateMachineDefinition> definitions, List<String> errors) {}// :55
+public static DecodedFile decodeFile(JsonElement json);                                    // :67
 ```
 
-`StateMachineDefinitionLoader`'s directory-listing method **has been removed** (0 callers). The directory glob is now done by `ReloadOrchestrator`'s own `collectGlob` (`:348-367`) using `ResourceManager.listResources`, and `FsmReloadHandler.globDirectories()` (`:69-71`) declares the directories to scan; `StateMachineDefinitionLoader.PATH` (`:39`) is kept so that `globDirectories()` can reference it.
-
-`decodeFile`: the file shape is `{"state_machines": [ <definition>, ... ]}`. A non-object root, a missing top-level key, or a non-array value all reject the whole file and return one error; **extra top-level keys no longer reject the file** (a genuinely unknown key is reported by the orchestrator, and this decoder only ignores it), while a non-object array element or a failed decode skips only that element and the siblings carry on as usual. An empty returned `errors` means the file is clean. It is now called through by `FsmReloadHandler.decode`; the orchestrator no longer knows it directly.
+Expects `{"state_machines": [...]}`. Non-object roots, missing keys, or non-array values reject the whole file; extra top-level keys are ignored by the decoder (unknown keys are reported by the orchestrator); malformed array entries are skipped individually.
 
 ### 13.8 AnimationClipLoader
 
-Likewise a pure file-level component (`AnimationClipLoader.java:14-39`).
+Pure file decoder (`modules/modelling/.../dynamic/fsm/AnimationClipLoader.java:44-135`):
 
 ```java
-public static final String FIELD_ANIMATION_CLIPS = "animation_clips";   // :45
-public record DecodedFile(List<AnimationClip> clips, List<String> errors) {}  // :57
-public static DecodedFile decodeFile(JsonElement json);                  // :69
-public static void register(FsmAnimationClips clips, AnimationClip clip);// :113
+public static final String FIELD_ANIMATION_CLIPS = "animation_clips";                      // :47
+public record DecodedFile(List<AnimationClip> clips, List<String> errors) {}               // :59
+public static DecodedFile decodeFile(JsonElement json);                                    // :71
+public static void register(FsmAnimationClips clips, AnimationClip clip);                  // :127
 ```
 
-`decodeFile`: the shape is `{"animation_clips": [ <clip>, ... ]}`, and the failure-isolation rules are the same as in `StateMachineDefinitionLoader.decodeFile`. A clip's id is carried by the element's own `id` field (`AnimationClip.CODEC` reads it), and there is no separate id key; keys the record does not name are ignored by the codec, so comment-like fields can be written. Called through by `FsmClipsReloadHandler.decode`.
+- **Removed-key rejection (`:100-108`)**: elements containing removed keys `"functions"` or `"formula_parts"` are explicitly rejected with `"animation_clips[i] uses removed key '<legacyKey>'; replace it with 'formula_transforms'; element skipped"`, skipping only that element.
+- **Registration & discovery**: `AnimationClip.CODEC` reads `id` from each clip object; `register` writes to `clips.registerResource` (preserving script-wins). Clips are index-only (`on_reload`), with no glob directory.
 
-`register`: writes the decoded clip into the RESOURCE half of the bucket by calling `clips.registerResource`. When `clips` or `clip` is `null` it is a no-op. It is now called through by `FsmClipsReloadHandler.register`. Animation clip files can arrive only through `on_reload`; there is no `animation_clips/` directory glob.
+### 13.9 Modelling-Side Handlers and Registrar Bean
 
-### 13.9 The Two Modelling-Side Handlers and the Registrar Bean
+Located in `modules/modelling` package `lib.kasuga.rendering.models.mc.dynamic.fsm`:
 
-These three classes live in modelling's `lib.kasuga.rendering.models.mc.dynamic.fsm` package. They are consumers and did not move into data-driven along with the orchestrator:
-
-| Class | typeName | Discovery | Role |
+| Class | `typeName` | Discovery | Role |
 |----|----------|------|------|
-| `FsmReloadHandler` (`:42`) | `state_machines` | glob `state_machines/` | `decode` → `StateMachineDefinitionLoader.decodeFile`; `register` writes the RESOURCE half of `FsmDefinitions`; `afterReload` runs the dangling clip check |
-| `FsmClipsReloadHandler` (`:24`) | `animation_clips` | index-only (keeps the default empty set) | `decode` → `AnimationClipLoader.decodeFile`; `register` → `AnimationClipLoader.register` |
-| `FsmReloadHandlerRegistrar` (`:23`) | — | — | `@Context` + `@PostConstruct` (`:25-31`), registering the two handlers into `ReloadHandlerRegistry` in **fsm → clips** order, bound to the process-level `FsmRegistries.GLOBAL` bucket |
+| `FsmReloadHandler` (`:42`) | `state_machines` | glob `state_machines/` + index | `decode` → `StateMachineDefinitionLoader.decodeFile`; `register` writes `FsmDefinitions` RESOURCE half; `afterReload` reports dangling clip refs to `Domain.RELOAD_DATA` |
+| `FsmClipsReloadHandler` (`:24`) | `animation_clips` | index-only (empty `globDirectories`) | `decode` → `AnimationClipLoader.decodeFile`; `register` → `AnimationClipLoader.register` |
+| `FsmReloadHandlerRegistrar` (`:23`) | — | — | `@Context` + `@PostConstruct` (`:25-31`), registers **fsm → clips** into `ReloadHandlerRegistry`, bound to `FsmRegistries.GLOBAL` |
 
 ### 13.10 FsmDefinitions and FsmAnimationClips
 
-Both bucketed storage classes live in `render-core`. Each bucket splits by source into RESOURCE (the reload path, which `clearResource` can drop) and SCRIPT (the runtime/script path, which survives reloads).
+Both bucket stores live in `render-core`, separating RESOURCE (cleared by `clearResource`) from SCRIPT (survives reloads):
 
 `FsmAnimationClips` (`FsmAnimationClips.java:30`):
 
 ```java
-public enum ClipSource { RESOURCE, SCRIPT }                              // :35
-public record Entry(AnimationSampler<?> sampler, Object data, ClipSource source) {}  // :43
-public void register(Id id, AnimationSampler<?> sampler, Object data)    // :53
-public void registerResource(Id id, AnimationSampler<?> sampler, Object data)  // :66
-public Entry get(Id id)                                                  // :87
-public boolean remove(Id id)                                             // :92
-public void clearResource()                                              // :100
-public void clearAll()                                                   // :108
-public void clear()                                                      // :117
+public enum ClipSource { RESOURCE, SCRIPT }                                              // :35
+public record Entry(AnimationSampler<?> sampler, Object data, ClipSource source) {}      // :43
+public void register(Id id, AnimationSampler<?> sampler, Object data)                    // :53 (SCRIPT)
+public void registerResource(Id id, AnimationSampler<?> sampler, Object data)            // :66 (RESOURCE)
+public Entry get(Id id)                                                                  // :87
+public boolean remove(Id id)                                                             // :92
+public void clearResource()                                                              // :100
+public void clearAll()                                                                   // :108
+public void clear()                                                                      // :117 (alias of clearResource)
 ```
 
-- `register` writes a SCRIPT entry and replaces a same-id RESOURCE entry with a WARN (script wins).
-- `registerResource` writes a RESOURCE entry and does not override a same-id SCRIPT entry; a later RESOURCE overrides an earlier one.
-- `get` returns `null` when nothing is found; it also returns `null` when the id is `null`.
-- `register` / `registerResource` throw `IllegalArgumentException` for a `null` id, sampler, or data (`validate:76`).
-- `clearResource` clears RESOURCE only; `clearAll` clears everything; `clear()` is an alias for `clearResource()` and no longer clears code-registered entries.
+`FsmDefinitions` (`FsmDefinitions.java:27`) is isomorphic: `register` (`:59`), `registerResource` (`:71`), `clearResource` (`:84`), `clearAll` (`:95`), `remove` (`:107`), `get` (`:116`), `hash` (`:126`), `addListener` (`:142`).
 
-`FsmDefinitions` (`FsmDefinitions.java:27`) is isomorphic: `register` (SCRIPT, `:59`), `registerResource` (RESOURCE, `:71`), `clearResource` (`:84`), `clearAll` (`:95`), `remove` (`:107`), `get` (`:116`), `hash` (`:126`), `addListener` (`:142`). An identity change (override, removal, clearing) notifies the `InvalidationListener`. `hash(id)` returns the content hash, 0 when absent, for the sync layer's identity check.
+### 13.11 ManagedReloadAllowlist
 
-script-wins is a write-side invariant: a single map plus the guard in `registerResource`; `get` is an ordinary query, and the result does not depend on registration order.
+`reload/ManagedReloadAllowlist.java:22-163` enforces a process-wide allowlist for resources projected from `ApprovedResourcePacks`, leaving legacy mod and data packs unchanged:
+
+```java
+public static synchronized void install(
+        String hostModId,
+        List<LocatedIndexPath> indexes,
+        List<LocatedContentPath> reloadFiles)                                                // :28
+public static synchronized void install(
+        String hostModId,
+        List<SourceDescriptor> sources,
+        List<LocatedIndexPath> indexes,
+        List<LocatedContentPath> reloadFiles)                                                // :36
+public static synchronized void install(
+        String hostModId,
+        List<SourceDescriptor> sources,
+        Map<String, String> projectedSourcePackIds,
+        List<LocatedIndexPath> indexes,
+        List<LocatedContentPath> reloadFiles)                                                // :45
+public static synchronized boolean isManaged(String sourcePackId)                            // :96
+public static synchronized boolean allowsIndex(String sourcePackId, ResourceLocation loc)    // :101
+public static synchronized boolean allowsContent(String sourcePackId, ResourceLocation loc)  // :109
+public static synchronized int priority(String sourcePackId)                                 // :117
+public static synchronized void clearForTests()                                              // :126
+```
+
+`ReloadOrchestrator` applies the allowlist at three points:
+- `readReloadPaths` (`:317-332`): when a stack contains managed entries matching `ManagedReloadAllowlist.isManaged(sourcePackId(resource))`, filters to `allowsIndex(sourcePackId, loc)` and orders them by `priority(sourcePackId)` (skipping if none are allowed);
+- `collectGlob` (`:375-380`): filters `!ManagedReloadAllowlist.isManaged(sourcePackId(resource))` so managed packs never leak into directory globs;
+- `collectIndex` (`:419-437`): filters managed stack entries via `allowsContent(sourcePackId, loc)` ordered by `priority(sourcePackId)`, blocking unapproved managed paths with a `Domain.RELOAD_DATA` diagnostic.
+
+### 13.12 v2 Startup `on_reload` Preflight
+
+`DataDrivenBuildPipeline` (`DataDrivenBuildPipeline.java:919-1025`, `validateReloadContentFile`) runs read-only preflight on all files listed under `on_reload` during registration-phase `prepare`:
+
+- Checks each top-level key against `ReloadHandlerRegistry.get(field)`, emitting `UNKNOWN_TYPE` (`ERROR` under `STRICT`, `WARNING` under `LEGACY`) for unregistered fields.
+- Calls `handler.decode(root)` and converts `Decoded.errors()` or thrown exceptions into `BuildDiagnostic` entries (`Stage.PARSE`, `Code.CONTENT_INVALID`).
+- Performs **zero bucket mutations**: `clearBucket()`, `register(...)`, and `afterReload(...)` are never called during startup preflight.
+
+---
 
 ## 14. The Pure-Function Surface Assertable from Tests
 
-The APIs below have no NeoForge dependency or can be called on a plain JVM; they are exposed specifically so that tests can assert the contract:
+These APIs require no running NeoForge game instance and can be asserted directly in plain JVM unit tests:
 
 | API | What it asserts |
 |-----|---------|
-| `JsonTreeBuilder.indexDirectorySegments` | The index directory segment array; pins the spelling and the levels |
-| `JsonTreeBuilder.validateSourcePath` | Content path rules |
-| `JsonTreeBuilder.parseIndexManifest` | Index schema D1 through D5 |
-| `JsonTreeBuilder.resolveIndexManifests` | Aggregation D4 and the dual-listing fail-closed D6 |
-| `JsonTreeBuilder.parseContentBody` | Content dispatch, embedded types, partial apply, the D9 hint |
-| `JsonTreeBuilder.listIndexFiles` | The failure branches and the ordering of the directory scan |
-| `JsonTreeBuilder.applyUnchecked` | A failed apply landing in the bucket |
-| `DuplicateIdResolver.resolve` / `describe` / `toLoadingError` | last-wins and the conflict messages |
-| `EffectiveId.of` | The id normalization table |
-| `Diagnostics` methods spanning both dimensions | Two-dimension isolation, clearing, the summarize format |
-| `DataDiagnosticsCommands.kasugaDataCommand` | The shape of the command tree |
-| `ReloadOrchestrator.reload` / `indexResourcePath` | The reload cycle, the two entry points, cross-entry deduplication, diagnostics |
-| A `ReloadHandler` implementation (fixture) | Wiring in a new reload type: `ReloadHandlerExtensionPointTest` uses a fake handler to assert dispatch/dedup/registration and the after-stage order |
-| `ReloadHandlerRegistry.register` / `all` / `clearForTest` | Registry order preservation, same-name replacement, test isolation |
-| `StateMachineDefinitionLoader.decodeFile` | The wrapper-layer decode contract (the directory glob is the job of `ReloadOrchestrator.collectGlob`; the decoder no longer lists files) |
-| `AnimationClipLoader.decodeFile` / `register` | Animation clip file decoding and script-wins registration |
-| `ContentStructure.body` / `unknownKeys` / `field` / `joinWithOr` / `describe` | Shared structural decisions: the body check, unknown keys, field splitting (`Field`/`Element`), hint joining, the type description |
+| `JsonTreeBuilder.indexDirectorySegments` / `validateSourcePath` | Index directory layout segments and content path syntax rules |
+| `JsonTreeBuilder.parseIndexManifest` / `resolveIndexManifests` | Index schema rules D1–D6 (including dual-listing fail-closed) |
+| `JsonTreeBuilder.parseContentBody` / `listIndexFiles` / `applyUnchecked` | v1 dispatch, embedded extraction, D9 hints, and bucketed apply errors |
+| `DuplicateIdResolver` / `EffectiveId.of` / `EffectiveId.ofLegacy` | Last-wins conflict detection and `STRICT` vs. `LEGACY` identity rules |
+| `Diagnostics` / `DataDiagnosticsCommands.kasugaDataCommand` | Two-dimension bucket isolation, `summarize` format, and command tree shape |
+| `SnapshotContentSource.open` / `ContentSourceFactory.snapshot` / `LogicalPath` / `SourceDescriptor` | v2 snapshot wrapping, literal path validation, `declaredIndexes` scoping, and post-close guards |
+| `DataDrivenBuildPipeline.prepare` / `build` (with `SnapshotContentSource`) | Multi-source discovery, strict JSON decoding, capability checks, references, claim conflicts, and `BuildResult` states |
+| `HandlerCapability` / `TypeHandler.strictValidationImplemented` / `ValidationContext` (`find` / `findAllVisible` / `findAll(String)` / `claimAt`) | `OVERLAY` candidate retention, single-visible `find`, full `findAll(typeDomain)` enumeration, and strict readiness |
+| `RegistryClaimSnapshot.collect` | BFS claim extraction from a `Reg` tree (skipping `dispatchEnabled == false` groups) |
+| `JsonPropertyParser.validateStrict` / `JsonItemParser.validateStrict` | Exact property validation (types/bounds/reserved `tab` checks) and strict predicate extensions |
+| `ManagedReloadAllowlist` / `ReloadOrchestrator` / `ReloadHandlerRegistry` | Reload cycle ordering, allowlist enforcement, and test isolation |
+| `StateMachineDefinitionLoader.decodeFile` / `AnimationClipLoader.decodeFile` / `register` | State-machine/clip file decoding (including `functions`/`formula_parts` rejection) and script-wins |
+| `ProxyModelBlockFactories.parseModelSettings` / `validateBlockParams` / `ProxyModelSelection` | Proxy `params` parsing, uniform group part ID checks, and `model_by_state` compilation |
+| `ContentStructure.body` / `unknownKeys` / `field` / `joinWithOr` / `describe` | Shared structural validation helpers |
+
+---
 
 ## 15. Call Examples
 
-Every snippet below compiles against the current signatures. Each one names the real test case it imitates, with the test class in parentheses.
+All snippets below match current source signatures.
 
-Register a mod and check the error bucket afterwards (imitating `JsonTreeBuilderIndexPathTest.contentTestingIndexLoadsWithoutErrors`):
+### 15.1 v2 Multi-Source Pipeline `prepare` + `build` (Pure JVM `SnapshotContentSource`)
+
+```java
+import java.util.List;
+import lib.kasuga.core.resource.source.InputPolicy;
+import lib.kasuga.core.resource.source.ResourceSourceDescriptor;
+import lib.kasuga.core.resource.source.ResourceSources;
+import lib.kasuga.core.vfs.VfsPath;
+import lib.kasuga.core.vfs.backend.InMemoryVfs;
+import lib.kasuga.registration.data_driven.TypeHandlerRegistry;
+import lib.kasuga.registration.data_driven.builder.JsonTreeBuilder;
+import lib.kasuga.registration.data_driven.pipeline.BuildOptions;
+import lib.kasuga.registration.data_driven.pipeline.BuildResult;
+import lib.kasuga.registration.data_driven.pipeline.DataDrivenBuildPipeline;
+import lib.kasuga.registration.data_driven.pipeline.PreparedContent;
+import lib.kasuga.registration.data_driven.source.ContentSource;
+import lib.kasuga.registration.data_driven.source.ContentSourceFactory;
+
+JsonTreeBuilder.ensureHandlersRegistered();
+
+ResourceSourceDescriptor resDesc = new ResourceSourceDescriptor(
+        "kuayue", "kuayue_main", "root_0", 0, ResourceSourceDescriptor.Origin.EXTERNAL);
+
+try (var vfs = new InMemoryVfs("kuayue_main")) {
+    vfs.writeString(VfsPath.of("data/kuayue/kasuga_lib/data_driven/index.json"),
+            "{\"on_register\": [\"blocks/demo.json\"]}");
+    vfs.writeString(VfsPath.of("data/kuayue/blocks/demo.json"),
+            "{\"blocks\": [{\"id\": \"kuayue:demo_block\", \"type\": \"data_driven_block\"}]}");
+
+    try (var snapshot = ResourceSources.fixed(
+                    resDesc,
+                    ResourceSources.vfs(resDesc, vfs, false, "", "", InputPolicy.DEFAULT),
+                    InputPolicy.DEFAULT).capture();
+         ContentSource source = ContentSourceFactory.snapshot(snapshot, resDesc, List.of("kuayue"), "main")) {
+
+        DataDrivenBuildPipeline pipeline = new DataDrivenBuildPipeline(
+                "kuayue",
+                TypeHandlerRegistry.all(),
+                List.of());
+        PreparedContent prepared = pipeline.prepare(List.of(source), BuildOptions.STRICT);
+        if (!prepared.hasBlockingDiagnostics()) {
+            BuildResult result = pipeline.build(prepared);
+            boolean ok = result.applied(); // true only for Status.APPLIED
+        }
+    }
+}
+```
+
+### 15.2 v2 Host Provider Installation and `ValidationContext.findAll`
+
+```java
+import java.util.List;
+import lib.kasuga.registration.data_driven.DataDrivenRegistrationProviders;
+import lib.kasuga.registration.data_driven.pipeline.DefinitionKey;
+import lib.kasuga.registration.data_driven.pipeline.LocatedDefinition;
+import lib.kasuga.registration.data_driven.validation.ValidationContext;
+
+// Install host takeover (close Attachment on teardown in tests)
+try (var attachment = DataDrivenRegistrationProviders.install("kuayue", hostModId -> {
+    // Run DataDrivenBuildPipeline.prepare + build and return JsonRegistryGroup
+    return null;
+})) {
+    // ...
+}
+
+// Inside a custom TypeHandler.validate(..., ValidationContext context):
+void validateCustomRef(ValidationContext context, String targetBlockId) {
+    // 1. Checks missing, undeclared-dependency, and >1 visible ambiguity automatically
+    context.requireDefinition(new DefinitionKey("blocks", targetBlockId), "/target_block");
+
+    // 2. Enumerate every parsed block definition across all sources in declaration order
+    List<LocatedDefinition<?>> allBlocks = context.findAll("blocks");
+}
+```
+
+### 15.3 v1 Mod Registration and Error Bucket Inspection
 
 ```java
 import java.util.List;
@@ -218,11 +311,11 @@ import lib.kasuga.registration.data_driven.context.JsonRegistryGroup;
 
 JsonTreeBuilder.clearLoadingErrors("kasuga_lib");
 JsonRegistryGroup root = JsonTreeBuilder.buildForMod("kasuga_lib");
-// a null root means no on_register content was declared; when non-null it is the root group hanging off the mod's registration tree
+// null root means no on_register content was declared; non-null is the root group attached to the mod tree
 List<Throwable> errors = JsonTreeBuilder.getLoadingErrors("kasuga_lib");
 ```
 
-Parse one index manifest and aggregate it (imitating `JsonTreeBuilderIndexSchemaTest.declaringNeitherDomainIsReportedAndConsumesNothing` and `crossListedPathIsConsumedByNeitherDomain`):
+### 15.4 Index Manifest Parsing and Aggregation (v1 Pure Functions)
 
 ```java
 import java.util.List;
@@ -238,12 +331,12 @@ IndexManifest manifest = JsonTreeBuilder.parseIndexManifest("kuayue", "index.jso
 ResolvedIndex index = JsonTreeBuilder.resolveIndexManifests("kuayue", List.of(manifest));
 if (!index.nothingDeclared()) {
     for (String path : index.onRegisterPaths()) {
-        // path is relative to data/kuayue/ and has passed the dual-listing fail-closed check
+        // path is relative to data/kuayue/ and cleared D6 dual-listing checks
     }
 }
 ```
 
-Parse a content file only, without registering (imitating `JsonTreeBuilderEmbeddedTypeDispatchTest.topLevelEmbeddedTypeIsReportedAndTheRestOfTheFileStillDispatches`):
+### 15.5 Content-Body Parse Without Registration (v1 Pure Function)
 
 ```java
 import java.util.List;
@@ -251,79 +344,63 @@ import java.util.Map;
 import com.google.gson.JsonObject;
 import lib.kasuga.registration.data_driven.builder.JsonTreeBuilder;
 
-JsonObject body = /* an already-parsed content file */ new JsonObject();
+JsonObject body = /* parsed content JSON */ new JsonObject();
 Map<String, List<Object>> collected =
         JsonTreeBuilder.parseContentBody("kuayue", "carriages/m1/blocks.json", body);
-// the keys of collected are the handlers' typeName; parse errors go to JsonTreeBuilder.getLoadingErrors("kuayue")
+// keys are handler typeName; parse errors land in JsonTreeBuilder.getLoadingErrors("kuayue")
 ```
 
-Write to and read the diagnostics bucket (imitating `DiagnosticsTest.modDimensionIsTheExistingBucket` and `summarizePrintsOneLinePerNonEmptyBucketDeterministically`):
+### 15.6 `Diagnostics` Buckets and Command Execution
 
 ```java
 import java.util.List;
-import lib.kasuga.registration.data_driven.builder.JsonTreeBuilder;
-import lib.kasuga.registration.data_driven.diagnostics.Diagnostics;
-
-Diagnostics.report("kuayue", new IllegalStateException("boom"));
-List<Throwable> perMod = Diagnostics.errors("kuayue");
-// perMod is the same bucket as JsonTreeBuilder.getLoadingErrors("kuayue")
-List<String> lines = Diagnostics.summarize();   // one line each: "<mod>: N error(s)" (mod dimension) or "<DOMAIN>[<key>]: N error(s)" (source dimension)
-Diagnostics.clear("kuayue");
-```
-
-Register and run the diagnostics command (imitating `DataDiagnosticsCommandsTest.onRegisterCommandsRegistersKasugaDataErrorsIntoTheDispatcher`):
-
-```java
 import com.mojang.brigadier.CommandDispatcher;
 import lib.kasuga.registration.data_driven.diagnostics.DataDiagnosticsCommands;
+import lib.kasuga.registration.data_driven.diagnostics.Diagnostics;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
+Diagnostics.report("kuayue", new IllegalStateException("boom"));
+List<Throwable> perMod = Diagnostics.errors("kuayue");
+List<String> lines = Diagnostics.summarize();
+Diagnostics.clear("kuayue");
+
 CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
 DataDiagnosticsCommands.onRegisterCommands(
         new RegisterCommandsEvent(dispatcher, Commands.CommandSelection.ALL, null));
-dispatcher.execute("kasuga_data errors kuayue", source);   // source needs permission >= 2
+dispatcher.execute("kasuga_data errors kuayue", source);   // requires permission >= 2
 ```
 
-Run one reload cycle (imitating `ReloadOrchestratorTest.loadsValidDefinitionsIntoInjectedBucket`):
+### 15.7 Reload Cycle and Animation Clip Decoding
 
 ```java
+import com.google.gson.JsonParser;
 import lib.kasuga.registration.data_driven.reload.ReloadOrchestrator;
+import lib.kasuga.rendering.models.mc.dynamic.fsm.AnimationClipLoader;
 import lib.kasuga.rendering.models.mc.dynamic.fsm.FsmClipsReloadHandler;
 import lib.kasuga.rendering.models.mc.dynamic.fsm.FsmReloadHandler;
+import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationClip;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmAnimationClips;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmDefinitions;
 import net.minecraft.server.packs.resources.ResourceManager;
 
 FsmDefinitions definitions = new FsmDefinitions();
 FsmAnimationClips clips = new FsmAnimationClips();
-// the varargs constructor registers these two handlers into ReloadHandlerRegistry; that order is the dispatch/register order
 ReloadOrchestrator orchestrator = new ReloadOrchestrator(
         new FsmReloadHandler(definitions, clips), new FsmClipsReloadHandler(clips));
-orchestrator.reload(resourceManager);   // one cycle: clear buckets, dual-entry discovery, deduplicated registration, wrap-up validation
-```
+orchestrator.reload(resourceManager);
 
-> The orchestrator has moved to `lib.kasuga.registration.data_driven.reload` (data-driven), while the two handlers stay in modelling's `lib.kasuga.rendering.models.mc.dynamic.fsm`, so this example imports both packages. In tests the varargs constructor brings its own buckets; in production the handlers are registered by `FsmReloadHandlerRegistrar` and the DI constructor runs with no arguments.
-
-Decode and register animation clips (imitating `AnimationClipLoaderTest.decodesTheWrappedClipArray`; the registration call is made by the orchestrator):
-
-```java
-import com.google.gson.JsonParser;
-import lib.kasuga.rendering.models.mc.dynamic.fsm.AnimationClipLoader;
-import lib.kasuga.rendering.models.uml.dynamic.animation.AnimationClip;
-import lib.kasuga.rendering.models.uml.dynamic.fsm.FsmAnimationClips;
-
-FsmAnimationClips clips = new FsmAnimationClips();
 AnimationClipLoader.DecodedFile decoded =
         AnimationClipLoader.decodeFile(JsonParser.parseString(json));
 for (AnimationClip clip : decoded.clips()) {
-    AnimationClipLoader.register(clips, clip);   // writes the RESOURCE half; a SCRIPT entry with the same id is not overwritten
+    AnimationClipLoader.register(clips, clip);   // writes RESOURCE half; SCRIPT entries remain intact
 }
 ```
 
 ### Reference Usage Notes
 
-`parseContentBody`, `parseIndexManifest`, `resolveIndexManifests`, `DuplicateIdResolver`, and `EffectiveId` are all pure functions and can be asserted directly in an ordinary JUnit test with no NeoForge runtime. `buildForMod`, `buildAll`, `ReloadOrchestrator.reload`, and the registration side of `FsmAnimationClips` need a mod or game runtime; `buildForMod`-style tests usually guard with `Assumptions.assumeTrue` (see `JsonTreeBuilderIndexPathTest`, `JsonTreeBuilderLoadingErrorTest`).
+- v2 `DataDrivenBuildPipeline` with in-memory `SnapshotContentSource` runs `prepare` preflight directly in pure JVM JUnit tests; running `build`/`apply` for Minecraft `Block`/`Item` registrations or `ReloadOrchestrator.reload` requires NeoForge registries / `ResourceManager`.
+- v1 pure helpers (`parseContentBody`, `parseIndexManifest`, `resolveIndexManifests`, `DuplicateIdResolver`, `EffectiveId`, `Diagnostics`) can likewise be asserted without NeoForge runtime bootstrap.
 
-> Other pages in the data-driven series: [Registration API](api-registration.md) · [Extension API](api-extension.md) · [Diagnostics API](api-diagnostics.md) · [Reload API](api-reload.md) · [Series index](README.md)
+> Other pages in the data-driven section: [Registration API](api-registration.md) · [Extension API](api-extension.md) · [Diagnostics API](api-diagnostics.md) · [Reload API](api-reload.md) · [Schema Reference](schema.md) · [Block State Properties](block-state-properties.md) · [Section index](README.md)

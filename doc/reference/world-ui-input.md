@@ -1,7 +1,5 @@
 # 世界空间 UI 与自由光标输入
 
-[English](world-ui-input.en.md)。
-
 包：`lib.kasuga.rendering.models.mc.backend.ui`。所有方法在 Minecraft 客户端线程调用。
 设计、坐标变换和输入所有权见 [原理](../explanation/world-ui-input.md)。
 Create 结构上的附着面板见[移动结构上的场景与 UI](moving-scene-hosts.md)。

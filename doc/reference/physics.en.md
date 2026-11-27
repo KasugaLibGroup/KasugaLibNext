@@ -6,7 +6,7 @@ Native physics in Kasuga modelling is handled by the official Box3D C17 engine. 
 collision data, animation targets, and bone writeback; there is no Java fallback integrator or contact solver.
 
 The currently vendored version is pinned to the official Box3D `main` commit
-`30c67b5e6d0a3a66f0f506c69ce9e9e0587e3b7c`. The source and the license are in
+`336263320469e5e9febfe18697ab562488f7e97a`. The source and the license are in
 `modules/modelling/src/main/native/box3d` and `modules/modelling/THIRD_PARTY_NOTICES.md` respectively.
 
 CMake and the Box3D native library are both optional capabilities. When the build machine cannot find CMake, Gradle emits a warning, skips the
