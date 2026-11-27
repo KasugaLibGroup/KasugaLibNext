@@ -1,6 +1,6 @@
 # 指南
 
-本节是带着明确任务来的配方与示例：验证构建、按示例换装、跑离屏多机位输出，以及数据驱动从入门到扩展的整条路径。
+本节是带着明确任务来的配方与示例：验证构建、按示例换装、布置世界显示与光源、跑离屏多机位输出、接入内容与 Proxy Kernel，以及数据驱动和 Create 多转向架车厢从入门到扩展的整条路径。
 
 | 页面 | 内容 |
 | --- | --- |
@@ -8,11 +8,13 @@
 | [真实素材换装与 MC 装备示例](wardrobe-example.md) | RibbonDress 换纹理/换模型、MC 手持物品、客户端截图和性能对照 |
 | [内容接入：方块与物品的模型资源](model-content.md) | blockstate 变体规则、占位模型的作用、item model 两种写法、BEWLR 三步接入与显示变换表 |
 | [把内容接入 Proxy Kernel](proxy-integration.md) | 定义 Port、组装 Composition、注册 Session、自动挂载、生命周期和故障排查 |
+| [蓝图与可嵌套世界显示](world-display.md) | `WorldDisplayTarget`、`ModelDisplayTarget`、蓝图导入、层级面板与嵌套显示场景 |
+| [世界空间光源](world-lights.md) | 动态点光源、矩形面光源、球形体积光、色温与真实世界 demo |
+| [模型碰撞、区块生命周期与远景](world-model-collision-and-lod.md) | 带动画的实体碰撞、区块卸载重连、Create Contraption LOD 与验收入口 |
 | [离屏输出与多机位渲染](offline-rendering.md) | 接口、启动与操作参考，独立窗口与 FBO 消费 |
-| [世界空间光源](world-lights.md) | 点光源、面光源、体积光、色温和真实世界 demo |
 | [Nebula 曲速飞行 demo](nebula-demo.md) | 受管 MRT、OBJ/PBR、体积烟尘、共享镜头时钟与 4K60 录制 |
-| [数据驱动上手](data-driven/intro.md) | 从空目录到方块动起来：两个时机、最小路径与常见错误 |
-| [路径 1：用数据驱动文件添加内容](data-driven/guide-content.md) | 不写 Java，只用 JSON 加方块、物品、分组、状态机与动画剪辑 |
-| [扩展指南：写 Java 才能做到的事](data-driven/guide-extension.md) | 自定义 TypeHandler 与给数据驱动加能力 |
+| [数据驱动上手：从空目录到方块动起来](data-driven/intro.md) | 从空目录到方块动起来：两个时机、最小路径与常见错误 |
+| [路径 1：用数据驱动文件来添加内容（组织方式与最佳实践）](data-driven/guide-content.md) | 不写 Java，只用 JSON 加方块、物品、分组、状态机与动画剪辑 |
+| [扩展指南：写 Java 才能做到的事（How-to）](data-driven/guide-extension.md) | 自定义 TypeHandler 与给数据驱动加能力 |
 | [多转向架列车车厢](create/multi-bogey-carriage.md) | 开关与配置、搭建多转向架结构、弯道贴轨与出轨判定、其他模组修改默认值 |
 | [车厢垂直姿态](create/carriage-posture.md) | 姿态事件、配置上限、服务端权威值与客户端平滑 |

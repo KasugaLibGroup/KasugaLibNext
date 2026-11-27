@@ -18,7 +18,7 @@ A `blocks` entry can declare real Minecraft `BlockState` properties in `state_pr
 }
 ```
 
-`data_driven_block` is a built-in plain block factory with a default block item.
+`data_driven_block` is a built-in plain block factory with a default block item (note: a v2 `DataDrivenBuildPipeline` host that does not call `JsonTreeBuilder.ensureHandlersRegistered()` must call `DataDrivenBlockFactory.registerIfAbsent()` explicitly to register it). For state-driven proxy rendering, `modules/modelling` also ships [`proxy_model`](schema.md#29-built-in-proxy_model-proxy_model_be-schema), which implements `StatefulBlockFactory` and handles `HORIZONTAL_FACING` / `DOOR_HINGE` placement, rotation, and mirroring automatically.
 
 | `type` | Fields | Property | Default when omitted |
 |---|---|---|---|
@@ -31,7 +31,7 @@ Names and string values must match `[a-z0-9_]+`; enum values must be unique. Int
 
 For `vanilla`, the JSON key must equal the property's actual name: `HORIZONTAL_FACING` uses `facing`. Referencing `OPEN` this way allows `state.getValue(BlockStateProperties.OPEN)`. A newly created `boolean` named `open` is a different instance; retrieve it from that block's `getStateDefinition().getProperty("open")`. Do not assume properties from different blocks are interchangeable.
 
-Invalid JSON declarations are reported in registration diagnostics and that block is skipped. Existing factories without `state_properties` retain their old behaviour; a block declaring them requires an opted-in factory. The plain block does not implement door, redstone, or other interaction logic. Change states on the server through Minecraft's world APIs, and provide blockstate models, item models, loot and localization separately.
+Invalid JSON declarations are reported in registration diagnostics and that block is skipped (under v2 `STRICT` mode, a parse exception records `PARSE_FAILED` and rejects the whole build). Existing factories without `state_properties` retain their old behaviour; a block declaring them requires an opted-in factory (`StatefulBlockFactory`, otherwise `STRICT` reports `UNKNOWN_FACTORY` during `validate`). The plain block does not implement door, redstone, or other interaction logic. Change states on the server through Minecraft's world APIs, and provide blockstate models, item models, loot and localization separately.
 
 Definitions are fixed during registration and cannot be changed by `/reload`. Client and server need identical definitions. Block IDs, property names and values are part of world saves; changing them can discard or reset existing values. No automatic migration is provided, so back up worlds before upgrades or downgrades.
 
@@ -42,10 +42,10 @@ Minecraft builds the state definition inside the `Block` superclass constructor.
 ```java
 FactoryRegistry.register("mymod:custom_block", (StatefulBlockFactory) (id, params, states) ->
     blockWithItem(id, properties -> StatePropertyContext.construct(states,
-        () -> new MyBlock(properties))));
+        () -> new MyBlock(properties))), true);
 ```
 
-`blockWithItem` is the helper from the [factory extension guide](../../guides/data-driven/guide-extension.en.md). The block must add properties during definition creation and apply the JSON defaults after `super` returns:
+`blockWithItem` is the helper from the [factory extension guide](../../guides/data-driven/guide-extension.md). The block must add properties during definition creation and apply the JSON defaults after `super` returns:
 
 ```java
 public class MyBlock extends Block {
@@ -93,7 +93,7 @@ BlockState other = charging.with(state, false); // no world mutation or event
 Property<Boolean> minecraftProperty = charging.property();
 ```
 
-`set` requires the server thread and defaults to Minecraft update flags `3`; an overload accepts explicit flags. It returns `false` for an unchanged value or rejected update. A `true` return follows `Level#setBlock` semantics: later neighbour reactions can still change the state. Wrong block, property name, type or value causes an exception.
+`set` requires the server thread and defaults to Minecraft update flags `3` (`Block.UPDATE_ALL`); an overload accepts explicit flags. It returns `false` for an unchanged value or rejected update. A `true` return follows `Level#setBlock` semantics: later neighbour reactions can still change the state. Wrong block, property name, type or value causes an exception.
 
 ## onChange
 
@@ -112,7 +112,7 @@ Only an actual value change on the same block triggers a callback. Placement, re
 
 The callback runs synchronously inside NeoForge's `onBlockStateChange`, where **world mutation is prohibited**. `StateProperty.set` rejects writes from inside the callback; do not bypass that restriction with `Level#setBlock`. Schedule world mutations for a later safe server tick. `with` is safe because it only returns an immutable state.
 
-`DataDrivenBlock` forwards the hook. A custom block must forward it once as well; do not repeat the call if a superclass already does so:
+`DataDrivenBlock` (as well as `ProxyModelBlock`) forwards the hook. A custom block must forward it once as well; do not repeat the call if a superclass already does so:
 
 ```java
 @Override

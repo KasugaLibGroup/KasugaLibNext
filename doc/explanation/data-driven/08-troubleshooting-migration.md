@@ -218,7 +218,7 @@ handler 缺少：
 STRICT_PREFLIGHT
 ```
 
-或没有恰好一个：
+或未覆写 `strictValidationImplemented()` 返回 `true`，或没有恰好一个：
 
 ```java
 NON_REGISTRATION
@@ -338,7 +338,7 @@ assets/<ns>/lang/en_us.json
 | `UNKNOWN_TYPE` | 注册文件和 reload 文件是否放错域，handler 是否已安装 |
 | `PARSE_FAILED` / `CONTENT_INVALID` | 元素 codec、必填字段、数组 shape |
 | `MISSING_IDENTITY` / `INVALID_IDENTITY` | `resolveIdentity` 结果和内建 handler 的显式 namespace |
-| `HANDLER_NOT_STRICT_READY` | 重复 type name，或缺少 `STRICT_PREFLIGHT` 和唯一 role |
+| `HANDLER_NOT_STRICT_READY` | 重复 type name，或缺少 `STRICT_PREFLIGHT`、`strictValidationImplemented()` 或唯一 role |
 | `CLAIM_FAILED` / `CLAIM_CONFLICT` | handler 漏报、最终 `(registry,id)` 冲突、reserved snapshot |
 | `APPLY_FAILED` / `FINALIZER_FAILED` | factory 初值、context 服务、已执行的部分副作用 |
 
@@ -390,6 +390,7 @@ data/<ns>/kasuga_lib/data_driven/
 
 - 注册类型加 `STRICT_PREFLIGHT` + `REGISTRY_CLAIMS`；
 - 配置类型加 `STRICT_PREFLIGHT` + `NON_REGISTRATION`；
+- 覆写 `strictValidationImplemented()` 返回 `true`；
 - 实现无副作用 validate；
 - 报告所有最终 claims；
 - 稳定实现 parentDefinition。
@@ -455,15 +456,15 @@ RegistryClaimSnapshot.collect(hostRoot)
 9. library 不注册 resource/data pack，pack discovery、物理路径支持和覆盖顺序由宿主实现。
 10. 内建 block handler 只派生同 id block item claim；factory 创建的其他 registry 子项需要专用 handler 或宿主 claim 方案。
 11. 世界存档兼容策略、pack history 和缺失 pack 拒绝逻辑由宿主负责。
-12. `canReference` 检查“存在可见候选”，`find` 返回“全 session effective winner”；隐藏 owner 的高优先级候选与低优先级可见候选并存时，两者可能指不同来源。
+12. `ValidationContext.find(key)` 委托给 `findAllVisible(key)`，仅当恰好存在一个可见候选时才返回定义，而 `canReference(key)` 检查“至少存在一个可见候选”；需要在多个可见候选间自行筛选的 handler 应直接调用 `findAllVisible(key)`。
 13. 新 pipeline 不会自动安装 `TypeHandler` 或 factory。复用内建项需要显式调用 `JsonTreeBuilder.ensureHandlersRegistered()`；FSM factory 还需要宿主调用 `FsmBlockEntityFactories.registerBuiltin()`。
-15. source 准备异常是逐来源隔离而非事务；异常前已解析的路径、候选和 definition 会留在本次 prepare。
-16. pipeline 的 reload 预检不构造 `ResourceLocation`，因此运行期仍可能因大小写或非法字符拒绝一个预检通过的 `on_reload` 路径。
-17. 运行期 manifest parser 的诊断出口仍复用旧 per-mod 错误桶；`RELOAD_DATA` 只覆盖编排器直接产生的 reload 错误。
-18. `dependencies` map 中完全未被某个 source owner 使用的键不会单独报错。
-19. `SnapshotContentSource.declaredIndexes` 只筛选 `indexes()`，不会裁剪可读取文件，也不会验证索引路径；宿主必须自行验证声明入口与 parcel 映射。
-20. `DataDrivenBuildPipeline` 的 `BuildDiagnostic` 没有 parcelId 字段；宿主需要从冻结 `(sourceId, rootId)` 映射补充车包报告。
-21. 注册 provider 未与 Approved pack discovery 共用提交边界时，被拒绝的来源可能先进入 MC 资源栈；发布必须晚于最终注册选择。
-22. `DataDrivenBuildPipeline`、内建 handler 的 DefinitionKey、claims 和 apply 按 `BuildOptions` 共用 LEGACY 或 STRICT 身份规则。
+14. source 准备异常是逐来源隔离而非事务；异常前已解析的路径、候选和 definition 会留在本次 prepare。
+15. pipeline 的 reload 预检不构造 `ResourceLocation`，因此运行期仍可能因大小写或非法字符拒绝一个预检通过的 `on_reload` 路径。
+16. 运行期 manifest parser 的诊断出口仍复用旧 per-mod 错误桶；`RELOAD_DATA` 只覆盖编排器直接产生的 reload 错误。
+17. `dependencies` map 中完全未被某个 source owner 使用的键不会单独报错。
+18. `SnapshotContentSource.declaredIndexes` 只筛选 `indexes()`，不会裁剪可读取文件，也不会验证索引路径；宿主必须自行验证声明入口与 parcel 映射。
+19. `DataDrivenBuildPipeline` 的 `BuildDiagnostic` 没有 parcelId 字段；宿主需要从冻结 `(sourceId, rootId)` 映射补充车包报告。
+20. 注册 provider 未与 Approved pack discovery 共用提交边界时，被拒绝的来源可能先进入 MC 资源栈；发布必须晚于最终注册选择。
+21. `DataDrivenBuildPipeline`、内建 handler 的 DefinitionKey、claims 和 apply 按 `BuildOptions` 共用 LEGACY 或 STRICT 身份规则。
 
-这些边界不会阻止当前单来源兼容或受控宿主接入，但跨仓库发布前应明确由哪个宿主层承担每项责任。特别是第 14–17 项会直接影响“配置看似正确、运行时却缺 handler/factory 或诊断落在另一处”的排查。
+这些边界不会阻止当前单来源兼容或受控宿主接入，但跨仓库发布前应明确由哪个宿主层承担每项责任。特别是第 13–16 项会直接影响“配置看似正确、运行时却缺 handler/factory 或诊断落在另一处”的排查。

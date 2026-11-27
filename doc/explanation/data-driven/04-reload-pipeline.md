@@ -86,7 +86,7 @@ flowchart TD
 - `Diagnostics.Domain.RELOAD_DATA` 在每轮开始清理，避免诊断跨轮累积。
 - 每个注册 handler 恰好调用一次 `clearBucket()`，无论本轮是否有文件。
 - namespace 按字母序处理。
-- 每个 namespace 先从包栈读取 `kasuga_lib/data_driven/` 下的 manifest，得到 `on_reload` 路径；随后 glob 发现未列出的目录文件；最后读取索引文件。
+- 每个 namespace 先从包栈读取 `kasuga_lib/data_driven/` 下的 manifest，得到 `on_reload` 路径；随后 glob 发现未列出的目录文件（跳过受 `ManagedReloadAllowlist` 管理的来源）；最后读取索引文件。
 - reload candidate 在同一 handler 内是 glob 在前、index 在后；同一 id 的 index 条目胜出。
 - 一个文件同时被 glob 和索引命中时，只通过索引读取一次。
 - 所有 handler 的发现与 decode 完成后才开始第一个 register；每个 handler 在自己的 register 阶段先去重，再写入 winner。
@@ -111,14 +111,14 @@ data/<namespace>/kasuga_lib/data_driven/<index>.json
 内容路径仍相对于 `data/<namespace>/`。读取通过：
 
 ```java
-resourceManager.getResource(ResourceLocation.fromNamespaceAndPath(namespace, path))
+resourceManager.getResourceStack(ResourceLocation.fromNamespaceAndPath(namespace, path))
 ```
 
-因此高层资源包可以选择同名内容文件。identity 包含 namespace 时，不同 namespace 的同 id 不会冲突；同 namespace 中被包栈选中的内容作为该路径的输入。
+对于未纳入托管的旧包，编排器取栈顶资源（`findFirst()`），因此高层资源包可以覆盖同路径内容文件；对于通过 `ManagedReloadAllowlist` 注册的托管来源，`readReloadPaths` 和 `collectIndex` 会按 `ManagedReloadAllowlist.priority` 读取授权清单内的全部托管层，而 `collectGlob` 会跳过托管来源，使托管根只加载 manifest 授权的 reload 文件。identity 包含 namespace 时，不同 namespace 的同 id 不会冲突。
 
 注册期 `ContentSource` 读取的是宿主选定来源，reload 期读取的是游戏当前生效的包栈。宿主若希望注册 schema 与数据包 schema 兼容，需要分别验证两边，不能假定注册时的 ZIP 内容就是运行期 reload 内容。
 
-main/parcel 车包应让注册期从冻结的 `FixedResourceSource` 读取全部有效 roots，并让对应 root 作为 Approved pack 层进入 MC 栈。reload 仍按 MC 当前选中的包栈重选同路径文件；它不是“重新捕获注册 provider 的 snapshot”。用户调整包顺序或禁用状态后，注册集和 reload 可见集要在宿主层重新进入一致启动流程，不能在本轮 reload 中热改 registry。
+main/parcel 车包应让注册期从冻结的 `FixedResourceSource` 读取全部有效 roots，并让对应 root 作为 Approved pack 层进入 MC 栈。reload 仍按 MC 当前选中的包栈解析同路径文件（托管包层受 `ManagedReloadAllowlist` 的索引与内容授权约束）；它不是“重新捕获注册 provider 的 snapshot”。用户调整包顺序或禁用状态后，注册集和 reload 可见集要在宿主层重新进入一致启动流程，不能在本轮 reload 中热改 registry。
 
 ## 文件路由
 

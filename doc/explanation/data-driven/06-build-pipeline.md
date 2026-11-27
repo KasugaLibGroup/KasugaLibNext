@@ -23,7 +23,7 @@ new DataDrivenBuildPipeline(
 )
 ```
 
-扩展构造器可以替换 `RegistrationTarget`、声明 reserved symbols 和 reserved registry keys：
+扩展构造器可以替换 `RegistrationTarget`、声明 reserved symbols 和 reserved registry keys（也提供省略 `reservedRegistryClaims` 的五参重载）：
 
 ```java
 new DataDrivenBuildPipeline(
@@ -48,7 +48,7 @@ new RegBuildContext(hostModId, rootGroup, options.isStrict())
 
 ## Prepare 输入
 
-`prepare(sources, options, dependencies)` 的输入：
+`prepare(sources, options, dependencies)`（以及四参重载 `prepare(sources, options, dependencies, sharedAssetOwners)`）的输入：
 
 ```java
 Collection<? extends ContentSource> sources
@@ -92,7 +92,7 @@ pass 顺序：
 2. owner 依赖归一化与存在性检查；
 3. 逐 source 读取 manifest，定位 register/reload 路径，解析 register 内容；
 4. 读取 reload 文件并调用 `ReloadHandler.decode` 做可选预检；
-5. STRICT handler capability 检查；
+5. STRICT handler capability 与 `strictValidationImplemented()` 检查；
 6. 按 identity 与 priority 选择 effective definitions；
 7. `validate`；
 8. `parentDefinition` 环检查；
@@ -107,12 +107,14 @@ source 处理被逐来源隔离。某个 source 的 manifest、文件枚举或�
 
 | 字段 | 含义 |
 | --- | --- |
+| `hostModId` | 本次 session 所属的宿主 mod id |
 | `options` | 本次 prepare 使用的 LEGACY/STRICT 策略 |
 | `sources` | 来源 descriptor |
 | `definitions` | 最终选择的定义 |
 | `allDefinitions` | 包括优先级落败者的全部解析结果 |
 | `registerFiles` | 已定位的注册内容路径 |
 | `reloadFiles` | 已定位、已预检的 reload 路径 |
+| `indexFiles` | 已定位的 index manifest 路径 |
 | `claims` | selected definitions 声明的去重 claim |
 | `diagnostics` | prepare 阶段不可变诊断快照 |
 | `dependencies` | 归一化 owner 依赖 |
@@ -131,7 +133,7 @@ source 处理被逐来源隔离。某个 source 的 manifest、文件枚举或�
 | `jsonPointer` | 文件内位置 |
 | `declarationOrder` | 全 session 发现序号 |
 
-`registerFiles` 和 `reloadFiles` 是公开只读列表。宿主可据此记录本次实际消费的文件集合。
+`registerFiles`、`reloadFiles` 和 `indexFiles` 是公开只读列表。宿主可据此记录本次实际消费的文件集合。
 
 ## Identity 选择
 
@@ -139,14 +141,14 @@ source 处理被逐来源隔离。某个 source 的 manifest、文件枚举或�
 
 ### NON_REGISTRATION 或 LEGACY
 
-每个 key 只选 priority 最大的一个：
+除非 handler 声明了 `HandlerCapability.OVERLAY`，否则每个 key 只选 priority 最大的一个：
 
 ```text
 sourceOrder
   → declarationOrder
 ```
 
-`sourceOrder` 大的胜出；同来源内部后解析的定义胜出。`logicalPath` 排序参与解析顺序，所以同一 source 中路径靠后的文件通常先进入更高 `declarationOrder`。
+`sourceOrder` 大的胜出；同来源内部后解析的定义胜出。`logicalPath` 排序参与解析顺序，所以同一 source 中路径靠后的文件通常先进入更高 `declarationOrder`。声明了 `HandlerCapability.OVERLAY` 的 handler 会保留同一 identity 的全部候选，以便自行合并或叠加。
 
 ### STRICT REGISTRY_CLAIMS
 
@@ -173,7 +175,7 @@ STRICT 中带 `REGISTRY_CLAIMS` 的定义保留同一 key 的全部候选。随�
 | parse 失败 | 记录错误，继续应用其他定义 | 阻止整批 apply |
 | 未知顶层字段 | warning | error |
 | missing identity | 允许 | error |
-| handler capability | 不检查 | 要求预检与唯一 identity role |
+| handler capability | 不检查 | 要求 `STRICT_PREFLIGHT`、`strictValidationImplemented()` 与唯一 identity role |
 | validate | 不调用 | 调用所有 selected |
 | parent 环 | warning | error |
 | claim 收集 | 调用 | 调用 |
@@ -264,7 +266,7 @@ context 创建失败、排序函数抛出、任一 apply 抛出或任一 finaliz
 | `APPLIED` | 本次构建的 root | 可在确认无宿主级失败后挂载 |
 | `FAILED` | 通常是已构建但可能不完整的 root | 默认不挂载，除非能证明部分副作用安全 |
 
-`successful()` 等价于 `status == APPLIED`；`applied()` 表示 `status != REJECTED`，不能单独证明 finalizer 成功。
+`successful()` 和 `applied()` 都等价于 `status == Status.APPLIED`；`FAILED` 时两者均返回 false。
 
 ## 失败与回滚
 
@@ -320,7 +322,7 @@ FINALIZE
 | source | `INVALID_SOURCE`、`UNKNOWN_DEPENDENCY`、`SOURCE_FILE_MISSING`、`SOURCE_READ_FAILED` |
 | manifest | `MANIFEST_INVALID`、`MANIFEST_EMPTY`、`INVALID_PATH` |
 | parse | `CONTENT_INVALID`、`UNKNOWN_TYPE`、`PARSE_FAILED`、`IDENTITY_FAILED`、`MISSING_IDENTITY` |
-| validation | `HANDLER_NOT_STRICT_READY`、`INVALID_IDENTITY`、`UNKNOWN_FACTORY`、`UNKNOWN_REGISTRY_GROUP`、`MISSING_REFERENCE`、`REFERENCE_NOT_DECLARED`、`GROUP_CYCLE`、`VALIDATION_FAILED` |
+| validation | `HANDLER_NOT_STRICT_READY`、`INVALID_IDENTITY`、`UNKNOWN_FACTORY`、`UNKNOWN_REGISTRY_GROUP`、`MISSING_REFERENCE`、`REFERENCE_NOT_DECLARED`、`REFERENCE_AMBIGUOUS`、`GROUP_CYCLE`、`VALIDATION_FAILED` |
 | claims | `CLAIM_FAILED`、`CLAIM_CONFLICT` |
 | apply | `APPLY_FAILED` |
 | finalize | `FINALIZER_FAILED` |

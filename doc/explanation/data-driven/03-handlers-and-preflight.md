@@ -10,6 +10,7 @@ public interface TypeHandler<T> {
     void apply(T definition, BuildContext context);
 
     default Set<HandlerCapability> capabilities() { return Set.of(); }
+    default boolean strictValidationImplemented() { return false; }
     default void validate(T definition, ValidationContext context) {}
     default List<RegistryClaim> claims(T definition, ValidationContext context) {
         return List.of();
@@ -61,7 +62,7 @@ sequenceDiagram
 
     P->>H: parse(json)
     P->>H: resolveIdentity(hostModId, definition, strict)
-    P->>H: capabilities() for strict used types
+    P->>H: capabilities() & strictValidationImplemented()
     Note over P: identity selection
     P->>H: validate(definition, V) only in STRICT
     P->>H: parentDefinition(definition) for cycle checks
@@ -73,7 +74,7 @@ sequenceDiagram
 
 | 方法 | 必须无副作用 | 主要职责 |
 | --- | --- | --- |
-| `capabilities` | 是 | 声明 STRICT 能力和 identity 角色 |
+| `capabilities` / `strictValidationImplemented` | 是 | 声明 STRICT 就绪状态和 identity 角色 |
 | `parse` | 是 | 把 JSON 转 definition；不注册对象 |
 | `resolveIdentity(..., strict)` | 是 | 计算 handler 命名空间内的稳定逻辑 id，并区分 LEGACY/STRICT 身份规则 |
 | `validate` | 是 | 检查引用、资源、工厂、字段语义 |
@@ -216,6 +217,7 @@ STRICT 只接受同时满足以下条件的已使用 handler：
 
 ```text
 STRICT_PREFLIGHT
+and strictValidationImplemented() == true
 and exactly one of (
     NON_REGISTRATION
     REGISTRY_CLAIMS
@@ -229,8 +231,9 @@ pipeline 会检查 handler 列表中同一 `typeName()` 是否重复，即使该
 | `STRICT_PREFLIGHT` | `validate` 无副作用，并能在 apply 前发现需要阻止构建的问题 |
 | `NON_REGISTRATION` | definition 是启动期配置，不占 Minecraft registry |
 | `REGISTRY_CLAIMS` | definition 可能占 registry，必须完整报告 claims |
+| `OVERLAY` | 保留同一 identity 的全部候选，供 handler 合并或叠加 |
 
-使用 `NON_REGISTRATION` 的典型类型是属性组。配置定义即使在 STRICT 中也只选最高优先级的候选，因为配置的语义是覆盖。
+使用 `NON_REGISTRATION` 的典型类型是属性组。未声明 `OVERLAY` 的配置定义即使在 STRICT 中也只选最高优先级的候选，因为配置的语义是覆盖。
 
 使用 `REGISTRY_CLAIMS` 的注册类型在 STRICT 中保留同 `DefinitionKey` 的全部候选。随后 claim 检查同一最终 registry key；若多个定义抢占同一 key，整批拒绝。这样来源无法通过“不同 definition id 却 claim 同一个 block id”绕过冲突检查。
 
@@ -246,22 +249,24 @@ pipeline 会检查 handler 列表中同一 `typeName()` 是否重复，即使该
 | `source()` / `sourceOrder()` | 当前 definition 来源 |
 | `currentDefinition()` | 当前 `LocatedDefinition` |
 | `directDependencies()` | 当前 owner 声明的直接依赖 |
-| `find(key)` | 当前 session 中该 identity 的 effective winner |
-| `findAll(key)` | 全部候选，包括优先级较低的候选 |
+| `find(key)` | 仅当对当前 owner 可见的候选恰好只有一个时返回该定义 |
+| `findAllVisible(key)` | 当前 owner 或直接依赖拥有的全部候选 |
+| `findAll(key)` | 全 session 全部候选，包括不可见 owner 的候选 |
+| `findAll(typeDomain)` | 按声明顺序返回指定 handler 类型的全部已解析定义 |
 | `canReference(key)` | 候选是否存在且由当前 owner 或直接依赖拥有 |
-| `requireDefinition(key, pointer)` | 缺失或不可见时登记诊断，返回是否通过 |
-| `resourceExists(domain, location)` | 在可见来源中查 `assets/` 或 `data/` 逻辑资源 |
+| `requireDefinition(key, pointer)` | 缺失、不可见或存在多个可见候选（`REFERENCE_AMBIGUOUS`）时登记诊断，返回是否有效且无歧义 |
+| `resourceExists(domain, location)` | 在可见来源中查 `assets/` 或 `data/` 逻辑资源（`ASSETS` 域还会包含 `sharedAssetOwners`） |
 | `factoryAvailable(type, id)` | 查工厂是否存在 |
 | `factorySupports(type, id, class)` | 查工厂对象是否实现某能力接口 |
 | `isReserved(symbol)` / `reservedSymbols()` | 查宿主保留的配置符号 |
-| `claim(registry, id)` | 创建带当前来源 provenance 的 claim |
+| `claim(registry, id)` / `claimAt(registry, id, pointer)` | 创建带当前来源 provenance 的 claim |
 | `error(...)` / `warning(...)` | 追加 VALIDATION 诊断 |
 
-`find` 返回全 session 的 effective winner，不自动检查可见性。跨 owner 依赖需要调用 `canReference` 或 `requireDefinition`；只调用 `find` 会漏掉所有权检查。
+`find(key)` 内部委托给 `findAllVisible(key)`，因此会自动校验当前 owner 与直接依赖的可见性，并在可见候选数量不为 1（0 个或多个）时返回 `Optional.empty()`。标准跨 owner 引用校验建议直接调用 `requireDefinition(key, pointer)`，以同时获得精确的 `MISSING_REFERENCE` / `REFERENCE_NOT_DECLARED` / `REFERENCE_AMBIGUOUS` 诊断。
 
 依赖只认直接 owner。A 依赖 B、B 依赖 C 时，A 不能读取 C 的 definition 或资源。需要读取时在 A 的依赖集合中显式列出 C。
 
-当前 `canReference` / `requireDefinition` 的判定单位是“至少存在一个可见候选”，`find` 的判定单位是“全 session 最高优先级 winner”。两者在极端来源重叠时可能不同：隐藏 owner 的高优先级候选可以成为 `find` 结果，而当前 owner 仍因为有一个低优先级可见候选而通过引用检查。自定义 handler 若必须读取 effective owner，应遍历 `findAll`、过滤 `canReference` 先允许的 owner，再自行选择可见 winner；框架目前没有单独提供“visible effective definition”查询。
+注意 `canReference(key)` 检查的是“至少存在一个可见候选”，而 `find(key)` 要求“恰好只有一个可见候选”；如果同一 key 下可能存在多个可见候选（例如尚未排除的 claim 冲突或 `OVERLAY` 候选），自定义 handler 应直接遍历 `findAllVisible(key)` 自行筛选或合并。
 
 `resourceExists` 只在当前 owner 与直接依赖拥有、且 namespace 被来源 descriptor 允许的来源中查找：
 
@@ -327,6 +332,11 @@ public final class PanelModeHandler implements TypeHandler<PanelMode> {
     }
 
     @Override
+    public boolean strictValidationImplemented() {
+        return true;
+    }
+
+    @Override
     public PanelMode parse(JsonObject json) {
         return new PanelMode(
                 json.get("id").getAsString(),
@@ -365,7 +375,7 @@ public final class PanelModeHandler implements TypeHandler<PanelMode> {
 - 顶层字段名在当前 pipeline handler 列表中唯一。
 - `parse`、identity、validate、claims 和 parent 查询没有副作用。
 - 三参数 identity 明确处理 STRICT 与 LEGACY，不把 `minecraft:` 兼容映射带入 v2。
-- STRICT 使用 `STRICT_PREFLIGHT` 加恰好一个 identity role。
+- STRICT 使用 `STRICT_PREFLIGHT`、`strictValidationImplemented() == true` 加恰好一个 identity role。
 - 所有 registry 输出都出现在 `claims` 中。
 - 需要父对象先存在的类型使用 phase 和 `parentDefinition` 双重保证。
 - 跨 owner 引用调用 `requireDefinition` 或 `canReference`。

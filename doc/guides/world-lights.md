@@ -65,7 +65,7 @@ models.close();                           // 关闭挂载、scene 和全部子�
 场景关闭、节点移除或宿主消失时，由挂载的生命周期清理光源。隐藏会移除渲染实例，再次显示时重新挂载。
 
 面光源保留完整旋转（包括 roll）和面板尺寸缩放。非均匀缩放或剪切下，作用范围和球形介质使用包围球近似，
-而矩形发光面仍采用完整仿射变换。独立的 `WorldLights.spawn` 光源也提供 `moveTo(x,y,z)` / `moveBy(x,y,z)`。
+而矩形发光面仍采用完整仿射变换。通过 `WorldLights.spawn` 创建的独立光源也在 `WorldLight`（由 `EffectHandle<WorldLight>.effect()` 获取）上提供 `moveTo(x, y, z)` / `moveBy(x, y, z)`。
 
 | 参数 | 语义 |
 | --- | --- |

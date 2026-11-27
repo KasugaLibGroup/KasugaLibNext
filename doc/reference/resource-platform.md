@@ -42,7 +42,7 @@
 
 模板使用 `id`、单个 `extends`、`remove_outputs`、`outputs`。继承输出按稳定 output ID 整项替换，不能删后又新增同 ID；删除不存在的 ID 失败。单个 binding 可以显式输出到多个消费者；同一文件投给同消费者同目标的重复输出失败。模板最长继承链为 32。模板注册表由宿主传给 `ResourceRouting.decode`，JSON 中没有外部 `$ref` 或远程 schema 加载。
 
-事件为 `bootstrap`、`client_startup`、`server_startup`、`resource_reload`、`remote_connect`；端侧为 `client`、`server`、`both`、`none`。`both` 是声明值，每次实际 invocation 使用一个具体逻辑端；集成服务端的 server 脚本仍按 server 执行。`none` 只供不依赖 MC 上下文的消费者使用。声明不能超过 Java `EntryPointDescriptor` 允许的事件和端侧。
+事件为 `host_bootstrap`、`client_startup`、`server_startup`、`resource_reload`、`remote_connect`；端侧为 `client`、`server`、`both`、`none`。`both` 是声明值，每次实际 invocation 使用一个具体逻辑端；集成服务端的 server 脚本仍按 server 执行。`none` 只供不依赖 MC 上下文的消费者使用。声明不能超过 Java `EntryPointDescriptor` 允许的事件和端侧。
 
 ## 首次 MC 发现与模型
 
@@ -100,7 +100,7 @@ publication executor 必须存活到最后一个 generation lease 释放。`Reso
 ScriptBlocks.register("increment", '{"arguments":["number"],"result":"number"}', value => value + 1);
 ```
 
-宿主注册 `ManagedScriptEntryPoint(engineLookup, trustedSourcePredicate, referencePermissionPredicate)` 并路由包文件。每代使用独立 module registry，绑定 scope/generation/ScriptPackage/ScriptEngine/ScriptThread。包准备完成后 `ScriptBlockRegistry.bind(ref, context)` 才产生 `ScriptBlockHandle`；名称、契约或代际不匹配会失败。普通 `module.exports` 不自动变成外部可调用块。可信判定由宿主来源策略给出，不能相信包内的自报字段。
+宿主注册 `ManagedScriptEntryPoint(engines, trusted, authorized)`（参数类型为 `Function<String, ScriptEngineType<?>>`、`Predicate<ResourceDescriptor>`、`Predicate<ScriptBlockRef>`，另有带 `AccessFactory` 的四参重载）并路由包文件。每代使用独立 module registry，绑定 scope/generation/ScriptPackage/ScriptEngine/ScriptThread。包准备完成后 `ScriptBlockRegistry.bind(ref, context)` 才产生 `ScriptBlockHandle`；名称、契约或代际不匹配会失败。普通 `module.exports` 不自动变成外部可调用块。可信判定由宿主来源策略给出，不能相信包内的自报字段。
 
 ```java
 ScriptTicket ticket = handle.submit(List.of(41)); // 仅复制数据并入队，立即返回

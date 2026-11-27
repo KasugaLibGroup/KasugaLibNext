@@ -11,9 +11,13 @@ Model materials are now split into three classes by the alpha contract of glTF/g
 | `BLEND` | OIT accumulation/revealage, no depth write | Drops only the near-invisible alpha `<= 1/255`, keeps the actual alpha | `AFTER_TRANSLUCENT_BLOCKS`, WBOIT needs no sorting |
 
 `BackendInstance` creates a separate `FlatModelData` and vertex buffer for each non-empty pass,
-so a model with several materials does not redraw incompatible geometry into the wrong RenderType.
+so a model with several materials does not draw incompatible geometry into the wrong RenderType.
 OPAQUE/MASK can still go into the global batch, but the batch key includes the alpha pass; BLEND does not go into the
 global batch, so that the two OIT geometry submissions and the ordinary batching state do not get mixed together.
+
+Overlay models that must stay coplanar with another surface can explicitly set an instance-level
+[depth bias](model-depth-bias.md); ordinary models preserve their original depth by default. Different bias
+policies split batches, and translucent sub-passes replay the same policy.
 
 glTF's `alphaMode` and `alphaCutoff` are passed to the backend by `GltfMaterialData`. Older loaders without a transparency
 contract default to `OPAQUE`; the PMX loader infers OPAQUE/MASK/BLEND from the diffuse alpha and the texture alpha.
@@ -39,11 +43,32 @@ blend factors, and color/depth mask. The scene depth is copied from Iris's after
 and the resolve writes back to the same framebuffer; only the dedicated OIT composite shader is allowed to bypass the Iris
 unknown-shader guard, and the compatibility policy for other mod shaders is not relaxed.
 
+### `IrisOitCompat` and `CompatCapability` Fallback Path
+
+`OitRenderer` calls `IrisWorldFramebuffer` in the isolated [modules/iris-compat](iris-compat.md) module through
+`IrisOitCompat` (`lib.kasuga.rendering.models.mc.compat.iris.IrisOitCompat`) and `IrisCompat`. `IrisWorldFramebuffer`
+wraps its reflective probe in `CompatCapability<BooleanSupplier>` (`lib.kasuga.core.compat.CompatCapability`) to
+verify the exact method descriptors of `Iris::getPipelineManager`, `PipelineManager::getPipelineNullable`,
+`IrisRenderingPipeline::bindDefault`, and `IrisApi.getInstance()::isRenderingShadowPass`.
+
+Whenever any of the following conditions occurs, `OitRenderer` / `IrisWorldFramebuffer` falls back safely to the
+far-to-near sorted translucency path (and never misreports sorted fallback as WBOIT):
+
+- The `CompatCapability` probe fails due to Iris/Sodium ABI changes (`ReflectiveOperationException`,
+  `InaccessibleObjectException`, or `LinkageError`).
+- Iris is rendering a shadow pass (`isRenderingShadowPass()` is `true`), the active pipeline is absent, or the
+  active pipeline is not an `IrisRenderingPipeline`.
+- Floating-point targets are unavailable, OpenGL 3.0 reports fewer than `2` color attachments or draw buffers,
+  `OitCompositeShaderInstance` or OIT `RenderType` entries are missing after a resource reload, or a runtime
+  framebuffer operation throws an exception.
+
+On fallback, `IrisOitCompat.reportFallback(reason, cause)` emits one deduplicated warning log carrying the installed
+`iris` and `sodium` versions and displays a client `SystemToast`
+(`kasuga_lib.oit.fallback.title` / `kasuga_lib.oit.fallback.iris`).
+
 WBOIT is an approximation, not an exact source-over for an arbitrary number of layers, and it does not bring vanilla water or the
 transparent fragments of a shader pack into the same OIT equation; the current stage is still `AFTER_TRANSLUCENT_BLOCKS`, so its
-scope is "the KasugaLib BLEND layer composited onto an already finished scene". When a floating-point target is unavailable, the Iris pipeline
-has no bindable world framebuffer, or a runtime framebuffer operation fails, it falls back safely to the old
-far-to-near sorting path. Iris OIT resolves the main color only; a shader pack that relies on custom extra gbuffer channels to express transparent
+scope is "the KasugaLib BLEND layer composited onto an already finished scene". Iris OIT resolves the main color only; a shader pack that relies on custom extra gbuffer channels to express transparent
 materials may still need pack-specific integration.
 
 A material's `alphaCutoff` for MASK and the near-zero `1/255` working cutoff of BLEND are two independent concepts: the former

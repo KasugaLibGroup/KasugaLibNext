@@ -62,9 +62,15 @@ The manual and artifact checks for a release candidate are recorded in
 Documentation:
 ==========
 
-- [API reference index](doc/reference/README.md): interfaces, builders, configuration schemas, examples and commands.
-- [Architecture and principles](doc/explanation/README.md): data flow, ownership, algorithms and implementation boundaries.
+- [Documentation home](doc/README.en.md) / [中文](doc/README.md): overview of getting started, guides, API references, explanations and project metadata.
+- [Getting started](doc/getting-started/README.en.md) / [中文](doc/getting-started/README.md): dependencies, minimal example project, and installation/deployment.
+- [Guides](doc/guides/README.en.md) / [中文](doc/guides/README.md): data-driven walkthroughs, world display, world lights, model collision/LOD, proxy integration, Nebula demo and verification.
+- [API reference index](doc/reference/README.en.md) / [中文](doc/reference/README.md): interfaces, builders, configuration schemas, examples and commands.
+  - Core, DI & build: [Core entry & registration](doc/reference/core-registration.en.md), [Core runtime](doc/reference/core-runtime.en.md), [Inject DI](doc/reference/inject.en.md), [Utils](doc/reference/utils.en.md), [Scripting & Javet](doc/reference/scripting.en.md), [Gradle plugins & codegen](doc/reference/gradle-and-codegen.en.md), [Library packaging](doc/reference/library-packaging.en.md).
+  - Create integration: [Create module reference](doc/reference/create-integration.en.md), [Moving scene hosts](doc/reference/moving-scene-hosts.en.md), [Sable scene hosts](doc/reference/sable-scene-hosts.en.md).
+- [Architecture and principles](doc/explanation/README.en.md) / [中文](doc/explanation/README.md): data flow, ownership, algorithms, threading model and implementation boundaries.
 - [Proxy kernel and content integration](doc/explanation/proxy/README.en.md): sessions, typed ports, lifecycle, and a practical integration guide.
-- [Skeleton physics, IK and diamond constraints](doc/reference/skeleton-dynamics.md).
+- [Skeleton physics, IK and diamond closures](doc/reference/skeleton-dynamics.en.md).
 - [Model loading and rendering](doc/reference/modelling/README.en.md) / [中文](doc/reference/modelling/README.md).
 - [Formula API](doc/reference/formula/README.en.md) / [中文](doc/reference/formula/README.md).
+- [Project & version metadata](doc/meta/README.en.md) / [中文](doc/meta/README.md): compatibility matrix, changelog, licensing, limitations and glossary.

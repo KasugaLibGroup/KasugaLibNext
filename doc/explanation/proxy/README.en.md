@@ -259,5 +259,5 @@ render frames change presentation only.
 - Normal block content should use `BlockEntityProxyDefinitions + ProxyTickers`; direct external
   attachment is for hosts without a Minecraft `BlockEntityType` lifecycle.
 
-See the [Proxy integration guide](../../guides/proxy-integration.en.md) for concrete signatures,
+See the [Proxy integration guide](../../guides/proxy-integration.md) for concrete signatures,
 host skeletons, and troubleshooting.
