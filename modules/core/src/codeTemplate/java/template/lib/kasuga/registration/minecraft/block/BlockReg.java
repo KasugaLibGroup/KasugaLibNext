@@ -9,6 +9,8 @@ import lib.kasuga.registration.core.Modifier;
 import lib.kasuga.registration.core.ModifierType;
 import lib.kasuga.registration.core.ScopeHelper;
 import lib.kasuga.registration.minecraft.common.MinecraftDeferRegistryReg;
+import lib.kasuga.registration.minecraft.block.shape.BlockShapeBindings;
+import lib.kasuga.registration.minecraft.block.shape.BlockShapePlan;
 import template.lib.kasuga.registration.minecraft.block_entity.BlockEntityReg;
 import template.lib.kasuga.registration.minecraft.item.ItemReg;
 import net.minecraft.core.registries.Registries;
@@ -86,7 +88,18 @@ public class BlockReg<T extends Block> extends MinecraftDeferRegistryReg<BlockRe
     protected T createObject(ResourceLocation id) {
         BlockBehaviour.Properties properties = RegFacade.transformObject("BlockProperties", BlockBehaviour.Properties.of());
         properties = this.applyProperties(BlockBehaviour.Properties.class, properties);
-        return supplier.apply(this).apply(properties);
+        BlockShapePlan shapePlan = this.applyProperties(BlockShapePlan.class, BlockShapePlan.empty());
+        T block = supplier.apply(this).apply(properties);
+        BlockShapeBindings.install(block, shapePlan);
+        return block;
+    }
+
+    /**
+     * Supplies the already compiled plan for this registration and its inherited group properties.
+     * Installation happens immediately after construction and before state cache initialization.
+     */
+    public BlockReg<T> withShapePlan(BlockShapePlan plan) {
+        return withProperty(BlockShapePlan.class, ignored -> plan);
     }
 
 //    @RegGenerator.ChildrenConfiguration()

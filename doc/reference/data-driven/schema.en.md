@@ -19,7 +19,7 @@ A mod's index files can declare only the registration domain, only the reload do
 
 ### 0.2 What this page covers
 
-Covered: the index file format; the registration-phase content file format (`registry_groups` / `blocks` / `items` / embedded `block_entity`); duplicate id rules; the wrapper format of reload-phase content files; the classification and outlets of errors.
+Covered: the index file format; the registration-phase content file format (`registry_groups` / `shapes` / `blocks` / `items` / embedded `block_entity`); duplicate id rules; the wrapper format of reload-phase content files; the classification and outlets of errors. Shape expressions and the reference graph are specified in [shapes.en.md](shapes.en.md).
 
 Not covered: the concrete effect of each `properties` key in the registry (see `guide-content.md`); the complete codec fields inside state machine definitions and animation clip elements (see `../../reference/fsm.md` and the codecs under `uml/`); `TypeHandler` extensions on the Java side (see `guide-extension.md`).
 
@@ -117,11 +117,12 @@ All index files of the same mod are **fully read in** first and then consumed to
 
 ### 2.1 File top-level structure
 
-In a content file the **top-level field name is the top-level registration type**, and the value must be an **array of objects**. There are currently 3 top-level types:
+In a content file the **top-level field name is the top-level registration type**, and the value must be an **array of objects**. There are currently 4 top-level types:
 
 | Top-level field | handler | phase | Effect |
 |----------|---------|-------|------|
 | `registry_groups` | `RegistryGroupHandler` | 0 | Establish property groups (parent/child) |
+| `shapes` | `ShapeTypeHandler` | -1 | Precompile geometry definitions and cross-shape output references |
 | `blocks` | `BlockTypeHandler` | 1 | Register blocks |
 | `items` | `ItemTypeHandler` | 1 | Register standalone items |
 

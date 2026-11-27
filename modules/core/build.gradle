@@ -197,6 +197,8 @@ dependencies {
     shadowLibrary project(":modules:utils")
     implementation project(":modules:utils")
 
+    api project(":modules:geometry")
+
     annotationProcessor 'io.micronaut:micronaut-inject-java:4.9.10'
 
 

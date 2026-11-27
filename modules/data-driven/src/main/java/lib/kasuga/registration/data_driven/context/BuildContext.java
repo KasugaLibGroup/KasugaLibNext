@@ -1,6 +1,7 @@
 package lib.kasuga.registration.data_driven.context;
 
 import lib.kasuga.registration.data_driven.pipeline.LocatedDefinition;
+import lib.kasuga.registration.data_driven.pipeline.PreparedArtifacts;
 
 import javax.annotation.Nullable;
 import java.util.LinkedHashMap;
@@ -14,17 +15,28 @@ public class BuildContext {
     private final String modId;
     private final JsonRegistryGroup rootGroup;
     private final boolean strict;
+    private final PreparedArtifacts artifacts;
     private final Map<String, Map<String, Object>> metaStore = new LinkedHashMap<>();
     private LocatedDefinition<?> currentDefinition;
 
     public BuildContext(String modId, JsonRegistryGroup rootGroup) {
-        this(modId, rootGroup, false);
+        this(modId, rootGroup, false, PreparedArtifacts.empty());
     }
 
     public BuildContext(String modId, JsonRegistryGroup rootGroup, boolean strict) {
+        this(modId, rootGroup, strict, PreparedArtifacts.empty());
+    }
+
+    public BuildContext(
+            String modId,
+            JsonRegistryGroup rootGroup,
+            boolean strict,
+            PreparedArtifacts artifacts
+    ) {
         this.modId = modId;
         this.rootGroup = rootGroup;
         this.strict = strict;
+        this.artifacts = java.util.Objects.requireNonNull(artifacts, "artifacts");
     }
 
     /**
@@ -38,6 +50,14 @@ public class BuildContext {
     public JsonRegistryGroup getRootGroup() { return rootGroup; }
 
     public boolean isStrict() { return strict; }
+
+    public PreparedArtifacts artifacts() {
+        return artifacts;
+    }
+
+    public <T> T artifact(Class<T> type) {
+        return artifacts.get(type);
+    }
 
     public Optional<LocatedDefinition<?>> getCurrentDefinition() {
         return Optional.ofNullable(currentDefinition);

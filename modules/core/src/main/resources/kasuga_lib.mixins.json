@@ -4,6 +4,9 @@
   "plugin": "lib.kasuga.mixins.KasugaLibMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BlockPropertiesAccess",
+    "BlockStateCacheShapeMixin",
+    "BlockStateShapeMixin",
     "CompositePackResourcesAccess",
     "FilePackResourcesMixin",
     "MinecraftServerAccess",

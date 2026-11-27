@@ -24,6 +24,7 @@ repositories {
 }
 
 useModProject(project(":modules:core"))
+useModProject(project(':modules:geometry'))
 useModProject(project(':modules:render-core'))
 useModProject(project(':modules:render-opengl'))
 // Keep data-driven's classes and resources in the same union mod layer as modelling and core, but do
@@ -344,6 +345,8 @@ neoForge {
             if (modelCaptureFrame.isPresent()) {
                 systemProperty 'kasuga.captureModelFrame', modelCaptureFrame.get()
             }
+            systemProperty 'kasuga.testBlockShapes',
+                    providers.gradleProperty('kasugaTestBlockShapes').getOrElse('false')
 
             logLevel = org.slf4j.event.Level.DEBUG
         }

@@ -22,11 +22,11 @@ public class ModelProxyConfigLoader {
         for (String namespace : resourceManager.getNamespaces()) {
             ResourceLocation proxyLoc = ResourceLocation.tryBuild(namespace, PROXY_FILENAME);
             
-            Optional<Resource> resource = resourceManager.getResource(proxyLoc);
-            if (resource.isPresent()) {
+            // Each pack contributes model-selection patterns. Reading only the top resource
+            // lets an unrelated same-namespace parcel erase existing model declarations.
+            for (Resource resource : resourceManager.getResourceStack(proxyLoc)) {
                 try {
-                    Resource res = resource.get();
-                    try (BufferedReader reader = res.openAsReader()) {
+                    try (BufferedReader reader = resource.openAsReader()) {
                         JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
                         ModelProxyConfig config = ModelProxyConfig.fromJson(json);
                         configs.add(config);

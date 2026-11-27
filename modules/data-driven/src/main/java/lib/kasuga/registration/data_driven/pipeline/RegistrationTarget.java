@@ -11,7 +11,34 @@ public interface RegistrationTarget {
     RegBuildContext createContext(String hostModId, JsonRegistryGroup rootGroup, BuildOptions options);
 
     static RegistrationTarget standard() {
-        return (hostModId, rootGroup, options) ->
-                new RegBuildContext(hostModId, rootGroup, options.isStrict());
+        return new RegistrationTarget() {
+            @Override
+            public RegBuildContext createContext(
+                    String hostModId,
+                    JsonRegistryGroup rootGroup,
+                    BuildOptions options
+            ) {
+                return new RegBuildContext(hostModId, rootGroup, options.isStrict());
+            }
+
+            @Override
+            public RegBuildContext createContext(
+                    String hostModId,
+                    JsonRegistryGroup rootGroup,
+                    BuildOptions options,
+                    PreparedArtifacts artifacts
+            ) {
+                return new RegBuildContext(hostModId, rootGroup, options.isStrict(), artifacts);
+            }
+        };
+    }
+
+    default RegBuildContext createContext(
+            String hostModId,
+            JsonRegistryGroup rootGroup,
+            BuildOptions options,
+            PreparedArtifacts artifacts
+    ) {
+        return createContext(hostModId, rootGroup, options);
     }
 }

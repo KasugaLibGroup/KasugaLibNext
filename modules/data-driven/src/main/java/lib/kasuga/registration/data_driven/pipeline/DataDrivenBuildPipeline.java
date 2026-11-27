@@ -202,6 +202,14 @@ public final class DataDrivenBuildPipeline {
                 data.diagnostics
         );
         collectGroupCycleDiagnostics(options, selected, sourceViews, directory, dependencyView, data.diagnostics);
+        PreparedArtifacts artifacts = collectArtifacts(
+                selected,
+                sourceViews,
+                directory,
+                data.allDefinitions,
+                dependencyView,
+                data.diagnostics
+        );
         List<RegistryClaim> claims = collectClaims(
                 options,
                 selected,
@@ -224,7 +232,8 @@ public final class DataDrivenBuildPipeline {
                 claims,
                 data.diagnostics.snapshot(),
                 dependencyView,
-                reservedSymbols
+                reservedSymbols,
+                artifacts
         );
     }
 
@@ -263,7 +272,12 @@ public final class DataDrivenBuildPipeline {
 
         RegBuildContext context;
         try {
-            context = target.createContext(hostModId, root, prepared.options());
+            context = target.createContext(
+                    hostModId,
+                    root,
+                    prepared.options(),
+                    prepared.artifacts()
+            );
         } catch (RuntimeException failure) {
             diagnostics.add(sessionDiagnostic(
                     Stage.APPLY,
@@ -1294,6 +1308,62 @@ public final class DataDrivenBuildPipeline {
                 );
             }
         }
+    }
+
+    private PreparedArtifacts collectArtifacts(
+            List<LocatedDefinition<?>> selected,
+            List<PipelineSource> sources,
+            DefinitionDirectory directory,
+            List<LocatedDefinition<?>> allDefinitions,
+            Map<String, Set<String>> dependencies,
+            DiagnosticCollector diagnostics
+    ) {
+        Map<Class<?>, Object> values = new LinkedHashMap<>();
+        for (TypeHandler<?> handler : handlers) {
+            List<LocatedDefinition<?>> definitions = selected.stream()
+                    .filter(definition -> definition.handler() == handler)
+                    .toList();
+            if (definitions.isEmpty()) continue;
+
+            ArtifactPreparationContext context = definition -> new PipelineValidationContext(
+                    hostModId,
+                    definition,
+                    sources,
+                    allDefinitions,
+                    directory.candidates(),
+                    directory.effective(),
+                    dependencies,
+                    Set.of(),
+                    reservedSymbols,
+                    diagnostics
+            );
+            try {
+                @SuppressWarnings({"rawtypes", "unchecked"})
+                Map<Class<?>, ?> prepared = ((TypeHandler) handler)
+                        .prepareArtifacts(definitions, context);
+                for (Map.Entry<Class<?>, ?> entry : prepared.entrySet()) {
+                    Object previous = values.putIfAbsent(entry.getKey(), entry.getValue());
+                    if (previous != null) {
+                        throw new IllegalStateException(
+                                "Handler '" + handler.getTypeName()
+                                        + "' produced duplicate artifact type "
+                                        + entry.getKey().getName());
+                    }
+                }
+            } catch (RuntimeException failure) {
+                diagnostics.error(
+                        null,
+                        Stage.VALIDATION,
+                        Code.VALIDATION_FAILED,
+                        null,
+                        null,
+                        handler.getTypeName(),
+                        "Artifact preparation failed: " + failure,
+                        "Make artifact preparation deterministic and side-effect-free."
+                );
+            }
+        }
+        return new PreparedArtifacts(values);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

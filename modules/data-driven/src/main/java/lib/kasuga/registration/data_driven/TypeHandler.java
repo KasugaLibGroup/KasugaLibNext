@@ -4,10 +4,13 @@ import com.google.gson.JsonObject;
 import lib.kasuga.registration.data_driven.context.BuildContext;
 import lib.kasuga.registration.data_driven.pipeline.DefinitionKey;
 import lib.kasuga.registration.data_driven.pipeline.HandlerCapability;
+import lib.kasuga.registration.data_driven.pipeline.ArtifactPreparationContext;
+import lib.kasuga.registration.data_driven.pipeline.LocatedDefinition;
 import lib.kasuga.registration.data_driven.pipeline.RegistryClaim;
 import lib.kasuga.registration.data_driven.validation.ValidationContext;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public interface TypeHandler<T> {
@@ -59,6 +62,19 @@ public interface TypeHandler<T> {
      * Handlers that support strict preparation must implement this method.
      */
     default void validate(T definition, ValidationContext context) {
+    }
+
+    /**
+     * Compiles immutable domain artifacts once after all definitions have been selected and checked.
+     * The returned types become available through {@link lib.kasuga.registration.data_driven.pipeline.PreparedContent#artifacts()}
+     * and the apply {@link BuildContext}. Diagnostics must be reported through the per-definition
+     * validation contexts supplied by {@code context}.
+     */
+    default Map<Class<?>, ?> prepareArtifacts(
+            List<? extends LocatedDefinition<?>> definitions,
+            ArtifactPreparationContext context
+    ) {
+        return Map.of();
     }
 
     /**
