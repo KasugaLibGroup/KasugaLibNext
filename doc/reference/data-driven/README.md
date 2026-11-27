@@ -12,7 +12,8 @@
 
 | 文档 | 类型 | 内容 |
 | --- | --- | --- |
-| [schema.md](schema.md) | Reference | 索引清单与内容文件的字段、类型、内建 `proxy_model` / `proxy_model_be` 参数、STRICT/LEGACY 差异、D1–D6 规则、错误分类 |
+| [schema.md](schema.md) | Reference | 索引清单与内容文件的字段、内建 `proxy_model` / `proxy_model_be` 参数、STRICT/LEGACY 差异、D1–D6 规则、错误分类 |
+| [shapes.md](shapes.md) | Reference | `shapes` 几何定义、表达式、继承、引用、变换与诊断 |
 | [block-state-properties.md](block-state-properties.md) | Reference | 方块状态属性格式、原版属性引用与工厂扩展 |
 | [api-registration.md](api-registration.md) | Reference | v2 宿主接管与构建管线（`DataDrivenRegistrationProviders`、`ContentSourceFactory`、`SnapshotContentSource`、`DataDrivenBuildPipeline`、`BuildOptions`、`BuildResult`、`DataDrivenBuildHooks`）与旧入口 `JsonTreeBuilder`、索引 API、冲突解决 |
 | [api-extension.md](api-extension.md) | Reference | `TypeHandler` 体系、`HandlerCapability`（含 `OVERLAY`）、`DefinitionKey`、`RegistryClaim`、`ValidationContext`、`BuildContext`、`FactoryRegistry`（含内建工厂 `proxy_model` / `proxy_model_be`）、属性解析器 |

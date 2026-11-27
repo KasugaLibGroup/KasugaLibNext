@@ -6,7 +6,7 @@ Proxy adapters, extended contraption interaction shapes, and moving-structure sc
 Micronaut beans are gated on `@CreateModBeans` (`IfCreateModLoaded`) so they activate only when
 the `create` mod is loaded.
 
-Package root: `lib.kasuga.create`  
+Package root: `lib.kasuga.create`<br>
 Source tree: `modules/create/src/main/java/lib/kasuga/create/`
 
 Related guides and scene-host references:

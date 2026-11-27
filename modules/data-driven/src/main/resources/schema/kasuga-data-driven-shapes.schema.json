@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kasuga.lib/schema/data-driven-shapes.schema.json",
+  "title": "KasugaLib data-driven shapes",
+  "type": "object",
+  "properties": {
+    "shapes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/definition"
+      }
+    }
+  },
+  "required": [
+    "shapes"
+  ],
+  "$defs": {
+    "resourceLocation": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9/._-]+$"
+    },
+    "coordinate": {
+      "type": "number",
+      "minimum": -65536,
+      "maximum": 65536
+    },
+    "box": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/coordinate"
+        },
+        {
+          "$ref": "#/$defs/coordinate"
+        },
+        {
+          "$ref": "#/$defs/coordinate"
+        },
+        {
+          "$ref": "#/$defs/coordinate"
+        },
+        {
+          "$ref": "#/$defs/coordinate"
+        },
+        {
+          "$ref": "#/$defs/coordinate"
+        }
+      ],
+      "items": false,
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "empty": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "triple": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/coordinate"
+        },
+        {
+          "$ref": "#/$defs/coordinate"
+        },
+        {
+          "$ref": "#/$defs/coordinate"
+        }
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "scale": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "transform": {
+      "type": "object",
+      "properties": {
+        "scale": {
+          "$ref": "#/$defs/scale"
+        },
+        "rotate_y": {
+          "type": "integer",
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ]
+        },
+        "pivot": {
+          "$ref": "#/$defs/triple"
+        },
+        "translate": {
+          "$ref": "#/$defs/triple"
+        }
+      },
+      "additionalProperties": false
+    },
+    "shapeRef": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/resourceLocation"
+        },
+        "transform": {
+          "$ref": "#/$defs/transform"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "additionalProperties": false
+    },
+    "operation": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "union",
+            "intersection",
+            "difference"
+          ]
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/expression"
+          },
+          "minItems": 2,
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "op",
+        "args"
+      ],
+      "additionalProperties": false
+    },
+    "expression": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/box"
+        },
+        {
+          "$ref": "#/$defs/empty"
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "$ref": "#/$defs/shapeRef"
+        },
+        {
+          "$ref": "#/$defs/operation"
+        }
+      ]
+    },
+    "nodes": {
+      "type": "object",
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/expression"
+      }
+    },
+    "definition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/resourceLocation"
+        },
+        "parent": {
+          "$ref": "#/$defs/resourceLocation"
+        },
+        "nodes": {
+          "$ref": "#/$defs/nodes"
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "not": {
+              "required": [
+                "parent"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "nodes",
+              "output"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

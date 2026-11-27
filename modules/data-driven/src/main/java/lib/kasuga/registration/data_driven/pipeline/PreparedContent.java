@@ -23,7 +23,8 @@ public record PreparedContent(
         List<RegistryClaim> claims,
         List<BuildDiagnostic> diagnostics,
         Map<String, Set<String>> dependencies,
-        Set<String> reservedSymbols
+        Set<String> reservedSymbols,
+        PreparedArtifacts artifacts
 ) {
     public PreparedContent(
             String hostModId,
@@ -50,7 +51,39 @@ public record PreparedContent(
                 claims,
                 diagnostics,
                 dependencies,
-                reservedSymbols
+                reservedSymbols,
+                PreparedArtifacts.empty()
+        );
+    }
+
+    public PreparedContent(
+            String hostModId,
+            BuildOptions options,
+            List<SourceDescriptor> sources,
+            List<LocatedDefinition<?>> definitions,
+            List<LocatedDefinition<?>> allDefinitions,
+            List<LocatedContentPath> registerFiles,
+            List<LocatedContentPath> reloadFiles,
+            List<LocatedIndexPath> indexFiles,
+            List<RegistryClaim> claims,
+            List<BuildDiagnostic> diagnostics,
+            Map<String, Set<String>> dependencies,
+            Set<String> reservedSymbols
+    ) {
+        this(
+                hostModId,
+                options,
+                sources,
+                definitions,
+                allDefinitions,
+                registerFiles,
+                reloadFiles,
+                indexFiles,
+                claims,
+                diagnostics,
+                dependencies,
+                reservedSymbols,
+                PreparedArtifacts.empty()
         );
     }
 
@@ -67,6 +100,7 @@ public record PreparedContent(
         diagnostics = List.copyOf(diagnostics);
         dependencies = immutableCopy(dependencies);
         reservedSymbols = Set.copyOf(reservedSymbols);
+        Objects.requireNonNull(artifacts, "artifacts");
     }
 
     public boolean hasBlockingDiagnostics() {

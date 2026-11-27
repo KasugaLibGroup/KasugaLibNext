@@ -20,6 +20,10 @@ import lib.kasuga.registration.data_driven.reload.ReloadHandler;
 import lib.kasuga.registration.data_driven.reload.ReloadHandlerRegistry;
 import lib.kasuga.registration.data_driven.structure.ContentStructure;
 import lib.kasuga.registration.data_driven.state.DataDrivenBlockFactory;
+import lib.kasuga.registration.data_driven.pipeline.PreparedArtifacts;
+import lib.kasuga.registration.data_driven.shape.ShapeCatalog;
+import lib.kasuga.registration.data_driven.shape.ShapeDefinition;
+import lib.kasuga.registration.data_driven.shape.ShapeDomainCompiler;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforgespi.language.IModFileInfo;
@@ -59,6 +63,7 @@ public class JsonTreeBuilder {
         handlersRegistered = true;
         DataDrivenBlockFactory.registerIfAbsent();
         TypeHandlerRegistry.register(new RegistryGroupHandler());
+        TypeHandlerRegistry.register(new ShapeTypeHandler());
         TypeHandlerRegistry.register(new BlockTypeHandler());
         TypeHandlerRegistry.register(new ItemTypeHandler());
         TypeHandlerRegistry.register(new BlockEntityTypeHandler());
@@ -123,6 +128,7 @@ public class JsonTreeBuilder {
         // Duplicate ids are resolved in a side-effect-free window before any handler is applied:
         // a losing entry never reaches apply, so MappedRegistry never sees a duplicated key.
         Map<TypeHandler<?>, List<Object>> surviving = resolveDuplicates(modId, parsed);
+        context = withShapeArtifacts(modId, context, surviving);
 
         // Apply handlers by lifecycle phase; groups are sorted so parents precede children.
         List<TypeHandler<?>> ordered = TypeHandlerRegistry.all().stream()
@@ -152,6 +158,36 @@ public class JsonTreeBuilder {
         }
 
         return rootGroup;
+    }
+
+    private static RegBuildContext withShapeArtifacts(
+            String modId,
+            RegBuildContext context,
+            Map<TypeHandler<?>, List<Object>> surviving
+    ) {
+        List<ShapeDefinition> shapes = new ArrayList<>();
+        for (TypeHandler<?> handler : TypeHandlerRegistry.all()) {
+            if (!(handler instanceof ShapeTypeHandler)) continue;
+            for (Object definition : surviving.getOrDefault(handler, List.of())) {
+                if (definition instanceof ShapeDefinition shape) shapes.add(shape);
+            }
+        }
+        if (shapes.isEmpty()) return context;
+        try {
+            ShapeCatalog catalog = ShapeDomainCompiler.compileLegacy(modId, shapes);
+            return new RegBuildContext(
+                    modId,
+                    context.getRootGroup(),
+                    context.isStrict(),
+                    new PreparedArtifacts(Map.of(ShapeCatalog.class, catalog))
+            );
+        } catch (RuntimeException failure) {
+            String message = "Failed to compile shapes for mod '" + modId + "': "
+                    + failure.getMessage();
+            LOGGER.error(message);
+            addLoadingError(modId, new IllegalStateException(message, failure));
+            return context;
+        }
     }
 
     public static Map<String, JsonRegistryGroup> buildAll() {

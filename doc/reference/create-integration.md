@@ -2,7 +2,7 @@
 
 `modules/create` 提供 KasugaLibNext 与 Create 6 的可选集成能力，涵盖轨道与转向架注册 DSL、列车设备与自定义信号区段扩展、转向架及装配结构中的 Proxy 模型适配、交互判定形状以及移动结构场景宿主。所有 Micronaut Bean 均通过 `@CreateModBeans`（条件类 `IfCreateModLoaded`）在检测到 `create` 模组已加载时启用。
 
-包根路径：`lib.kasuga.create`  
+包根路径：`lib.kasuga.create`<br>
 源码目录：`modules/create/src/main/java/lib/kasuga/create/`
 
 相关指南与宿主参考：

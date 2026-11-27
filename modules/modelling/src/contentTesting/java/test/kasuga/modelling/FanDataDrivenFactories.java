@@ -4,10 +4,16 @@ import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import io.micronaut.context.annotation.Context;
 import jakarta.annotation.PostConstruct;
+import lib.kasuga.geometry.Box;
+import lib.kasuga.geometry.Shape;
 import lib.kasuga.registration.Reg;
 import lib.kasuga.registration.factory.FactoryRegistry;
 import lib.kasuga.registration.minecraft.block.BlockReg;
 import lib.kasuga.registration.minecraft.block_entity.BlockEntityReg;
+import lib.kasuga.registration.minecraft.block.shape.BlockShapePlan;
+import lib.kasuga.registration.minecraft.block.shape.BlockStateKey;
+import lib.kasuga.registration.minecraft.block.shape.ShapeSelection;
+import lib.kasuga.registration.minecraft.block.shape.ShapeSlot;
 import lib.kasuga.rendering.models.uml.dynamic.fsm.Id;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -18,6 +24,7 @@ import org.slf4j.Logger;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -52,6 +59,9 @@ public class FanDataDrivenFactories {
 
     /** The factory type of the block entity half. */
     public static final String BE_TYPE = "example_fan_be";
+    public static final Shape FAN_SHAPE = Shape.of(
+            Box.fromPixels(1, 0, 1, 15, 2, 15)
+    );
 
     @PostConstruct
     public void init() {
@@ -63,7 +73,21 @@ public class FanDataDrivenFactories {
     @SuppressWarnings("unchecked")
     private static <T extends Block> Reg<?, Block> blockWithItem(
             String id, Function<BlockBehaviour.Properties, T> blockSupplier) {
-        return (Reg<?, Block>) (Reg<?, ?>) BlockReg.of(id, blockSupplier).withDefaultBlockItem(id);
+        BlockShapePlan plan = BlockShapePlan.builder()
+                .state(new BlockStateKey(Map.of("running", "false")), Map.of(
+                        ShapeSlot.SHAPE, ShapeSelection.geometry(FAN_SHAPE),
+                        ShapeSlot.COLLISION, ShapeSelection.nativeBinding(),
+                        ShapeSlot.OCCLUSION, ShapeSelection.nativeBinding()
+                ))
+                .state(new BlockStateKey(Map.of("running", "true")), Map.of(
+                        ShapeSlot.SHAPE, ShapeSelection.geometry(FAN_SHAPE),
+                        ShapeSlot.COLLISION, ShapeSelection.nativeBinding(),
+                        ShapeSlot.OCCLUSION, ShapeSelection.nativeBinding()
+                ))
+                .build();
+        return (Reg<?, Block>) (Reg<?, ?>) BlockReg.of(id, blockSupplier)
+                .withShapePlan(plan)
+                .withDefaultBlockItem(id);
     }
 
     /**

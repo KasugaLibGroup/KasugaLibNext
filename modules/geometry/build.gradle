@@ -1,0 +1,62 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = mod_group_id
+version = mod_version
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    withSourcesJar()
+    withJavadocJar()
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+def geometryMainSources = sourceSets.main.allJava
+def checkGeometryIsolation = tasks.register('checkGeometryIsolation') {
+    group = 'verification'
+    description = 'Checks that geometry sources stay on the JDK-only platform boundary.'
+    inputs.files(geometryMainSources)
+    doLast {
+        def forbidden = ~/import\s+(?:static\s+)?(?:net\.minecraft\.|net\.neoforged\.|org\.lwjgl\.|com\.google\.gson\.|com\.mojang\.|lib\.kasuga\.mixins\.)/
+        def violations = geometryMainSources.files.findAll { it.getText('UTF-8') =~ forbidden }
+        if (!violations.isEmpty()) {
+            throw new GradleException("Geometry module imports host or resource-parser types: ${violations}")
+        }
+    }
+}
+compileJava.dependsOn checkGeometryIsolation
+check.dependsOn checkGeometryIsolation
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    // The checked documentation focuses on broken tags and links. Public API prose is maintained
+    // in the module README and class comments without requiring every record component tag.
+    options.addStringOption('Xdoclint:all,-missing', '-quiet')
+}
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            from components.java
+        }
+    }
+}

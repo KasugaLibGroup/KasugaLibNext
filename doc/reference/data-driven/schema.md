@@ -18,7 +18,7 @@
 
 ### 0.2 本文覆盖什么
 
-覆盖：索引文件格式、注册期内容文件格式（`registry_groups` / `blocks` / `items` / 内嵌 `block_entity`）、内建 `proxy_model` / `proxy_model_be` 参数 schema、重复 id 与 `OVERLAY` / `REGISTRY_CLAIMS` 规则、reload 期内容文件 wrapper 格式、STRICT 与 LEGACY 解码/校验差异、错误的分类与出口。
+覆盖：索引文件格式、注册期内容文件格式（`registry_groups` / `shapes` / `blocks` / `items` / 内嵌 `block_entity`）、内建 `proxy_model` / `proxy_model_be` 参数 schema、重复 id 与 `OVERLAY` / `REGISTRY_CLAIMS` 规则、reload 期内容文件 wrapper 格式、STRICT 与 LEGACY 解码/校验差异、错误的分类与出口。形状表达式与引用图见 [shapes.md](shapes.md)。
 
 不覆盖：各 `properties` 键在注册表里的具体游戏玩法效果（见 `../../guides/data-driven/guide-content.md`）、状态机定义与动画片段元素内部的完整 codec 字段（见 `../fsm.md` 与 `uml/` 下的 codec）、Java 侧 `TypeHandler` 扩展细节（见 `api-extension.md` 与 `../../guides/data-driven/guide-extension.md`）。
 
@@ -127,11 +127,12 @@ data/<namespace>/kasuga_lib/data_driven/
 
 ### 2.1 文件顶层结构
 
-内容文件的**顶层字段名 = 顶层注册类型**，值必须是**对象数组**。内建顶层类型有 3 个，外加 1 个内嵌类型：
+内容文件的**顶层字段名 = 顶层注册类型**，值必须是**对象数组**。内建顶层注册类型有 4 个，另有 1 个内嵌类型：
 
 | 顶层字段 | handler | phase | 作用 |
 |----------|---------|-------|------|
 | `registry_groups` | `RegistryGroupHandler` | 0 | 建立属性分组（父/子） |
+| `shapes` | `ShapeTypeHandler` | -1 | 预编译几何定义与跨形状输出引用 |
 | `blocks` | `BlockTypeHandler` | 1 | 注册方块 |
 | `items` | `ItemTypeHandler` | 1 | 注册独立物品 |
 | `block_entities`（内嵌） | `BlockEntityTypeHandler` | 2 | 内嵌于 `blocks[].block_entity`，不可写为顶层字段 |

@@ -5,6 +5,7 @@ import lib.kasuga.test.registration.ConfigurationTest;
 import lib.kasuga.test.registration.MinecraftRegistrationTest;
 import lib.kasuga.test.registration.minecraft.RenderingRegistryTest;
 import lib.kasuga.test.registration.minecraft.block.BlockRegistryTest;
+import lib.kasuga.test.registration.minecraft.block.shape.ShapeBindingTestBlocks;
 import lib.kasuga.test.registration.minecraft.block_entity.BlockEntityRegistryTest;
 import lib.kasuga.test.registration.minecraft.effect.EffectRegistryTest;
 import lib.kasuga.test.registration.minecraft.entity.EntityRegistryTest;
@@ -20,6 +21,7 @@ public class KasugaLibTest {
     public KasugaLibTest(IEventBus modEventBus, ModContainer modContainer) {
         // Register all test registrations with the mod event bus
         BlockRegistryTest.registry.register(modEventBus);
+        ShapeBindingTestBlocks.REGISTRY.register(modEventBus);
         ItemRegistryTest.registry.register(modEventBus);
         EffectRegistryTest.registry.register(modEventBus);
         EntityRegistryTest.registry.register(modEventBus);

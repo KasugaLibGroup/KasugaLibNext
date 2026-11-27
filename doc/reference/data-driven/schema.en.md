@@ -18,7 +18,7 @@ A mod or source's index files can declare only the registration domain, only the
 
 ### 0.2 What this page covers
 
-Covered: the index file format; the registration-phase content file format (`registry_groups` / `blocks` / `items` / embedded `block_entity`); built-in `proxy_model` / `proxy_model_be` `params` schema; duplicate id, `OVERLAY`, and `REGISTRY_CLAIMS` rules; the wrapper format of reload-phase content files; `STRICT` vs `LEGACY` decoding and validation differences; and error classification and outlets.
+Covered: the index file format; the registration-phase content file format (`registry_groups` / `shapes` / `blocks` / `items` / embedded `block_entity`); built-in `proxy_model` / `proxy_model_be` `params` schema; duplicate id, `OVERLAY`, and `REGISTRY_CLAIMS` rules; the wrapper format of reload-phase content files; `STRICT` vs `LEGACY` decoding and validation differences; and error classification and outlets. Shape expressions and the reference graph are specified in [shapes.en.md](shapes.en.md).
 
 Not covered: the concrete gameplay effect of each `properties` key in the registry (see `../../guides/data-driven/guide-content.md`); the complete codec fields inside state machine definitions and animation clip elements (see `../fsm.md` and the codecs under `uml/`); Java-side `TypeHandler` extensions in depth (see `api-extension.md` and `../../guides/data-driven/guide-extension.md`).
 
@@ -35,7 +35,7 @@ data/<namespace>/kasuga_lib/data_driven/
 - Pinned by `JsonTreeBuilder.indexDirectorySegments(modId)`, which returns `{"data", modId, "kasuga_lib", "data_driven"}` (`JsonTreeBuilder.java:766-768`).
 - Note that `kasuga_lib` is a fixed spelling and `data_driven` uses an underscore. Writing `kasuga-lib`, or dropping the `kasuga_lib` level, leads to **silently loading 0 entries**; that risk is pinned by `JsonTreeBuilderIndexPathTest.indexDirectorySegmentsMatchCanonicalLayout()` with `assertArrayEquals`.
 - By default, **every** direct child `.json` file in the directory is treated as an index and read in ascending path/filename order (`JsonTreeBuilder.listIndexFiles`, `:783-795`; `ContentSource.indexes()`, `ContentSource.java:37-65`). Subdirectories are not scanned recursively. There is no filename convention; `index.json` is only a habit.
-- In v2 `SnapshotContentSource`, a host can pass `declaredIndexes` to limit which manifest paths are exposed for the current registration scene (for example a parcel root exposing only `parcel.json.indexes`); `null` restores default directory discovery, and an empty collection represents a pure asset/data root with zero manifests. See [api-registration.md](api-registration.md) §17.
+- In v2 `SnapshotContentSource`, a host can pass `declaredIndexes` to limit which manifest paths are exposed for the current registration scene (for example a parcel root exposing only `parcel.json.indexes`); `null` restores default directory discovery, and an empty collection represents a pure asset/data root with zero manifests. See [api-registration.md](api-registration.en.md) §17.
 - In the legacy entry point, a missing directory only logs DEBUG and does not count as an error (`JsonTreeBuilder.java:83`); in the v2 pipeline, a source with no manifests yields zero definitions and succeeds when there are no blocking errors.
 - The reload side reuses the same path segments when it reads the same directory (`ReloadOrchestrator.indexResourcePath`, `ReloadOrchestrator.java:290-297`).
 
@@ -127,11 +127,12 @@ All index files of the same mod or `ContentSource` are **fully read in** first a
 
 ### 2.1 File top-level structure
 
-In a content file the **top-level field name is the top-level registration type**, and the value must be an **array of objects**. There are 3 built-in top-level types and 1 embedded type:
+In a content file the **top-level field name is the top-level registration type**, and the value must be an **array of objects**. There are 4 built-in top-level types and 1 embedded type:
 
 | Top-level field | handler | phase | Effect |
 |----------|---------|-------|------|
 | `registry_groups` | `RegistryGroupHandler` | 0 | Establish property groups (parent/child) |
+| `shapes` | `ShapeTypeHandler` | -1 | Precompile geometry definitions and cross-shape output references |
 | `blocks` | `BlockTypeHandler` | 1 | Register blocks |
 | `items` | `ItemTypeHandler` | 1 | Register standalone items |
 | `block_entities` (embedded) | `BlockEntityTypeHandler` | 2 | Embedded inside `blocks[].block_entity`; invalid as a top-level field |
@@ -187,7 +188,7 @@ Parsing is in `BlockTypeHandler.parse` (`BlockTypeHandler.java:31-36`), generic 
 | `type` | string | yes | — | Factory name, looked up in `FactoryRegistry.BlockFactory` (`BlockTypeHandler.createRegistration`, `:126-133`) |
 | `registry_group` | string | no | `null` → attached to the root group | Owning group id (raw-string match) |
 | `properties` | object | no | — | Block properties, see section 2.6 |
-| `state_properties` | object | no | — | Minecraft block-state properties; see [block-state-properties.md](block-state-properties.md) |
+| `state_properties` | object | no | — | Minecraft block-state properties; see [block-state-properties.md](block-state-properties.en.md) |
 | `item_properties` | object | no | — | Item properties for the block's item; `tab` decides the creative tab (`BlockTypeHandler.resolveCreativeTab`, `:64-67`) |
 | `params` | object | no | `null` | Passed to the factory verbatim by `create(path, params)` (`StatefulBlockFactory` also receives `state_properties`) |
 | `state_machine` | JSON primitive | no | — | Forwarded into the BE `params.state_machine` only when the entry contains a `block_entity` (see section 2.5) |
@@ -554,7 +555,7 @@ The two decoders isolate failures identically (`StateMachineDefinitionLoader.dec
 
 ### 4.6 Extending to a new reload type
 
-Reload types are not hardcoded: implement `ReloadHandler<T>` and register it via `ReloadHandlerRegistry.register(handler)` from a `@Context` bean's `@PostConstruct`. `typeName()` is the top-level key this type claims and doubles as the deduplication collision space. See [guide-extension.md](../../guides/data-driven/guide-extension.md) §6 and [api-reload.md](api-reload.md) §13.
+Reload types are not hardcoded: implement `ReloadHandler<T>` and register it via `ReloadHandlerRegistry.register(handler)` from a `@Context` bean's `@PostConstruct`. `typeName()` is the top-level key this type claims and doubles as the deduplication collision space. See [guide-extension.md](../../guides/data-driven/guide-extension.en.md) §6 and [api-reload.md](api-reload.en.md) §13.
 
 ## 5. Error classification and outlets
 
@@ -576,7 +577,7 @@ Reload types are not hardcoded: implement `ReloadHandler<T>` and register it via
 | Duplicate id on the reload side | `:602-610` (WARN log + bucket entry) |
 | Dangling clip reference at reload wrap-up | `FsmReloadHandler.java:105-113` (WARN log + bucket entry) |
 
-- **v2 `DataDrivenBuildPipeline`**: produces structured `BuildDiagnostic` entries (with `Severity.ERROR`/`WARNING`, `Stage`, `Code`, `sourceId`, `ownerId`, `logicalPath`, `jsonPointer`, `handler`, `message`, `suggestion`) stored in `PreparedContent.diagnostics()` and `BuildResult.diagnostics()`. They do **not** write into `Diagnostics` or `/kasuga_data errors` automatically; see [api-diagnostics.md](api-diagnostics.md) §19.
+- **v2 `DataDrivenBuildPipeline`**: produces structured `BuildDiagnostic` entries (with `Severity.ERROR`/`WARNING`, `Stage`, `Code`, `sourceId`, `ownerId`, `logicalPath`, `jsonPointer`, `handler`, `message`, `suggestion`) stored in `PreparedContent.diagnostics()` and `BuildResult.diagnostics()`. They do **not** write into `Diagnostics` or `/kasuga_data errors` automatically; see [api-diagnostics.md](api-diagnostics.en.md) §19.
 
 ### 5.2 Warnings (warn, no legacy bucket entry / mode-dependent)
 
@@ -632,16 +633,16 @@ Partial-apply guarantee: in `JsonTreeBuilder` and `ReloadOrchestrator`, listing 
 ## 7. Boundaries with other documents
 
 - This page (`schema.md`): the authoritative reference for the JSON format, covering fields, types, built-in `proxy_model` parameters, requiredness, path rules, `STRICT`/`LEGACY` differences, and error classification.
-- **[intro.md](../../guides/data-driven/intro.md)**: an introductory tutorial answering "what is this, and why use it".
-- **[guide-content.md](../../guides/data-driven/guide-content.md)**: a task-oriented guide answering "how do I build my first content file".
-- **[guide-extension.md](../../guides/data-driven/guide-extension.md)**: Java-side extensions (custom `TypeHandler` / factories / property compilers / `ReloadHandler`).
-- **[api-registration.md](api-registration.md) / [api-extension.md](api-extension.md) / [api-diagnostics.md](api-diagnostics.md) / [api-reload.md](api-reload.md)**: Java API references (covering both the v2 multi-source pipeline and legacy entry points).
-- **[block-state-properties.md](block-state-properties.md)**: full `state_properties` constraints and the Java `StateProperty` API.
-- **[fsm.md](../fsm.md)**: codec fields **inside** state machine definition and animation clip elements.
-- **[Data-Driven System Explanations](../../explanation/data-driven/README.md)**: v2 fixed snapshots, multi-source rank ordering, host wiring, and migration.
+- **[intro.md](../../guides/data-driven/intro.en.md)**: an introductory tutorial answering "what is this, and why use it".
+- **[guide-content.md](../../guides/data-driven/guide-content.en.md)**: a task-oriented guide answering "how do I build my first content file".
+- **[guide-extension.md](../../guides/data-driven/guide-extension.en.md)**: Java-side extensions (custom `TypeHandler` / factories / property compilers / `ReloadHandler`).
+- **[api-registration.md](api-registration.en.md) / [api-extension.md](api-extension.en.md) / [api-diagnostics.md](api-diagnostics.en.md) / [api-reload.md](api-reload.en.md)**: Java API references (covering both the v2 multi-source pipeline and legacy entry points).
+- **[block-state-properties.md](block-state-properties.en.md)**: full `state_properties` constraints and the Java `StateProperty` API.
+- **[fsm.md](../fsm.en.md)**: codec fields **inside** state machine definition and animation clip elements.
+- **[Data-Driven System Explanations](../../explanation/data-driven/README.en.md)**: v2 fixed snapshots, multi-source rank ordering, host wiring, and migration.
 
 ## Appendix A: Not covered / to be confirmed
 
-- The **complete field table and defaults** of `state_machines` / `animation_clips` elements: this page specifies only the wrapper. For the element schema, treat `StateMachineDefinition.CODEC`, `AnimationClip.CODEC`, and [fsm.md](../fsm.md) as the authority.
+- The **complete field table and defaults** of `state_machines` / `animation_clips` elements: this page specifies only the wrapper. For the element schema, treat `StateMachineDefinition.CODEC`, `AnimationClip.CODEC`, and [fsm.md](../fsm.en.md) as the authority.
 - The runtime behavior when `tab` points at a creative tab that does not exist: format validation only checks that `tab` parses as a valid `ResourceLocation` (`JsonItemParser.validateStrict` / `RegTypeHandler.resolveCreativeTab`) and does not check whether that tab is registered at runtime.
 - **World-save compatibility policy across restarts**: `DataDrivenBuildPipeline` supplies `PreparedContent.claims()` and `BuildResult`, while comparing historical pack sets/claims and refusing incompatible worlds belongs to the host layer.

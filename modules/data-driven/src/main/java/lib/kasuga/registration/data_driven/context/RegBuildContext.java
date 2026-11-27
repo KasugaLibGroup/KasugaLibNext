@@ -1,6 +1,7 @@
 package lib.kasuga.registration.data_driven.context;
 
 import lib.kasuga.registration.Reg;
+import lib.kasuga.registration.data_driven.pipeline.PreparedArtifacts;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 
@@ -19,6 +20,15 @@ public class RegBuildContext extends BuildContext {
 
     public RegBuildContext(String modId, JsonRegistryGroup rootGroup, boolean strict) {
         super(modId, rootGroup, strict);
+    }
+
+    public RegBuildContext(
+            String modId,
+            JsonRegistryGroup rootGroup,
+            boolean strict,
+            PreparedArtifacts artifacts
+    ) {
+        super(modId, rootGroup, strict, artifacts);
     }
 
     // --- RegistryGroup ---
