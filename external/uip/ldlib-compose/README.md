@@ -2,7 +2,7 @@
 
 This optional module uses the official `ldlib2-compose-1.21.1:21.0.0.1:all` distribution,
 LDLib2 2.2.44, Kotlin/Compose compiler 2.1.20 and Compose runtime 1.8.2. Its development
-clients run NeoForge 21.1.238. The shared Kasuga library and the ordinary LDLib2 adapter
+clients run NeoForge 21.1.268. The shared Kasuga library and the ordinary LDLib2 adapter
 do not depend on Compose. Install this adapter together with the LDLib2 adapter, LDLib2
 and the official Compose **all** jar, which embeds its runtime dependencies.
 

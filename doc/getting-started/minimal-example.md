@@ -54,7 +54,7 @@ org.gradle.daemon=true
 
 minecraft_version=1.21.1
 minecraft_version_range=[1.21.1]
-neo_version=21.1.203
+neo_version=21.1.268
 parchment_minecraft_version=1.21.1
 parchment_mappings_version=2024.11.17
 loader_version_range=[1,)
@@ -68,10 +68,10 @@ mod_group_id=com.example.examplemod
 mod_authors=Author
 mod_description=Minimal KasugaLibNext example mod.
 
-create_version=6.0.6-98
-ponder_version=1.0.59
-flywheel_version=1.0.4
-registrate_version=MC1.21-1.3.0+62
+create_version=6.0.11-346
+ponder_version=1.0.92
+flywheel_version=1.0.7
+registrate_version=MC1.21-1.3.0+67
 ```
 
 ### `build.gradle`
@@ -129,8 +129,8 @@ dependencies {
     }
 
     // 与聚合模组 kasuga_lib_create.mixins.json 匹配的运行期伴随模组
-    implementation("com.simibubi.create:create-${minecraft_version}:${create_version}:slim") { transitive = false }
-    implementation("net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}")
+    implementation("com.simibubi.create:create-${minecraft_version}:${create_version}") { transitive = false }
+    implementation("net.createmod.ponder:ponder-neoforge:${ponder_version}+mc${minecraft_version}")
     compileOnly("dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}")
     runtimeOnly("dev.engine-room.flywheel:flywheel-neoforge-${minecraft_version}:${flywheel_version}")
     implementation("com.tterrag.registrate:Registrate:${registrate_version}")

@@ -4,7 +4,7 @@
 
 ## Module Isolation and Packaging
 
-- `modules/iris-compat/build.gradle` declares only `compileOnly` dependencies on `:modules:modelling` (compiled classes only), `:modules:core`, `:modules:inject`, `:modules:utils`, `iris-neoforge-mc1.21.1-1.8.12.jar`, and `sodium-neoforge-mc1.21.1-0.6.13.jar`.
+- `modules/iris-compat/build.gradle` declares only `compileOnly` dependencies on `:modules:modelling` (compiled classes only), `:modules:core`, `:modules:inject`, `:modules:utils`, and local Minecraft 1.21.1 compile JARs for Iris `1.8.14-beta.1` and Sodium `0.8.14-beta.2`.
 - `modules/modelling/build.gradle` bundles `:modules:iris-compat`'s `main` output into its `jar`, `shadowJar`, and dev `neoForge.mods`; `modules/library/build.gradle` pulls it in via `useModProject(project(':modules:iris-compat'))`. As a result, `modules/modelling`'s own compile classpath has no direct dependency on Iris types.
 
 ## Runtime Bridge and Capability Probing

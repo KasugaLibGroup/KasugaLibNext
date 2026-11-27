@@ -4,7 +4,7 @@
 
 ## 版本策略
 
-- **当前版本号**：`gradle.properties` 将 `mod_version` 声明为 `1.0.0`，下游依赖范围 `kasuga_lib_version_range` 为 `[1.0.0,)`，并面向 `Minecraft 1.21.1` 与 `NeoForge [21.1.203,)`（`minecraft_version_range=[1.21.1]`）。
+- **当前版本号**：`gradle.properties` 将 `mod_version` 声明为 `1.0.0`，下游依赖范围 `kasuga_lib_version_range` 为 `[1.0.0,)`，并面向 `Minecraft 1.21.1` 与 `NeoForge [21.1.268,)`（`minecraft_version_range=[1.21.1]`）。
 - **分支与发布形态**：
   - 仓库工作区约定直接在 `master` 分支推进，不另建长期功能分支（见 [贡献者文档](contributing.md)）。
   - 截至当前 `HEAD`（`293ac7b5`），仓库**尚未打过任何 Git release tag**（`git tag -l` 为空），也未配置向远程 Maven 仓库或 CurseForge/Modrinth 自动发布的 CI 工作流；除早期的 `v0.1 commit`（`7ec47eb8`）外，各子模块主要通过工作区 `includeBuild` 或本地 `maven-publish`（`file://${project.projectDir}/repo`）供下游使用。

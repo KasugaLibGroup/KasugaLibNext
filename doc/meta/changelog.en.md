@@ -4,7 +4,7 @@ This page records the current versioning policy and verified development milesto
 
 ## Version Policy
 
-- **Current version identifier**: `gradle.properties` sets `mod_version=1.0.0`, `kasuga_lib_version_range=[1.0.0,)`, targeting `Minecraft 1.21.1` and `NeoForge [21.1.203,)` (`minecraft_version_range=[1.21.1]`).
+- **Current version identifier**: `gradle.properties` sets `mod_version=1.0.0`, `kasuga_lib_version_range=[1.0.0,)`, targeting `Minecraft 1.21.1` and `NeoForge [21.1.268,)` (`minecraft_version_range=[1.21.1]`).
 - **Branching and release status**:
   - Per workspace rules ([Contributor Documentation](contributing.md)), active work lands directly on `master` without long-lived feature branches.
   - Up to `HEAD` (`293ac7b5`), there are **no Git release tags** (`git tag -l` is empty) and no automated remote Maven/CurseForge/Modrinth release workflow; aside from the early `v0.1 commit` (`7ec47eb8`), integration happens via Gradle `includeBuild` or per-module local `maven-publish` repositories (`file://${project.projectDir}/repo`).

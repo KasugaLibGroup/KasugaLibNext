@@ -5,6 +5,7 @@ import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.Contraption;
 import io.micronaut.context.annotation.Context;
 import jakarta.annotation.PostConstruct;
+import lib.kasuga.create.CreateContraptionBlockEntities;
 import lib.kasuga.create.CreateModBeans;
 import lib.kasuga.create.client.model.CreateSceneHosts;
 import lib.kasuga.inject.class_loader.BeanOnlyIn;
@@ -81,8 +82,7 @@ public final class ContraptionProxyModels {
                 attachment = null;
             }
             if (attachment == null) {
-                if (contraption.presentBlockEntities.values().stream()
-                        .noneMatch(ProxyModelBlockEntity.class::isInstance)) {
+                if (!hasProxyModelBlockEntity(contraption)) {
                     continue;
                 }
                 attachment = new Attachment(contraptionEntity, contraption);
@@ -102,6 +102,15 @@ public final class ContraptionProxyModels {
                 iterator.remove();
             }
         }
+    }
+
+    private static boolean hasProxyModelBlockEntity(Contraption contraption) {
+        for (BlockPos localPos : contraption.getBlocks().keySet()) {
+            if (CreateContraptionBlockEntities.get(contraption, localPos) instanceof ProxyModelBlockEntity) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void frame(RenderFrameEvent.Pre event) {
@@ -183,12 +192,11 @@ public final class ContraptionProxyModels {
                 return;
             }
             Set<BlockPos> seen = new HashSet<>();
-            for (var entry : contraption.presentBlockEntities.entrySet()) {
-                BlockEntity blockEntity = entry.getValue();
+            for (BlockPos localPos : contraption.getBlocks().keySet()) {
+                BlockEntity blockEntity = CreateContraptionBlockEntities.get(contraption, localPos);
                 if (!(blockEntity instanceof ProxyModelBlockEntity model) || model.isRemoved()) {
                     continue;
                 }
-                BlockPos localPos = entry.getKey();
                 if (!refreshState(model, contraption.getBlocks().get(localPos))) {
                     continue;
                 }

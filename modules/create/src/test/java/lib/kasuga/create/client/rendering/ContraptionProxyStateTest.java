@@ -31,6 +31,7 @@ import sun.misc.Unsafe;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -52,7 +53,7 @@ class ContraptionProxyStateTest {
         contraption.getBlocks().put(LOCAL, new StructureBlockInfo(LOCAL, closed, nbt));
         var model = new CapturedModel(closed);
         model.setLevel(level);
-        contraption.presentBlockEntities.put(LOCAL, model);
+        contraption.blockEntities.put(LOCAL, model);
         model.bindVisualHost(ContraptionProxyModels.instanceIdentity(entity.getUUID(), LOCAL),
                 ContraptionProxyModels.anchorTransform(new lib.kasuga.scene.ScenePose(
                         Vec3.ZERO, new org.joml.Matrix4f()), LOCAL));
@@ -146,12 +147,14 @@ class ContraptionProxyStateTest {
     }
 
     private static final class TestContraption extends Contraption {
+        private final Map<BlockPos, ProxyModelBlockEntity> blockEntities = new HashMap<>();
         private int colliderInvalidations;
 
         @Override public boolean assemble(Level level, BlockPos pos) { return false; }
         @Override public boolean canBeStabilized(Direction facing, BlockPos pos) { return false; }
         @Override public ContraptionType getType() { return null; }
         @Override public void invalidateColliders() { colliderInvalidations++; }
+        @Override public ProxyModelBlockEntity getBlockEntityClientSide(BlockPos pos) { return blockEntities.get(pos); }
     }
 
     private static final class TestEntity extends AbstractContraptionEntity {

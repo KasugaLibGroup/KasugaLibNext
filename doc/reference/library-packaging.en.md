@@ -17,10 +17,10 @@ Root `settings.gradle` registers `includeBuild './modules/gradle-plugin'` and 23
 | Property | Value | Meaning |
 | --- | --- | --- |
 | `minecraft_version` / `minecraft_version_range` | `1.21.1` / `[1.21.1]` | Target Minecraft release |
-| `neo_version` / `loader_version_range` | `21.1.203` / `[1,)` | NeoForge & FML loader range (ModDevGradle `2.0.107`) |
+| `neo_version` / `loader_version_range` | `21.1.268` / `[1,)` | NeoForge & FML loader range (ModDevGradle `2.0.107`) |
 | `parchment_minecraft_version` / `parchment_mappings_version` | `1.21.1` / `2024.11.17` | Parchment parameter mappings |
 | `mod_id` / `mod_name` / `mod_version` / `mod_group_id` | `kasuga_lib` / `KasugaLib Next` / `1.0.0` / `lib.kasuga` | Shared mod metadata and Maven coordinates |
-| `create_version` / `ponder_version` / `flywheel_version` / `registrate_version` | `6.0.6-98` / `1.0.59` / `1.0.4` / `MC1.21-1.3.0+62` | Create ecosystem dependency versions |
+| `create_version` / `ponder_version` / `flywheel_version` / `registrate_version` | `6.0.11-346` / `1.0.92` / `1.0.7` / `MC1.21-1.3.0+67` | Create ecosystem dependency versions |
 | `cct_version` | `1.116.1` | CC:Tweaked integration version |
 
 ## Packaging Categories
@@ -76,7 +76,7 @@ Shadow configuration details:
   - `lib.kasuga.inject` -> `lib.kasuga.vendors.inject`
 - Excludes signature artifacts: `META-INF/*.SF`, `META-INF/*.DSA`, `META-INF/*.RSA`.
 
-For compilation and ModDev runs, `library/build.gradle` also declares `implementation` / `additionalRuntimeClasspath` / `compileOnly` dependencies on Micronaut `4.9.10` (excluding `org.slf4j:slf4j-api`), Create `6.0.6-98:slim` (`transitive = false`), Ponder `1.0.59`, Flywheel API/Runtime `1.0.4`, Registrate `MC1.21-1.3.0+62`, and CC:Tweaked `1.116.1`.
+For compilation and ModDev runs, `library/build.gradle` also declares `implementation` / `additionalRuntimeClasspath` / `compileOnly` dependencies on Micronaut `4.9.10` (excluding `org.slf4j:slf4j-api`), Create `6.0.11-346` (`transitive = false`), Ponder `1.0.92+mc1.21.1`, Flywheel API/Runtime `1.0.7`, Registrate `MC1.21-1.3.0+67`, and CC:Tweaked `1.116.1`.
 
 ### `neoforge.mods.toml` and Mixin Aggregation
 
@@ -102,7 +102,7 @@ At present `:modules:annotations` contains **no Java source files**; it acts as 
 `modules/multiversion/` is a standalone mod-packaging scaffold:
 
 - `modules/multiversion/build.gradle` applies `java-library`, `maven-publish`, `net.neoforged.moddev` (`2.0.107`), and `com.gradleup.shadow` (`9.0.2`, `shadowJar { zip64 = true }`).
-- `neoForge.mods."${mod_id}"` binds `:modules:core`'s `sourceSets.main` together with local `sourceSets.main`, depending on `:modules:inject`, Micronaut `4.9.10`, Create `6.0.6-98:slim`, Ponder `1.0.59`, Flywheel `1.0.4`, and Registrate `MC1.21-1.3.0+62`.
+- `neoForge.mods."${mod_id}"` binds `:modules:core`'s `sourceSets.main` together with local `sourceSets.main`, depending on `:modules:inject`, Micronaut `4.9.10`, Create `6.0.11-346`, Ponder `1.0.92+mc1.21.1`, Flywheel `1.0.7`, and Registrate `MC1.21-1.3.0+67`.
 - On current `HEAD`, only `build.gradle` and `src/main/templates/META-INF/neoforge.mods.toml` (a baseline metadata template with no `[[mixins]]` blocks) are tracked, with no `src/main/java` sources.
 
 ## Verification Commands

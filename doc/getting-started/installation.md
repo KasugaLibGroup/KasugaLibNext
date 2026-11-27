@@ -7,10 +7,10 @@
 | 项目 | 要求 |
 | --- | --- |
 | Minecraft 版本 | `1.21.1` |
-| Mod Loader | NeoForge `21.1.203` 及以上（`[21.1.203,)`） |
+| Mod Loader | NeoForge `21.1.268` 及以上（`[21.1.268,)`） |
 | 运行时 Java | Java 21 |
 | 核心模组产物 | `kasuga-library-1.0.0-all.jar`（带 `-all` 后缀的 Shadow JAR） |
-| 伴随模组（聚合包） | Create `6.0.6-98` + Flywheel `1.0.4` + Ponder `1.0.59` + Registrate `MC1.21-1.3.0+62`（见第 3 节） |
+| 伴随模组（聚合包） | Create `6.0.11-346` + Flywheel `1.0.7` + Ponder `1.0.92+mc1.21.1` + Registrate `MC1.21-1.3.0+67`（见第 3 节） |
 
 > **切勿放入未 Shadow 的瘦 JAR 或拆分子模块 JAR**
 >
@@ -47,7 +47,7 @@
 - `kasuga_lib_iris.mixins.json`（`required: false`）
 - `kasuga_lib_create.mixins.json`（`required: true`，由 `CreateMixinPlugin` 加载）
 
-`CreateMixinPlugin` 会在应用轨道 Mixin 时检查 `com/simibubi/create/content/trains/track/BezierConnection.class`，若缺失则抛出 `IllegalStateException("Create BezierConnection is missing")`。因此部署完整 `kasuga-library-*-all.jar` 时，请同时在 `mods/` 中安装对应版本的 **Create**（`1.21.1` / `6.0.6-98` 兼容版及其依赖 Ponder / Flywheel / Registrate）。
+`CreateMixinPlugin` 会在应用轨道 Mixin 时检查 `com/simibubi/create/content/trains/track/BezierConnection.class`，若缺失则抛出 `IllegalStateException("Create BezierConnection is missing")`。因此部署完整 `kasuga-library-*-all.jar` 时，请同时在 `mods/` 中安装对应版本的 **Create**（`1.21.1` / `6.0.11-346` 兼容版及其依赖 Ponder / Flywheel / Registrate）。
 
 ### 3.2 Javet JavaScript 脚本引擎（`kasuga_lib_javet`）
 
@@ -66,7 +66,7 @@
 
 | 模组 | 侧别 | 行为说明 |
 | --- | --- | --- |
-| **Iris**（验证版 `1.8.12`）与 **Sodium**（验证版 `0.6.13`） | 仅客户端 | `kasuga_lib_iris.mixins.json` 为非强制配置；`IrisCameraMixinPlugin` 与 `IrisCompat` 在启动期通过字节码检查探测 ABI，不安装或版本不匹配时自动禁用光影包适配并保持原生渲染 |
+| **Iris**（`1.8.14-beta.1`）与 **Sodium**（`0.8.14-beta.2`） | 仅客户端 | `kasuga_lib_iris.mixins.json` 为非强制配置；`IrisCameraMixinPlugin` 与 `IrisCompat` 在启动期通过字节码检查探测 ABI，不安装或版本不匹配时自动禁用光影包适配并保持原生渲染 |
 | **Voxy** | 仅客户端 | `VoxyCompat` 通过 `ModList.get().isLoaded("voxy")` 自动探测，无需额外开关 |
 | **Sable** | 双端可选 | 仅在安装 Sable 时启用对应场景宿主与 `enable_sable_weather_filter` |
 | **LDLib2**（`2.2.44`）/ **ModernUI** | 可选 | 仅当安装对应的 `external/uip/*` UI 提供方伴生模组时需要 |

@@ -1,6 +1,7 @@
 package lib.kasuga.create.interaction;
 
 import com.simibubi.create.content.contraptions.Contraption;
+import lib.kasuga.create.CreateContraptionBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Blocks;
@@ -30,7 +31,7 @@ public final class ContraptionBlockView implements BlockGetter {
     @Override
     public @Nullable BlockEntity getBlockEntity(BlockPos pos) {
         return contraption.getBlocks().containsKey(pos)
-                ? contraption.presentBlockEntities.get(pos) : null;
+                ? CreateContraptionBlockEntities.get(contraption, pos) : null;
     }
 
     @Override

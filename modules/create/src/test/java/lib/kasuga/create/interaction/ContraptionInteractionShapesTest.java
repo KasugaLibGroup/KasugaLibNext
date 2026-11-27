@@ -18,6 +18,8 @@ import net.minecraft.world.phys.shapes.Shapes;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -29,7 +31,7 @@ class ContraptionInteractionShapesTest {
         var lever = Blocks.LEVER.defaultBlockState();
         var captured = new CapturedBlockEntity(pos, lever);
         contraption.getBlocks().put(pos, new StructureBlockInfo(pos, lever, null));
-        contraption.presentBlockEntities.put(pos, captured);
+        contraption.blockEntities.put(pos, captured);
         var dimensions = new WorldDimensions();
         var view = new ContraptionBlockView(contraption, dimensions);
 
@@ -76,9 +78,12 @@ class ContraptionInteractionShapesTest {
     }
 
     private static final class TestContraption extends Contraption {
+        private final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
+
         @Override public boolean assemble(Level level, BlockPos pos) { return false; }
         @Override public boolean canBeStabilized(Direction facing, BlockPos pos) { return false; }
         @Override public ContraptionType getType() { return null; }
+        @Override public BlockEntity getBlockEntityClientSide(BlockPos pos) { return blockEntities.get(pos); }
     }
 
     private static final class CapturedBlockEntity extends BlockEntity {

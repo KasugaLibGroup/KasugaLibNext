@@ -24,7 +24,7 @@ sourceSets {
 }
 
 neoForge {
-    version = '21.1.238'
+    version = '21.1.268'
     parchment {
         mappingsVersion = '2024.11.17'
         minecraftVersion = '1.21.1'

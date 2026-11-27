@@ -11,7 +11,7 @@ The table below reflects the root `gradle.properties`, `build.gradle`, `gradle/w
 | Java | Java 21 (`JavaLanguageVersion.of(21)`) | `build.gradle` |
 | Gradle | `8.14.3` (Wrapper `gradle-8.14.3-bin.zip`) | `gradle/wrapper/gradle-wrapper.properties` |
 | Minecraft | `1.21.1` (range `[1.21.1]`) | `gradle.properties` |
-| Mod Loader | NeoForge `21.1.203` (`javafml`, FML range `[1,)`) | `gradle.properties`, `neoforge.mods.toml` |
+| Mod Loader | NeoForge `21.1.268` (`javafml`, FML range `[1,)`) | `gradle.properties`, `neoforge.mods.toml` |
 | ModDevGradle | `net.neoforged.moddev` `2.0.107` | `build.gradle` |
 | Parchment Mappings | MC `1.21.1` / `2024.11.17` | `gradle.properties` |
 | Shadow Plugin | `com.gradleup.shadow` `9.0.2` | `modules/library/build.gradle` |
@@ -19,7 +19,7 @@ The table below reflects the root `gradle.properties`, `build.gradle`, `gradle/w
 
 > **Fabric is not supported**: Every mod subproject targets `net.neoforged.moddev` and `javafml`.
 >
-> **About version catalogs**: This repository does not use `gradle/libs.versions.toml`; shared version properties live in the root `gradle.properties` (with per-subproject overrides where needed, such as `neo_version=21.1.238` in `external/uip/ldlib/gradle.properties` and `external/uip/ldlib-compose/build.gradle`).
+> **About version catalogs**: This repository does not use `gradle/libs.versions.toml`; shared version properties live in the root `gradle.properties`, with the external subprojects also declaring NeoForge `21.1.268` in their own build files when needed.
 
 ## Mod Identity and Distribution Artifact
 
@@ -77,7 +77,7 @@ In the current repository (`modules/library/build.gradle` and sibling `publishin
 | `:modules:shader-graal` | `lib.kasuga:shader-graal` | Optional GraalVM Polyglot/JS `24.1.2` Shader DSL frontend (runs on plain JVM) |
 | `:external:slp:javet` | `lib.kasuga.slp.javet` (`modId`: `kasuga_lib_javet`) | Optional Javet `5.0.1` V8 JavaScript engine companion mod |
 | `:external:uip:ldlib` | `lib.kasuga.uip.ldlib` (`modId`: `kasuga_lib_ldlib2`) | Optional LDLib2 `2.2.44` world-space UI provider |
-| `:external:uip:ldlib-compose` | `lib.kasuga.uip.compose` (`modId`: `kasuga_lib_ldlib_compose`) | Optional LDLib2 Compose `21.0.0.1:all` (Kotlin `2.1.20`, NeoForge `21.1.238`) |
+| `:external:uip:ldlib-compose` | `lib.kasuga.uip.compose` (`modId`: `kasuga_lib_ldlib_compose`) | Optional LDLib2 Compose `21.0.0.1:all` (Kotlin `2.1.20`, NeoForge `21.1.268`) |
 | `:external:uip:modernui` | `lib.kasuga.uip.modernui` (`modId`: `kasuga_lib_modernui`) | Optional ModernUI `eMf1VSQd` model-preview demo integration |
 
 > `:modules:old` is an archived UI prototype directory and is not wired as a runtime dependency.
@@ -148,24 +148,24 @@ The full `KasugaLibNext` build (`:modules:library`, `:modules:create`, `:externa
 | Repository URL | Dependencies and Pinned Versions | Declared In |
 | --- | --- | --- |
 | `mavenCentral()` / `gradlePluginPortal()` | Micronaut `4.9.10`, LWJGL `3.3.3`, JOML `1.10.5`, DataFixerUpper `8.0.16`, Gson `2.10.1`, Guava `32.1.2-jre`, jgltf `2.0.4`, ZXing `3.5.3`, Javet `5.0.1`, GraalVM `24.1.2` | Module `build.gradle` files |
-| `https://maven.neoforged.net/releases` | NeoForge `21.1.203`, `testframework`, `render-core` / `render-opengl` | `modules/render-core/build.gradle`, ModDevGradle |
+| `https://maven.neoforged.net/releases` | NeoForge `21.1.268`, `testframework`, `render-core` / `render-opengl` | `modules/render-core/build.gradle`, ModDevGradle |
 | `https://libraries.minecraft.net` | Shared Minecraft libraries | `modules/render-core/build.gradle` |
-| `https://maven.createmod.net` | Create `6.0.6-98` (`slim`), Ponder `1.0.59`, Flywheel `1.0.4` | `modules/library/build.gradle`, `modules/create/build.gradle` |
-| `https://maven.ithundxr.dev/snapshots` | Registrate `MC1.21-1.3.0+62` | `modules/library/build.gradle`, `modules/create/build.gradle` |
+| `https://maven.createmod.net` | Create `6.0.11-346`, Ponder `1.0.92+mc1.21.1`, Flywheel `1.0.7` | `modules/library/build.gradle`, `modules/create/build.gradle` |
+| `https://maven.ithundxr.dev/snapshots` | Registrate `MC1.21-1.3.0+67` | `modules/library/build.gradle`, `modules/create/build.gradle` |
 | `https://maven.squiddev.cc` (group `cc.tweaked`) | CC:Tweaked `cc-tweaked-1.21.1-forge:1.116.1` | `modules/library/build.gradle`, `modules/create/build.gradle` |
 | `https://maven.ryanhcode.dev/releases` (group `dev.ryanhcode.sable-companion`) | Sable Companion `sable-companion-common-1.21.1:1.6.0` (`compileOnly`) | `modules/create/build.gradle` |
 | `https://maven.firstdark.dev/snapshots` | LDLib2 `2.2.44`, `ldlib2-compose-1.21.1:21.0.0.1:all` | `external/uip/ldlib*/build.gradle` |
 | `https://api.modrinth.com/maven` | ModernUI `maven.modrinth:modern-ui:eMf1VSQd` | `external/uip/modernui/build.gradle` |
-| Local `flatDir` (`modules/modelling/libs`, `modules/iris-compat/libs`) | Dev-only compile/`localRuntime`: `sodium:neoforge-mc1.21.1-0.6.13`, `iris:neoforge-mc1.21.1-1.8.12` (never bundled in release JARs) | `modules/modelling/build.gradle`, `modules/iris-compat/build.gradle` |
+| Local `flatDir` (`modules/modelling/libs`, `modules/iris-compat/libs`) | Dev-only compile/`localRuntime`: Sodium `0.8.14-beta.2`, Iris `1.8.14-beta.1` for Minecraft 1.21.1 (never bundled in release JARs) | `modules/modelling/build.gradle`, `modules/iris-compat/build.gradle` |
 
 ## Required vs. Optional Runtime Dependencies
 
 | Component / Mod | Requirement | Behavior |
 | --- | --- | --- |
-| Minecraft `1.21.1` + NeoForge `[21.1.203,)` | Required | Enforced in `neoforge.mods.toml` |
-| Create `6.0.6-98` + Ponder + Flywheel + Registrate | Required by aggregate `kasuga-library-*-all.jar` | Although DI beans are gated via `@CreateModBeans` (`IfCreateModLoaded`), `:modules:library`'s `neoforge.mods.toml` currently declares `kasuga_lib_create.mixins.json` (`required: true`), and `CreateMixinPlugin` inspects `BezierConnection.class`—throwing `IllegalStateException` on client startup if Create is absent |
+| Minecraft `1.21.1` + NeoForge `[21.1.268,)` | Required | Enforced in `neoforge.mods.toml` |
+| Create `6.0.11-346` + Ponder + Flywheel + Registrate | Required by aggregate `kasuga-library-*-all.jar` | Although DI beans are gated via `@CreateModBeans` (`IfCreateModLoaded`), `:modules:library`'s `neoforge.mods.toml` currently declares `kasuga_lib_create.mixins.json` (`required: true`), and `CreateMixinPlugin` inspects `BezierConnection.class`—throwing `IllegalStateException` on client startup if Create is absent |
 | `kasuga_lib_javet` (`external/slp/javet`) | Optional | Supplies the Javet `5.0.1` V8 JavaScript engine; only needed when scripts/packs declare `javascript` packages. On first run `JavetDownloader` fetches V8 natives to `<gameDir>/native-libraries/javet/` |
-| Iris `1.8.12` + Sodium `0.6.13` | Optional (client-only) | `kasuga_lib_iris.mixins.json` sets `required: false`; `IrisCameraMixinPlugin` and `IrisCompat` probe Iris/Sodium ABIs at startup and fall back gracefully when absent or incompatible |
+| Iris `1.8.14-beta.1` + Sodium `0.8.14-beta.2` | Optional (client-only) | `kasuga_lib_iris.mixins.json` sets `required: false`; `IrisCameraMixinPlugin` and `IrisCompat` probe Iris/Sodium ABIs at startup and fall back gracefully when absent or incompatible |
 | Voxy / Sable | Optional | `VoxyCompat` and the `Create` Sable adapter detect presence via `ModList` / class checks |
 | Box3D native library (`kasuga_box3d`) | Optional native library | Packaged under `native/<os>-<arch>/`. When CMake was absent at build time or the current platform lacks a bundled binary, `NativeBox3D.availableOrWarn()` disables Box3D physics without breaking other features |
 | `org.jgrapht:jgrapht-core:1.5.2` | Required only if using graph APIs | Declared in `:modules:core`'s `shadowLibrary` but not in `:modules:library`'s `shadowLibrary` (`kasuga-library-*-all.jar` omits `org/jgrapht`); mods using `lib.kasuga.content.graph.*` must declare `jgrapht-core` themselves |

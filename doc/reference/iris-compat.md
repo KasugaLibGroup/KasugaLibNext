@@ -4,7 +4,7 @@
 
 ## 模块隔离与打包方式
 
-- `modules/iris-compat/build.gradle` 仅以 `compileOnly` 依赖 `:modules:modelling`（只消费编译类输出）、`:modules:core`、`:modules:inject`、`:modules:utils`，以及 `iris-neoforge-mc1.21.1-1.8.12.jar` 与 `sodium-neoforge-mc1.21.1-0.6.13.jar`。
+- `modules/iris-compat/build.gradle` 仅以 `compileOnly` 依赖 `:modules:modelling`（只消费编译类输出）、`:modules:core`、`:modules:inject`、`:modules:utils`，以及 Iris `1.8.14-beta.1` 与 Sodium `0.8.14-beta.2` 的 1.21.1 本地编译 JAR。
 - `modules/modelling/build.gradle` 在构建期把 `:modules:iris-compat` 的 `main` 输出合并进自身 `jar`、`shadowJar` 与开发运行时的 `neoForge.mods`；`modules/library/build.gradle` 通过 `useModProject(project(':modules:iris-compat'))` 收纳该模块。因此 `modules/modelling` 的主编译类路径不直接引用 Iris 类型。
 
 ## 运行时桥接与能力探测
@@ -77,7 +77,7 @@
   - Iris：`Iris`、`CapturedRenderingState`、`SystemTimeUniforms`、`SystemTimeUniforms$FrameCounter`、`ShadowRenderer`、`ImmediateState`、`WorldRenderingSettings`、`PipelineManager`、`WorldRenderingPipeline`、`IrisRenderingPipeline`、`VanillaRenderingPipeline`、`ShaderPack`、`StandardMacros`、`ProgramUniforms`。
   - Sodium：`ChunkJobTyped.execute(ChunkBuildContext)`。
 - `supportsCamera()` 全部匹配时才返回 6 个核心 mixin：`WorldViewIrisMixin`、`WorldViewIrisStateAccessor`、`WorldViewIrisTimeAccessor`、`WorldViewIrisCounterAccessor`、`WorldViewIrisMaterialsMixin`、`WorldViewIrisChunkJobMixin`。
-- 另以独立的 `hasCloudCameraAbi()` 检测 Iris 1.8.12 的 `MixinCloudRenderer.hadShadersOn` 与 Sodium `CloudRenderer.render` 签名；匹配时追加 `WorldViewIrisCloudMixin`（使该云 hook 不阻塞基础相机 ABI 门控）。
+- 另以独立的 `hasCloudCameraAbi()` 检测 `MixinCloudRenderer.hadShadersOn` 与 Sodium `CloudRenderer.render` 签名；匹配时追加 `WorldViewIrisCloudMixin`（使该云 hook 不阻塞基础相机 ABI 门控）。
 - 若任意 ABI 检查不通过，`getMixins()` 返回空列表，保证游戏正常启动；实际尝试打开带光影包的独立相机时由 `IrisRenderingIntegration.openCamera` 抛出 `IOException` 明确报错。
 
 ## 相关源码

@@ -142,7 +142,7 @@ public final class IrisCameraMixinPlugin implements IMixinConfigPlugin {
                 && hasMethod(counter, "beginFrame", "()V", Opcodes.ACC_PUBLIC);
     }
 
-    /** Keep the legacy Iris 1.8.12 cloud hook independent of the camera ABI gate. */
+    /** Keep the Iris cloud hook independent of the camera ABI gate. */
     private static boolean hasCloudCameraAbi() {
         ClassNode irisCloud = readOptionalClass(IRIS + "compat/sodium/mixin/MixinCloudRenderer.class");
         ClassNode sodiumCloud = readOptionalClass("net/caffeinemc/mods/sodium/client/render/immediate/CloudRenderer.class");

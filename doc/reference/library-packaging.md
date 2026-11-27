@@ -17,10 +17,10 @@
 | 属性 | 当前值 | 说明 |
 | --- | --- | --- |
 | `minecraft_version` / `minecraft_version_range` | `1.21.1` / `[1.21.1]` | 目标 Minecraft 版本 |
-| `neo_version` / `loader_version_range` | `21.1.203` / `[1,)` | NeoForge 与 FML loader 范围（ModDevGradle `2.0.107`） |
+| `neo_version` / `loader_version_range` | `21.1.268` / `[1,)` | NeoForge 与 FML loader 范围（ModDevGradle `2.0.107`） |
 | `parchment_minecraft_version` / `parchment_mappings_version` | `1.21.1` / `2024.11.17` | Parchment 参数映射 |
 | `mod_id` / `mod_name` / `mod_version` / `mod_group_id` | `kasuga_lib` / `KasugaLib Next` / `1.0.0` / `lib.kasuga` | 共享 mod 元数据与 Maven 坐标组 |
-| `create_version` / `ponder_version` / `flywheel_version` / `registrate_version` | `6.0.6-98` / `1.0.59` / `1.0.4` / `MC1.21-1.3.0+62` | Create 生态兼容基准 |
+| `create_version` / `ponder_version` / `flywheel_version` / `registrate_version` | `6.0.11-346` / `1.0.92` / `1.0.7` / `MC1.21-1.3.0+67` | Create 生态兼容基准 |
 | `cct_version` | `1.116.1` | CC:Tweaked 对接版本 |
 
 ## 子模块打包分类
@@ -76,7 +76,7 @@
   - `lib.kasuga.inject` -> `lib.kasuga.vendors.inject`
 - 排除签名文件：`META-INF/*.SF`、`META-INF/*.DSA`、`META-INF/*.RSA`。
 
-开发与运行期测试类路径还通过 `implementation` / `additionalRuntimeClasspath` / `compileOnly` 引入 Micronaut `4.9.10`（排除 `org.slf4j:slf4j-api`）、Create `6.0.6-98:slim`（`transitive = false`）、Ponder `1.0.59`、Flywheel API/Runtime `1.0.4`、Registrate `MC1.21-1.3.0+62` 与 CC:Tweaked `1.116.1`。
+开发与运行期测试类路径还通过 `implementation` / `additionalRuntimeClasspath` / `compileOnly` 引入 Micronaut `4.9.10`（排除 `org.slf4j:slf4j-api`）、Create `6.0.11-346`（`transitive = false`）、Ponder `1.0.92+mc1.21.1`、Flywheel API/Runtime `1.0.7`、Registrate `MC1.21-1.3.0+67` 与 CC:Tweaked `1.116.1`。
 
 ### `neoforge.mods.toml` 与 Mixin 聚合
 
@@ -102,7 +102,7 @@
 `modules/multiversion/` 是用于跨版本/兼容构建装配的独立 mod 工程骨架：
 
 - `modules/multiversion/build.gradle` 应用 `java-library`、`maven-publish`、`net.neoforged.moddev`（`2.0.107`）与 `com.gradleup.shadow`（`9.0.2`，开启 `shadowJar { zip64 = true }`）。
-- `neoForge.mods."${mod_id}"` 将 `:modules:core` 的 `sourceSets.main` 与本地 `sourceSets.main` 绑定在同一 mod 中；依赖 `:modules:inject`、Micronaut `4.9.10`、Create `6.0.6-98:slim`、Ponder `1.0.59`、Flywheel `1.0.4` 与 Registrate `MC1.21-1.3.0+62`。
+- `neoForge.mods."${mod_id}"` 将 `:modules:core` 的 `sourceSets.main` 与本地 `sourceSets.main` 绑定在同一 mod 中；依赖 `:modules:inject`、Micronaut `4.9.10`、Create `6.0.11-346`、Ponder `1.0.92+mc1.21.1`、Flywheel `1.0.7` 与 Registrate `MC1.21-1.3.0+67`。
 - 当前 `HEAD` 下该模块仅保留 `build.gradle` 与 `src/main/templates/META-INF/neoforge.mods.toml`（基础模组元数据模板，未声明 `[[mixins]]` 段），无已跟踪的 `src/main/java` 源文件。
 
 ## 验证命令
