@@ -70,7 +70,7 @@ block-collision-environment invalidation notices are forwarded to nearby environ
 
 ## Native Box3D backend
 
-- Box3D is pinned to the official `main` commit `30c67b5e6d0a3a66f0f506c69ce9e9e0587e3b7c`, with the source in
+- Box3D is pinned to the official `main` commit `336263320469e5e9febfe18697ab562488f7e97a`, with the source in
   `modules/modelling/src/main/native/box3d`; for the license see `modules/modelling/THIRD_PARTY_NOTICES.md`.
 - CMake statically links Box3D into the `kasuga_box3d` JNI library; Gradle puts the current platform's artifacts in
   `native/<os>-<arch>/`, and the runtime extracts and loads them from the jar. CI builds and tests on Linux x86-64,

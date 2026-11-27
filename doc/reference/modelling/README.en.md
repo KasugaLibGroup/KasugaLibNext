@@ -3,8 +3,8 @@
 `modules/modelling` provides KasugaLib's client-side model loading, model-instance lifecycle, Minecraft renderer backend, texture atlas integration, and related animation/physics features.
 
 For block entities that drive models through Proxy Sessions, start with
-[Proxy principles](../../explanation/proxy/README.en.md) and the
-[Proxy integration guide](../../guides/proxy-integration.en.md).
+[Proxy principles](../../explanation/proxy/README.md) and the
+[Proxy integration guide](../../guides/proxy-integration.md).
 
 This document describes the standard integration path for a mod that ships models with its resource pack, plus the validation and debugging methods to use while developing the module itself. The implementation is client-only: do not access its rendering APIs from a dedicated server.
 
@@ -63,18 +63,20 @@ For example, `"models/**/*.obj"` includes OBJ files anywhere below `models`, whi
 
 ### 3. Use a supported extension
 
-The built-in router chooses a pipeline by file extension:
+The built-in router (`PipelineRegistry.BUILTIN_ROUTES`) chooses a pipeline by file extension:
 
-| Extension | Pipeline | Source form |
-| --- | --- | --- |
-| `.geo.json` | Bedrock | JSON |
-| `.json` | Java Edition | JSON |
-| `.obj` | Wavefront OBJ | Text |
-| `.mmd.zip` | PMX/MMD archive | ZIP |
-| `.glb`, `.gltf` | glTF | Binary |
-| `.bbmodel` | Blockbench native model | Text |
+| Extension | Pipeline ID | Loader / Notes | Source form |
+| --- | --- | --- | --- |
+| `.geo.json` | `be` | `BEModelLoader` (Bedrock) | JSON |
+| `.json` | `je` | `JEModelLoader` (Java Edition) | JSON |
+| `.obj` | `obj` | `KsgObjLoader` (Wavefront OBJ) | Text |
+| `.mmd.zip` | `pmx` | `KsgPmxLoader` (PMX/MMD archive) | ZIP |
+| `.glb`, `.gltf` | `gltf` | `KsgGltfLoader` (glTF) | Binary |
+| `.bbmodel` | `bbmodel` | `KsgBbModelLoader` (Blockbench native model) | Text |
+| `.mtb`, `.fmtb` | `fmt_archive` | `FmtArchiveLoader` (ZIP archive containing `Model.txt` or `model.jtmt` and textures) | ZIP |
+| `.bob`, `.beo`, `.fmf` | `fmt_binary` | `FmtBinaryLoader` (FMT big-endian binary stream) | Binary |
 
-`.geo.json` is routed before generic `.json`. For an unsupported format, register a pipeline and a route through `PipelineRegistry` during client initialization.
+`.geo.json` is routed before generic `.json`. For `.bob`/`.beo`, `FmtBinaryLoader` resolves a sibling external texture by stripping the `models/` prefix (`textures/<path>.png`), falling back to the missing sprite when absent; the codebase also contains a standalone text-stream MTB loader class `KsgMtbLoader`, which is not wired into `PipelineRegistry.BUILTIN_ROUTES`. In addition, `PipelineRegistry.ASSEMBLY` (`"assembly"`) is a derived assembly pipeline accessed through `PipelineRegistry.assemblies()` (`McModelAssemblies`) and `McModelHandle.ofAssembly(...)` rather than an extension-routed file loader. For an unsupported format, register a pipeline and a route through `PipelineRegistry` during client initialization.
 
 ## Creating And Rendering An Instance
 
@@ -137,6 +139,32 @@ The repository has runnable content-testing examples in:
 ```text
 modules/modelling/src/contentTesting/resources/assets/kasuga_lib/models/block/test/blockbench/
 ```
+
+## Lighting Modes, Global Batching, Assemblies, and Live Sync
+
+### Lighting Modes (`ModelLightingMode` / `ModelLighting` / `ModelLightingDefaults`)
+
+- `ModelLightingMode` (`lib.kasuga.rendering.models.uml.backend.ModelLightingMode`) defines the per-instance lighting intent: `PBR` (default) and `BLOCK` (vanilla block/item shading).
+- `ModelLightingDefaults.register(ResourceLocation model, ModelLightingMode mode)` registers content-owned default lighting modes per model resource ID; defaults survive resource reloads, and `KasugaModelPipelines.createAndBind` applies `ModelLightingDefaults.resolve(modelLoc)` automatically when creating instances (defaulting to `ModelLightingMode.PBR` when unregistered).
+- Hosts can override an instance or handle via `ModelInstance.setLightingMode(mode)` or `McModelHandle.setLightingMode(mode)` (buffered until mount and reapplied after resource replacement); data-driven `proxy_model_be` block entities expose `"pbr"` or `"vanilla_block"` under `params.lighting_mode`.
+- `ModelLighting` (`lib.kasuga.rendering.models.mc.backend.ModelLighting`) packages the mode, item flag, and directional shade factors (`downShade`, `upShade`, `zShade`, `xShade`) as an immutable record constructed via `ModelLighting.world(mode, level)` (sampling `level.getShade(...)`) or `ModelLighting.item(mode)`. It forms part of `GlobalModelBatcher`'s batch key and drives `ksg_LightingMode` (`0` = PBR, `1` = world block shading, `2` = vanilla item diffuse lighting) and `ksg_BlockShade` on `KasugaShaderInstance` / `KasugaGlobalBatchShaderInstance`.
+
+### Global Batching and Automatic Instancing (`GlobalModelBatcher` / `FlatModelData` / `KasugaGlobalBatchShaderInstance`)
+
+- On the non-Iris `OPAQUE` and `MASK` passes, `MCBackend.renderObjectsInternal` collects eligible instances into `GlobalModelBatcher`; `TRANSLUCENT` is excluded from global batching so WBOIT and sorted translucent ordering remain intact.
+- `GlobalModelBatcher` groups draws by `BatchKey` (pass, `VertexFormat.Mode`, emissive strength, ambient light enhancement, `DepthBias`, and `ModelLighting`), packs per-object transforms, normal matrices, brightness, bone offset, GPU-skinning flag, lightmap, and overlay into the `ksg_InstanceData` TBO (`9` texels / `36` floats per object, texture unit `10`), and packs bone matrices into the `ksg_BoneTransforms` TBO (`36` floats per bone, texture unit `11`), uploaded via `TextureUploadRing` and rendered with `KasugaGlobalBatchShaderInstance` (`kasuga_lib:ksglib_global_batch`).
+- **Automatic instancing**: When `KasugaGlobalBatchShaderInstance` exposes `ksg_Instanced`, contiguous GPU-skinned (`!usesCpuSkinning()`) runs in a batch share the same `Model`, and `FlatModelData.shareBatchGeometry(...)` confirms identical vertex payloads (ignoring per-instance packed `UV1`/`UV2` lightmap and overlay shorts that are fetched from `ksg_InstanceData`), `GlobalModelBatcher` issues a shared-VBO instanced draw (`GL31.glDrawElementsInstanced` with `ksg_Instanced = 1` reading `gl_InstanceID`, instead of merging vertices and patching `UV1.x`) whenever `shouldInstance(...)` holds (at least `2` objects and either the whole batch is one run or `(count - 1) * meshBytes >= 16 KiB`). Chunks split at `MAX_OBJECTS_PER_BATCH` (`Short.MAX_VALUE`) and the hardware `GL_MAX_TEXTURE_BUFFER_SIZE` limit.
+
+### Model Assemblies and Dummy Transform Groups (`McModelAssemblies` / `McDummyModels`)
+
+- `McModelAssemblies` adapts `ModelAssemblyRegistry<McModelAssemblies.Reference, ResourceLocation>` and `ModelAssemblyCache` onto `PipelineRegistry.ASSEMBLY` (returned by `PipelineRegistry.assemblies()`). It supports referencing published models via `McModelAssemblies.Reference(model, modelName)`, programmatic `register`/`unregister`, atomic resource updates (`replaceResourceDefinitions` / `publishResourceGeneration`), dependent-model invalidation on source changes, and `McModelHandle.ofAssembly(...)` / `switchAssembly(...)`. See [Model assembly and outfit cache API](../model-assembly.md) and [Minecraft outfit resources and instance switching API](../minecraft-model-assembly.md).
+- `McDummyModels.create()` / `McDummyModels.create(@Nullable Transform rootTransform)` creates a non-renderable transform-only `DummyModelInstance` (`Model.isRenderable() == false`, no vertices, meshes, or bone TBOs) and registers it with `MinecraftModelRuntime` for automatic per-frame evaluation; callers can add runtime anchors (`defineAnchor`, `setAnchorTransform`) and attach children (`attach(anchorName, child[, localOffset])`), and `close()` detaches children while unregistering the dummy. See [Anchor and Minecraft equipment attachment](../anchors.md).
+
+### Live Local Model Sync (`LiveModelSync`)
+
+- `LiveModelSync` (`lib.kasuga.rendering.models.mc.component.LiveModelSync`) provides an opt-in local development bridge: it opens `resourcepacks/kasuga_live` as a `DirectoryVfs`, mounts it via `ResourceSystem.mountClientScoped(...)`, ensures `pack.mcmeta` (`pack_format: 34`) and the `file/kasuga_live` pack selection, and polls `.kasuga-sync.json` (`version: 1`, `generation`, up to 8 KiB) every `100 ms` on `ClientTickEvent.Post` while no loading overlay is active.
+- `LiveModelSyncState` applies a `350 ms` debounce and single-flight gate before calling `Minecraft#reloadResourcePacks()`, logging `KASUGA_LIVE_MODEL_RELOAD_COMPLETE` on completion.
+- Client commands: `/kasuga_models live start`, `/kasuga_models live stop`, `/kasuga_models live status`.
 
 ## Development And Debugging
 
@@ -213,4 +241,7 @@ Inspect `logs/latest.log` after a resource reload or client run.
 | Built-in pipelines and extension routes | `modules/modelling/src/main/java/lib/kasuga/rendering/models/mc/registry/PipelineRegistry.java` |
 | Model lifecycle API | `modules/modelling/src/main/java/lib/kasuga/rendering/models/uml/dynamic/ModelPipeLine.java` |
 | Blockbench loader | `modules/modelling/src/main/java/lib/kasuga/rendering/models/mc/typo/bbmodel/KsgBbModelLoader.java` |
+| FMT archive / binary / MTB loaders | `modules/modelling/src/main/java/lib/kasuga/rendering/models/mc/typo/fmt/FmtArchiveLoader.java`, `FmtBinaryLoader.java`, `mtb/KsgMtbLoader.java` |
+| Lighting, batching, assemblies, dummies, and live sync | `ModelLightingDefaults.java`, `ModelLighting.java`, `GlobalModelBatcher.java`, `McModelAssemblies.java`, `McDummyModels.java`, `LiveModelSync.java` |
 | Resource-proxy matcher | `modules/modelling/src/main/java/lib/kasuga/rendering/models/mc/source/model/ModelProxyConfig.java` |
+| Iris compatibility and built-in effects/audio | [Iris Compatibility Layer](../iris-compat.md), [Built-in Effects and Spatial Audio](../builtin-effects-and-audio.md) |

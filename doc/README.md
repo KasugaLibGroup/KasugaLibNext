@@ -1,16 +1,16 @@
 # KasugaLibNext 文档
 
-本站是 KasugaLibNext 及其下游模组的开发文档，面向要接入渲染、模型与数据驱动能力的模组作者。
+本站是 KasugaLibNext 及其下游模组的开发文档，面向要接入核心注册、依赖注入、脚本、渲染、模型、数据驱动与 Create 集成能力的模组作者。
 
 ## 站内结构
 
 | 节 | 适合的读者 | 内容 |
 | --- | --- | --- |
-| [getting-started/](getting-started/) | 第一次接入 | 从零建立工程、跑通第一个示例 |
-| [guides/](guides/) | 带着明确任务来 | 上手教程、示例配方与验证步骤 |
-| [reference/](reference/) | 对照签名查阅 | 接口、配置 schema、命令与失败行为 |
-| [explanation/](explanation/) | 想理解机制 | 模块边界、数据流、算法与资源所有权 |
-| [meta/](meta/) | 项目与版本 | 兼容矩阵、迁移指南、许可证、贡献者文档与验证记录 |
+| [getting-started/](getting-started/) | 第一次接入 | 依赖与运行环境、最小示例工程与安装部署 |
+| [guides/](guides/) | 带着明确任务来 | 数据驱动上手、内容与 Proxy 接入、世界显示与光源、模型碰撞、示例配方与验证步骤 |
+| [reference/](reference/) | 对照签名查阅 | Core/Inject/Utils、脚本与 Gradle 构建、数据驱动、模型与渲染、Create 集成的接口、schema 与命令 |
+| [explanation/](explanation/) | 想理解机制 | 线程模型、数据驱动 v2、Proxy、动画作用域与目标、渲染管线、物理与模块边界 |
+| [meta/](meta/) | 项目与版本 | 兼容矩阵、迁移指南、更新日志、许可证、贡献者文档、已知限制、使用方、术语表与验证记录 |
 
 ## 文档维护
 

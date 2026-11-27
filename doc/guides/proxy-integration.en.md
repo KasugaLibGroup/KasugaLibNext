@@ -5,8 +5,8 @@ model animation. The target is one `ProxyDefinition`, one `ProxySession`, and on
 `ManagedAnimationScope` per element instance, with typed ports separating host, logic, and visual
 concerns.
 
-Read [Proxy system principles](../explanation/proxy/README.en.md) first, especially the lifecycle,
-tick/frame boundary, and port definitions.
+Read [Proxy system principles](../explanation/proxy/README.md) first, especially the session
+lifecycle, tick/frame boundary, and port definitions.
 
 ## Choose the Host Integration
 
@@ -90,6 +90,39 @@ create(MyBlockEntity element) {
 
 When a visual needs to replace models, reuse `RigidPartVisualStage` or
 `DeferredModelPoseTarget`; do not create another `ManagedAnimationScope`.
+
+When a playback graph is needed, use the extended `ProxyComposition.of(...)` overload and pass
+initial `ProxyPlaybackRoot`s, `TargetBinding`s, and a `PlaybackCommandApplierFactory`:
+
+```java
+return ProxyComposition.of(
+        policy, input, controller, writeback,
+        ProxyCommandPort.none(), visual,
+        List.of(poseBinding),
+        List.of(new ProxyPlaybackRoot("idle", idleBinding)),
+        ScopedPlaybackCommandApplier.factory(
+                Map.of("idle", idleBinding, "active", activeBinding))
+);
+```
+
+The controller emits `Play`, `Stop`, `Pause`, `Resume`, `Seek`, `SetSpeed`, `SetBoundaryPolicy`, or
+`Replace` via `ControlFrame.commands()`. After the scope is created, the factory binds its
+`PlaybackControlPort`; `ScopedPlaybackCommandApplier` stages the playback registry per logical step
+and restores it on failure. Definition IDs and clip content belong to the caller's presentation
+configuration, while state-to-playback selection rules remain owned by the controller.
+`PlaybackCommand.Play.placementStart` may be negative so playback windows such as `PING_PONG` can
+continue from a committed intermediate time; it is still advanced by the same `RootTimeline`
+without creating a second clock.
+
+Data-driven `proxy_model_be` uses the same Proxy path. A single model can still declare `model`;
+when loading multiple sub-parts simultaneously, declare `model_groups`, where each part uses a
+stable `id`, model resource, and optional `local` transforms. Registration builds an immutable
+`CompiledModelGroup` containing only resolved geometry and part identities; handles,
+`ModelInstance`s, and playback state are created in later runtime phases. `model_by_state` selects a
+whole group ID, and every group must keep the same ordered list of part IDs so switching groups
+preserves `kasuga:part_root` target addresses and the visual layer atomically swaps the underlying
+model instances. Gameplay interactions and animation policies remain owned by the content mod's
+dedicated `Block` and controller.
 
 ## 3. Make the Block Entity Implement ProxySessionHost
 
@@ -251,4 +284,4 @@ At minimum, assert that:
 | Animation restarts after resource reload | `rebind()` reuses the original session instead of rebuilding the scope |
 | An old callback controls a new element | Attach tokens are not reused across element rebuilds |
 
-See [Proxy principles](../explanation/proxy/README.en.md) for the system boundary and lifecycle diagrams.
+See [Proxy principles](../explanation/proxy/README.md) for the system boundary and lifecycle diagrams.

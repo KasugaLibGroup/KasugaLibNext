@@ -89,7 +89,7 @@ ContentSource source = ContentSourceFactory.snapshot(
 | `on_register` | `string[]` | 启动时解析并构建 `Reg` | 合法，表示显式声明但没有注册文件 |
 | `on_reload` | `string[]` | Manager 首次挂接及每次 `/reload` 时从包栈解析 | 合法，表示显式声明但没有 reload 文件 |
 
-两个字段都可省略，但不能同时省略。一个只知道 `on_reload` 的包是合法的纯 reload 来源。
+两个字段都可省略，但不能同时省略。一个只声明 `on_reload` 的包是合法的纯 reload 来源。
 
 路径必须：
 
@@ -243,7 +243,7 @@ handler 内部的未知 object 键是否报错由 handler 自己决定。内建 
 
 `type` 必须对应已注册 factory。声明 `state_properties` 时 factory 还必须实现 `StatefulBlockFactory`。
 
-`properties` 与 `item_properties` 的具体键见下表。内建 parser 对未知键以及多数值类型错误只记录 warning 并忽略该修饰器；STRICT 不会自动把所有这类问题升级为 blocking error。发布流程若需要严格字段校验，应扩展 parser 或在专用 handler 中补充 `validate`。
+`properties` 与 `item_properties` 的具体键见下表。在 `apply` 阶段，内建 parser（`parseBlockProperties` / `parseItemProperties`）对未知键以及多数值类型错误只记录 warning 并忽略该修饰器；但在 STRICT 模式下，内建 handler 的 `validate` 会调用 `JsonPropertyParser.validateStrict` 与 `JsonItemParser.validateStrict`，把未知键及非法内建属性值升级为阻止构建的 `CONTENT_INVALID` 错误（自定义属性键可通过 `registerStrictCompiler` / `registerStrictParser` 接入严格校验）。
 
 ### 方块属性 `properties`
 
@@ -315,7 +315,7 @@ handler 内部的未知 object 键是否报错由 handler 自己决定。内建 
 | `properties` | object | 否 | 物品属性和创造栏 |
 | `params` | object | 否 | 传给 item factory |
 
-独立物品只 claim `minecraft:item`。方块物品由 block factory 的“同时创建设方块物品”能力派生，见 [工厂与注册组](07-factories-groups-integration.md)。
+独立物品只 claim `minecraft:item`。方块物品由 block factory 的 `createsBlockItem` 能力派生，见 [工厂与注册组](07-factories-groups-integration.md)。
 
 ## 内嵌 `block_entity`
 

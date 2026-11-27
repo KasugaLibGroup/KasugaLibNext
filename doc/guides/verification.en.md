@@ -49,9 +49,10 @@ A Quick Play save must already exist under `saves/` in the isolated directory; u
 | MMD/glTF models, native ragdoll | [model runtime entry points](../reference/modelling/README.md), [configuration/deployment](../reference/mmd-ragdoll.md) |
 | Full GUI and pixel-by-pixel checks of the final output | [Frame Output](../reference/frame-output.md#verification-entry) |
 | Cameras, shared timeline and windows | [Camera Animation](../reference/camera-animation.md), [multi-camera](../reference/multi-camera-output.md) |
+| Nebula OBJ/PBR, MRT, volumetric smoke, and fixed-frame capture | [Nebula demo](nebula-demo.md), `scripts/nebula-sim.py --test`; check `report.json` in the output directory |
 | Alpha/OIT submit order and debug buffers | [Alpha/OIT](../reference/render-alpha-passes.md#visual-acceptance-scene-contenttesting) |
-| World UI free cursor, text, scrolling, and dragging | [World UI Input](../reference/world-ui-input.en.md#development-acceptance) |
-| GraalJS shader generation, world pixels, and parameter editor | [Shader DSL](../reference/shader-dsl.en.md#graaljs-scripting), `-PkasugaTestGraalShader=true`; check `debug/graal-shader/report.json` |
+| World UI free cursor, text, scrolling, and dragging | [World UI Input](../reference/world-ui-input.md#development-acceptance) |
+| GraalJS shader generation, world pixels, and parameter editor | [Shader DSL](../reference/shader-dsl.md#graaljs-scripting), `-PkasugaTestGraalShader=true`; check `debug/graal-shader/report.json` |
 | Multi-layer sky and a single cloud | [Volumetric clouds](../reference/volumetric-clouds.md#examples-and-verification) |
 
 ## Recording The Verification Scope

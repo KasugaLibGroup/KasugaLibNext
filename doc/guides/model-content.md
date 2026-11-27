@@ -2,7 +2,7 @@
 
 本文只回答一件事：**当一个方块或物品交给本项目的渲染管线来画时，`blockstate` 与原版 `models/item/*.json` 应该怎么写。**
 
-接口签名见 [ItemModelRenderers](../reference/item-model-renderers.md)；世界内方块如何绑定状态机/模型见 [FSM](../reference/fsm.md) 与 [ProxyHost 内容接入](../reference/fsm.md)。
+接口签名见 [ItemModelRenderers](../reference/item-model-renderers.md)；世界内方块如何绑定状态机/模型见 [FSM](../reference/fsm.md) 与 [把内容接入 Proxy Kernel](proxy-integration.md)。
 
 ## 1. 先选路径
 

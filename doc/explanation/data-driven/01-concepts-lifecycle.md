@@ -102,13 +102,13 @@ provider 返回 `null` 表示该 mod 本轮没有 JSON 注册树。provider 抛�
 6. 解析内嵌类型；
 7. 调用每个 definition 的 `resolveIdentity`；
 8. 只解析检查 `on_reload` 文件，不把它注册到 reload 桶；
-9. 在 STRICT 模式检查 handler capabilities；
+9. 在 STRICT 模式检查 handler capabilities、`strictValidationImplemented()` 与唯一 identity role；
 10. 根据 `BuildOptions` 选择定义；
 11. 在 STRICT 模式调用 `validate`，检查引用、资源和工厂；
 12. 检查 selected `parentDefinition` 环；
 13. 调用 selected `claims`，检查 reserved key 和重复 claim。
 
-`prepare` 不调用 `apply`。它仍会调用 `parse`、`resolveIdentity(...)`、`capabilities`、`validate`、`parentDefinition`、`claims` 以及 reload decoder，所以这些方法都必须无副作用。pipeline 按 `BuildOptions` 选择 DefinitionKey 的 LEGACY 或 STRICT 身份规则。自定义 `apply` 抛异常仍会使 build 返回 `FAILED`；内建注册 handler 在非 strict context 中会转为日志后继续。STRICT 在进入上述逻辑前由 `StrictResourceJson` 解码每个 manifest/content/reload 文件：根必须是单个 object，重复键、注释、尾逗号、非法 UTF-8、超过 64 层或 100,000 个节点都会产生 blocking diagnostic。
+`prepare` 不调用 `apply`。它仍会调用 `parse`、`resolveIdentity(...)`、`capabilities`、`strictValidationImplemented`、`validate`、`parentDefinition`、`claims` 以及 reload decoder，所以这些方法都必须无副作用。pipeline 按 `BuildOptions` 选择 DefinitionKey 的 LEGACY 或 STRICT 身份规则。自定义 `apply` 抛异常仍会使 build 返回 `FAILED`；内建注册 handler 在非 strict context 中会转为日志后继续。STRICT 在进入上述逻辑前由 `StrictResourceJson` 解码每个 manifest/content/reload 文件：根必须是单个 object，重复键、注释、尾逗号、非法 UTF-8、超过 64 层或 100,000 个节点都会产生 blocking diagnostic。
 
 如果一个来源在处理过程中抛出未捕获的 `RuntimeException`，pipeline 会把它记录为 `SOURCE_READ_FAILED` 并继续处理其他来源，但不会撤销该来源此前已经解析的文件或 definition。STRICT 会因 blocking diagnostic 拒绝 build；LEGACY 仍可能带着部分结果继续。
 
@@ -129,7 +129,7 @@ provider 返回 `null` 表示该 mod 本轮没有 JSON 注册树。provider 抛�
 | `APPLIED` | 所有 selected apply 与 finalizer 成功 | 是 |
 | `FAILED` | context 创建、排序、apply 或 finalizer 抛出运行时异常 | 可能已执行部分 apply；通常保留不完整 root |
 
-`BuildResult.successful()` 只在 `APPLIED` 时为 true。`BuildResult.applied()` 对 `APPLIED` 和 `FAILED` 都返回 true，因为它表示“没有在 apply 前拒绝”。调用方应根据意图选对方法。
+`BuildResult.successful()` 和 `BuildResult.applied()` 都只在 `status == Status.APPLIED` 时返回 true（在 `FAILED` 和 `REJECTED` 时均返回 false）。调用方排查 `FAILED` 时应检查 `status()` 与 `cause()`，除非确认部分副作用安全，否则不要挂载不完整的 `rootGroup`。
 
 注意 `prepared.hasBlockingDiagnostics()` 只看 `Severity.ERROR`。LEGACY build 不读取这个谓词来阻止 apply，所以一个 LEGACY 结果可能同时是 `APPLIED` 且带有 error diagnostic。`successful()` 表示 apply 流程完成，不表示输入没有问题。
 

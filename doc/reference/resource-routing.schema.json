@@ -16,7 +16,7 @@
       "required": ["id", "entry_point_id", "when", "side"],
       "properties": {
         "id": {"$ref": "#/$defs/id"}, "entry_point_id": {"$ref": "#/$defs/id"},
-        "when": {"enum": ["bootstrap", "client_startup", "server_startup", "resource_reload", "remote_connect"]},
+        "when": {"enum": ["host_bootstrap", "client_startup", "server_startup", "resource_reload", "remote_connect"]},
         "side": {"enum": ["client", "server", "both", "none"]},
         "target_prefix": {"$ref": "#/$defs/path"}
       }

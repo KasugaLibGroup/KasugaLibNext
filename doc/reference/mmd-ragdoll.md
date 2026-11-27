@@ -63,7 +63,7 @@ world.step(dt, RigidBodyWorld.KinematicDriver.none());
 
 ## Box3D 原生后端
 
-- Box3D 固定在官方 `main` 提交 `30c67b5e6d0a3a66f0f506c69ce9e9e0587e3b7c`，
+- Box3D 固定在官方 `main` 提交 `336263320469e5e9febfe18697ab562488f7e97a`，
   源码位于 `modules/modelling/src/main/native/box3d`；许可证见
   `modules/modelling/THIRD_PARTY_NOTICES.md`。
 - CMake 将 Box3D 静态链接进 `kasuga_box3d` JNI 库；Gradle 把当前平台产物放入

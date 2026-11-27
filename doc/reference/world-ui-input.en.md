@@ -1,9 +1,8 @@
 # World UI and Free-Cursor Input
 
 Package: `lib.kasuga.rendering.models.mc.backend.ui`. Call these APIs on the Minecraft client thread.
-For coordinate transforms and input ownership, see the [design](../explanation/world-ui-input.en.md).
-For Create attachments, see [Scenes and UI on moving structures](moving-scene-hosts.en.md).
-[中文](world-ui-input.md).
+For coordinate transforms and input ownership, see the [design](../explanation/world-ui-input.md).
+For Create attachments, see [Scenes and UI on moving structures](moving-scene-hosts.md).
 
 ## Integrating an Existing Screen
 

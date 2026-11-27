@@ -21,7 +21,7 @@
 }
 ```
 
-`data_driven_block` 是库提供的普通方块工厂，同时创建默认的方块物品。属性类型如下：
+`data_driven_block` 是库提供的普通方块工厂，同时创建默认的方块物品（注：v2 `DataDrivenBuildPipeline` 宿主若未调用 `JsonTreeBuilder.ensureHandlersRegistered()`，需显式调用 `DataDrivenBlockFactory.registerIfAbsent()` 注册它）。若需要直接配合状态属性驱动模型渲染，modelling 模块还内建了同样实现 `StatefulBlockFactory` 的 [`proxy_model`](schema.md#29-内建-proxy_model-proxy_model_be-参数)，可自动处理 `HORIZONTAL_FACING` / `DOOR_HINGE` 的放置、旋转与镜像。属性类型如下：
 
 | `type` | 字段 | Minecraft 属性类型 | 省略 `default` 时 |
 |---|---|---|---|
@@ -34,7 +34,7 @@
 
 `vanilla` 条目的键名必须等于该常量的实际属性名。例如 `HORIZONTAL_FACING` 的键应为 `facing`。要使用 `state.getValue(BlockStateProperties.OPEN)` 或 `setValue(BlockStateProperties.OPEN, ...)`，应像示例一样显式引用 `OPEN`；`boolean` 会新建属性，即使名称同为 `open`，也需要从对应方块的 `getStateDefinition().getProperty("open")` 取回实际实例。其他自定义属性同样按方块和名称查找，不应把不同方块上的实例混用。
 
-JSON 格式无效时会进入注册期诊断并跳过该条方块；未声明 `state_properties` 的旧工厂保持原有行为。声明了状态属性的方块必须使用支持状态的工厂，否则会记录错误并跳过。`data_driven_block` 不添加门的开关、红石或其他交互：玩法代码应在服务端修改真实方块状态。状态模型、物品模型、掉落及本地化仍需单独提供。
+JSON 格式无效时会进入注册期诊断并跳过该条方块（v2 `STRICT` 模式会在 `parse` 阶段因 `PARSE_FAILED` 拒绝整批构建）；未声明 `state_properties` 的旧工厂保持原有行为。声明了状态属性的方块必须使用支持状态的工厂（实现 `StatefulBlockFactory`），否则会记录错误并跳过（`STRICT` 模式在 `validate` 阶段报 `UNKNOWN_FACTORY`）。`data_driven_block` 不添加门的开关、红石或其他交互：玩法代码应在服务端修改真实方块状态。状态模型、物品模型、掉落及本地化仍需单独提供。
 
 这些属性在启动注册时建立，`/reload` 不能改变它们。客户端和服务端必须使用相同的方块及属性定义。属性名、取值和方块 ID 都会进入存档：已发布后变更它们可能使旧状态回退或丢失，框架不提供自动迁移，升级或降级前应备份世界。
 
@@ -45,7 +45,7 @@ Minecraft 会在 `Block` 的父构造函数中调用 `createBlockStateDefinition
 ```java
 FactoryRegistry.register("mymod:custom_block", (StatefulBlockFactory) (id, params, states) ->
     blockWithItem(id, properties -> StatePropertyContext.construct(states,
-        () -> new MyBlock(properties))));
+        () -> new MyBlock(properties))), true);
 ```
 
 其中 `blockWithItem` 可沿用[工厂扩展指南](../../guides/data-driven/guide-extension.md)中的辅助函数。方块类同时在状态定义和默认状态两个位置接入：
@@ -97,7 +97,7 @@ BlockState other = charging.with(state, false);           // 仅返回新的状�
 Property<Boolean> minecraftProperty = charging.property();
 ```
 
-`set` 必须在服务端线程调用，默认使用 Minecraft 更新标志 `3`；另有接受 `flags` 的重载。同值或世界拒绝更新时返回 `false`；成功返回值遵循 `Level#setBlock`，邻居后续反应仍可能再次改变状态。`get`、`with` 和 `set` 遇到错误的方块、属性名、值类型或非法值会抛异常，不会静默改错属性。
+`set` 必须在服务端线程调用，默认使用 Minecraft 更新标志 `3`（`Block.UPDATE_ALL`）；另有接受 `flags` 的重载。同值或世界拒绝更新时返回 `false`；成功返回值遵循 `Level#setBlock`，邻居后续反应仍可能再次改变状态。`get`、`with` 和 `set` 遇到错误的方块、属性名、值类型或非法值会抛异常，不会静默改错属性。
 
 ## onChange
 
@@ -116,7 +116,7 @@ subscription.close();
 
 回调同步运行在 NeoForge 的 `onBlockStateChange` 中，此时**禁止修改世界**。`StateProperty.set` 会在回调中拒绝写入；不要绕过它直接调用 `Level#setBlock`，需要修改世界时应把工作交给后续安全的服务端 tick。纯 `with` 不修改世界，可以在回调中使用。
 
-内置 `DataDrivenBlock` 已转发钩子。自定义方块除上面的状态定义接线外，还需转发一次；如果父类已经转发，不要重复调用：
+内置 `DataDrivenBlock`（及 `ProxyModelBlock`）已转发钩子。自定义方块除上面的状态定义接线外，还需转发一次；如果父类已经转发，不要重复调用：
 
 ```java
 @Override

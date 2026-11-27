@@ -43,12 +43,32 @@ blend factors、color/depth mask。场景深度从 Iris 的 after-translucent de
 复制，resolve 也回写同一个 framebuffer；只允许专用的 OIT composite shader 绕过 Iris
 unknown-shader guard，不放宽其他 mod shader 的兼容策略。
 
+### `IrisOitCompat` 与 `CompatCapability` 回退路径
+
+`OitRenderer` 通过 `IrisOitCompat`（`lib.kasuga.rendering.models.mc.compat.iris.IrisOitCompat`）和
+`IrisCompat` 调用隔离模块 [modules/iris-compat](iris-compat.md) 中的 `IrisWorldFramebuffer`。
+后者在 `CompatCapability<BooleanSupplier>`（`lib.kasuga.core.compat.CompatCapability`）中探测并链接
+`Iris::getPipelineManager`、`PipelineManager::getPipelineNullable`、`IrisRenderingPipeline::bindDefault`
+以及 `IrisApi.getInstance()::isRenderingShadowPass` 的精确描述符。
+
+遇到以下任一情况时，`OitRenderer` / `IrisWorldFramebuffer` 会安全降级到排序半透明路径（不会静默把
+sorted fallback 报告为 WBOIT）：
+
+- `CompatCapability` 探测因 Iris / Sodium 版本 ABI 变化（如 `ReflectiveOperationException`、
+  `InaccessibleObjectException` 或 `LinkageError`）失败。
+- 当前处于 Iris shadow pass（`isRenderingShadowPass()` 为 `true`），或 active pipeline 为空 /
+  不是 `IrisRenderingPipeline`。
+- 浮点目标不可用、OpenGL 3.0 `< 2` 个 color attachment / draw buffer、资源重载后缺少
+  `OitCompositeShaderInstance` / OIT `RenderType`，或运行时 framebuffer 操作抛异常。
+
+降级时 `IrisOitCompat.reportFallback(reason, cause)` 会在渲染线程去重记录警告日志（包含当前
+`iris` 与 `sodium` 版本），并弹出一次客户端 `SystemToast`
+（`kasuga_lib.oit.fallback.title` / `kasuga_lib.oit.fallback.iris`）。
+
 WBOIT 是近似算法，不是精确的任意层 source-over，也不把 vanilla 水面或 shaderpack
 的透明片元纳入同一个 OIT 方程；当前阶段仍是 `AFTER_TRANSLUCENT_BLOCKS`，所以它的
-作用域是“KasugaLib BLEND 层叠加到已经完成的场景”。浮点目标不可用、Iris pipeline
-没有可绑定的 world framebuffer 或运行时 framebuffer 操作失败时，安全回退到旧的
-远到近排序路径。Iris OIT 只 resolve 主颜色；依赖自定义额外 gbuffer 通道表达透明材质的
-shaderpack 仍可能需要 pack 专用集成。
+作用域是“KasugaLib BLEND 层叠加到已经完成的场景”。Iris OIT 只 resolve 主颜色；
+依赖自定义额外 gbuffer 通道表达透明材质的 shaderpack 仍可能需要 pack 专用集成。
 
 MASK 的材质 `alphaCutoff` 与 BLEND 的 `1/255` 近零工作 cutoff 是两个独立概念：前者
 决定是否写入深度，后者只移除几乎不可见的 OIT 工作项。

@@ -95,7 +95,7 @@ flowchart LR
 
 动态数据使用 `samplerBuffer DataSampler`，经 `FullscreenPassBuilder.bufferSampler` 在 shader apply 后绑定。TBO 固定使用纹理单元 7，保留其他 2D sampler 单元；公共 sampler JSON 条目不能当成普通 `getUniform()` 处理。
 
-布局共 384 个 `vec4`，即 `64 × 6 × 16 = 6144` 字节，每帧完整上传。旧行号仅用于理解打包，实际 shader 以 `texelFetch(buffer, row * 64 + column)` 读取。
+布局共 384 个 `vec4`，即 `64 × 6 × 16 = 6144` 字节，每帧完整上传。旧行号仅用于理解打包，实际 shader 以 `texelFetch(DataSampler, y * 64 + x)` 读取（`y` 为行、`x` 为列）。
 
 | 区间（vec4 索引） | 内容 |
 | --- | --- |

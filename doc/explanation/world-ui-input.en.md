@@ -2,8 +2,7 @@
 
 A transparent input Screen lets players move the system cursor freely in front of world-space UI.
 Crosshair and free-cursor modes share the same plane-intersection and event-routing stages.
-For API contracts, units, integration, and acceptance commands, see the [reference](../reference/world-ui-input.en.md).
-[中文](world-ui-input.md).
+For API contracts, units, integration, and acceptance commands, see the [reference](../reference/world-ui-input.md).
 
 ```mermaid
 flowchart LR

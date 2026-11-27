@@ -2,7 +2,7 @@
 
 This page answers one question: **when a block or item is drawn by this project's render pipeline, how should `blockstate` and the vanilla `models/item/*.json` be written?**
 
-API signatures live in [ItemModelRenderers](../reference/item-model-renderers.md); binding a world block to a state machine/model is covered by [FSM](../reference/fsm.md).
+API signatures live in [ItemModelRenderers](../reference/item-model-renderers.md); binding a world block to a state machine/model is covered by [FSM](../reference/fsm.md) and [Integrating Content With the Proxy Kernel](proxy-integration.md).
 
 ## 1. Pick the path first
 

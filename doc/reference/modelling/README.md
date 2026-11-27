@@ -62,18 +62,20 @@ JSON 对象的键是命名空间，值为需要扫描的资源路径模式数组
 
 ### 3. 使用受支持的扩展名
 
-内置路由器依据文件扩展名选择管线：
+内置路由器（`PipelineRegistry.BUILTIN_ROUTES`）依据文件扩展名选择管线：
 
-| 扩展名 | 管线 | 源数据形式 |
-| --- | --- | --- |
-| `.geo.json` | Bedrock | JSON |
-| `.json` | Java Edition | JSON |
-| `.obj` | Wavefront OBJ | 文本 |
-| `.mmd.zip` | PMX/MMD 压缩包 | ZIP |
-| `.glb`、`.gltf` | glTF | 二进制 |
-| `.bbmodel` | Blockbench 原生模型 | 文本 |
+| 扩展名 | 管线 ID | Loader / 说明 | 源数据形式 |
+| --- | --- | --- | --- |
+| `.geo.json` | `be` | `BEModelLoader`（Bedrock） | JSON |
+| `.json` | `je` | `JEModelLoader`（Java Edition） | JSON |
+| `.obj` | `obj` | `KsgObjLoader`（Wavefront OBJ） | 文本 |
+| `.mmd.zip` | `pmx` | `KsgPmxLoader`（PMX/MMD 压缩包） | ZIP |
+| `.glb`、`.gltf` | `gltf` | `KsgGltfLoader`（glTF） | 二进制 |
+| `.bbmodel` | `bbmodel` | `KsgBbModelLoader`（Blockbench 原生模型） | 文本 |
+| `.mtb`、`.fmtb` | `fmt_archive` | `FmtArchiveLoader`（ZIP 内含 `Model.txt` 或 `model.jtmt` 及贴图） | ZIP |
+| `.bob`、`.beo`、`.fmf` | `fmt_binary` | `FmtBinaryLoader`（FMT 大端二进制流） | 二进制 |
 
-`.geo.json` 的路由优先于通用 `.json`。若需使用不受支持的格式，应在客户端初始化时通过 `PipelineRegistry` 注册模型管线和路由。
+`.geo.json` 的路由优先于通用 `.json`。其中 `FmtBinaryLoader` 解析 `.bob`/`.beo` 时会按模型路径（去掉 `models/` 前缀并改为 `textures/<路径>.png`）查找外部贴图，未找到时回退到缺失贴图；代码中另有独立的文本流 MTB loader 类 `KsgMtbLoader`（未接入 `PipelineRegistry.BUILTIN_ROUTES`）。此外，`PipelineRegistry.ASSEMBLY`（`"assembly"`）是通过 `PipelineRegistry.assemblies()`（`McModelAssemblies`）发布并由 `McModelHandle.ofAssembly(...)` 使用的组装模型管线，不按文件扩展名路由。若需使用不受支持的格式，应在客户端初始化时通过 `PipelineRegistry` 注册模型管线和路由。
 
 ## 创建并渲染实例
 
@@ -136,6 +138,32 @@ Blockbench 的 UV 坐标单位是纹理像素。`KsgBbModelLoader` 在创建顶�
 ```text
 modules/modelling/src/contentTesting/resources/assets/kasuga_lib/models/block/test/blockbench/
 ```
+
+## 光照模式、全局合批、组装与实时同步
+
+### 光照模式（`ModelLightingMode` / `ModelLighting` / `ModelLightingDefaults`）
+
+- `ModelLightingMode`（`lib.kasuga.rendering.models.uml.backend.ModelLightingMode`）定义实例级光照模式：`PBR`（默认）与 `BLOCK`（原版方块/物品明暗）。
+- `ModelLightingDefaults.register(ResourceLocation model, ModelLightingMode mode)` 为指定模型键登记默认光照模式；默认值跨资源重载保留，`KasugaModelPipelines.createAndBind` 创建实例时会自动调用 `ModelLightingDefaults.resolve(modelLoc)`（未登记时默认 `ModelLightingMode.PBR`）。
+- 宿主可通过 `ModelInstance.setLightingMode(mode)` 或 `McModelHandle.setLightingMode(mode)` 覆写单个实例的光照模式（未挂载时暂存并在资源替换后重新应用）；数据驱动 `proxy_model_be` 方块实体可在 `params.lighting_mode` 中配置 `"pbr"` 或 `"vanilla_block"`。
+- `ModelLighting`（`lib.kasuga.rendering.models.mc.backend.ModelLighting`）将策略与方向遮光系数打包为不可变记录，通过 `ModelLighting.world(mode, level)`（按 `level.getShade(...)` 采样四向方块明暗）或 `ModelLighting.item(mode)` 构造，并作为 `GlobalModelBatcher` 的批处理键组成部分，向 `KasugaShaderInstance` / `KasugaGlobalBatchShaderInstance` 传递 `ksg_LightingMode`（`0` = PBR、`1` = 世界方块明暗、`2` = 原版物品漫反射）与 `ksg_BlockShade`。
+
+### 全局合批与自动实例化（`GlobalModelBatcher` / `FlatModelData` / `KasugaGlobalBatchShaderInstance`）
+
+- 在非 Iris 路径的 `OPAQUE` 与 `MASK` 阶段，`MCBackend.renderObjectsInternal` 会启用 `GlobalModelBatcher`；`TRANSLUCENT` 阶段不进入全局合批，以保持 WBOIT 或由远及近排序语义。
+- `GlobalModelBatcher` 按 `BatchKey`（包含 pass、`VertexFormat.Mode`、自发光强度、环境光增强、`DepthBias` 与 `ModelLighting`）分组，将每个实例的变换矩阵、法线矩阵、亮度、骨骼偏移、GPU 蒙皮标志、打包光照与 overlay 写入 `ksg_InstanceData` TBO（每对象 `9` 个 texel / `36` 个 float，纹理单元 `10`），并将骨骼变换写入 `ksg_BoneTransforms` TBO（每骨骼 `36` 个 float，纹理单元 `11`），通过 `TextureUploadRing` 上传并由 `KasugaGlobalBatchShaderInstance`（`kasuga_lib:ksglib_global_batch`）绘制。
+- **自动实例化**：当 `KasugaGlobalBatchShaderInstance` 具备 `ksg_Instanced` uniform，且连续若干采用 GPU 蒙皮（`!usesCpuSkinning()`）的实例属于同一 `Model` 且通过 `FlatModelData.shareBatchGeometry(...)` 校验（忽略可从实例 TBO 读取的 `UV1`/`UV2` 光照与 overlay 字段）确认顶点载荷一致时，若满足 `shouldInstance`（连续至少 2 个实例，且整批只有一个连续段或 `(count - 1) * meshBytes >= 16 KiB`），`GlobalModelBatcher` 改用共享 VBO 与 `GL31.glDrawElementsInstanced`（shader 中 `ksg_Instanced = 1` 读取 `gl_InstanceID`），不再合并重复顶点并改写 `UV1.x`。每个 chunk 上限受 `MAX_OBJECTS_PER_BATCH`（`Short.MAX_VALUE`）与硬件 `GL_MAX_TEXTURE_BUFFER_SIZE` 约束。
+
+### 模型组装与 Dummy 分组（`McModelAssemblies` / `McDummyModels`）
+
+- `McModelAssemblies` 将 `ModelAssemblyRegistry<McModelAssemblies.Reference, ResourceLocation>` 与 `ModelAssemblyCache` 接入 `PipelineRegistry.ASSEMBLY`（通过 `PipelineRegistry.assemblies()` 获取），支持以 `McModelAssemblies.Reference(model, modelName)` 引用其他已发布模型、编程式 `register`/`unregister`、资源重载原子替换（`replaceResourceDefinitions` / `publishResourceGeneration`）、依赖模型变更失效，以及 `McModelHandle.ofAssembly(...)` / `switchAssembly(...)`。详见 [Model 组装与穿搭缓存 API](../model-assembly.md) 与 [Minecraft 穿搭资源与实例切换 API](../minecraft-model-assembly.md)。
+- `McDummyModels.create()` / `McDummyModels.create(@Nullable Transform rootTransform)` 创建无几何数据的纯变换骨架实例 `DummyModelInstance`（`Model.isRenderable()` 为 `false`，不分配顶点/网格/骨骼 TBO），并注册到 `MinecraftModelRuntime` 自动逐帧求值；可通过 `defineAnchor`、`setAnchorTransform` 与 `attach(anchorName, child[, localOffset])` 组织父子变换树，`close()` 时自动注销并解绑子模型。详见 [Anchor 与 Minecraft 装备挂接](../anchors.md)。
+
+### 本地实时模型同步（`LiveModelSync`）
+
+- `LiveModelSync`（`lib.kasuga.rendering.models.mc.component.LiveModelSync`）提供可选的本地开发预览桥接：将客户端游戏目录下的 `resourcepacks/kasuga_live` 通过 `DirectoryVfs` 与 `ResourceSystem.mountClientScoped(...)` 挂载为 `file/kasuga_live` 资源包（自动生成 `pack.mcmeta`，`pack_format: 34`），并在客户端未显示加载遮罩时每 `100 ms` 轮询 `.kasuga-sync.json`（`version: 1`、`generation`，最大 8 KiB）。
+- `LiveModelSyncState` 提供 `350 ms` 去抖与单飞（single-flight）控制，检测到有效变更后触发 `Minecraft#reloadResourcePacks()` 并在完成后记录 `KASUGA_LIVE_MODEL_RELOAD_COMPLETE`。
+- 客户端命令：`/kasuga_models live start`、`/kasuga_models live stop`、`/kasuga_models live status`。
 
 ## 开发与调试
 
@@ -212,4 +240,7 @@ modules/modelling/run/client/
 | 内置模型管线和扩展名路由 | `modules/modelling/src/main/java/lib/kasuga/rendering/models/mc/registry/PipelineRegistry.java` |
 | 模型生命周期 API | `modules/modelling/src/main/java/lib/kasuga/rendering/models/uml/dynamic/ModelPipeLine.java` |
 | Blockbench loader | `modules/modelling/src/main/java/lib/kasuga/rendering/models/mc/typo/bbmodel/KsgBbModelLoader.java` |
+| FMT 压缩包 / 二进制 / MTB loader | `modules/modelling/src/main/java/lib/kasuga/rendering/models/mc/typo/fmt/FmtArchiveLoader.java`、`FmtBinaryLoader.java`、`mtb/KsgMtbLoader.java` |
+| 模型光照、合批、组装、Dummy 与实时同步 | `ModelLightingDefaults.java`、`ModelLighting.java`、`GlobalModelBatcher.java`、`McModelAssemblies.java`、`McDummyModels.java`、`LiveModelSync.java` |
 | 资源代理匹配器 | `modules/modelling/src/main/java/lib/kasuga/rendering/models/mc/source/model/ModelProxyConfig.java` |
+| Iris 兼容与内置效果/音频 | [Iris 兼容层](../iris-compat.md)、[内置效果与空间音频](../builtin-effects-and-audio.md) |

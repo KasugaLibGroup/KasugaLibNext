@@ -2,13 +2,14 @@
 
 ## 6. The Diagnostics Facade
 
-`diagnostics/Diagnostics.java` is the unified diagnostics facade. Errors are addressed along two dimensions that never mix.
+`diagnostics/Diagnostics.java` is the unified diagnostics facade shared by the v1 registration path and the reload domain. Errors are addressed along two dimensions that never mix:
+
+> **v1/reload buckets vs. v2 `BuildDiagnostic`**: `Diagnostics` backs v1 `JsonTreeBuilder` and `ReloadOrchestrator` / `FsmReloadHandler` (and is surfaced by `/kasuga_data errors`). The v2 multi-source `DataDrivenBuildPipeline` instead returns structured `List<BuildDiagnostic>` values on `PreparedContent.diagnostics()` and `BuildResult.diagnostics()` (see section 19), and **does not** write into `Diagnostics`.
 
 ### 6.1 Dimensions
 
-mod dimension: buckets keyed by mod id, which are the existing `JsonTreeBuilder` buckets. `report(String, Throwable)` / `errors(String)` delegate to them verbatim, so the contract "assert that `JsonTreeBuilder.getLoadingErrors(modId)` is empty" keeps holding.
-
-domain/source-key dimension: buckets keyed by `(Domain, key)`, for failures that "belong to a source rather than a mod". **Producers already write to this dimension**: the reload domain uses `Domain.RELOAD_DATA`, key = namespace (both `ReloadOrchestrator` and `FsmReloadHandler` go through it). The remaining domains (`RELOAD_ASSETS`, `CONFIG`) are still reserved.
+- **mod dimension**: buckets keyed by mod id, which are the existing `JsonTreeBuilder` buckets. `report(String, Throwable)` and `errors(String)` delegate to them verbatim, keeping "assert `JsonTreeBuilder.getLoadingErrors(modId)` is empty" intact.
+- **domain/source-key dimension**: buckets keyed by `(Domain, key)`, for failures that belong to a source rather than a mod. **Reload producers already write here**: the reload domain uses `Domain.RELOAD_DATA` keyed by namespace (`ReloadOrchestrator` and `FsmReloadHandler`). `RELOAD_ASSETS` and `CONFIG` remain reserved.
 
 ### 6.2 Method Table
 
@@ -17,18 +18,18 @@ mod dimension:
 | Signature | Responsibility | Failure behavior |
 |------|------|---------|
 | `report(String modId, Throwable error)` (`:64`) | Records one failure into the mod bucket, equivalent to `JsonTreeBuilder.addLoadingError` | No validation |
-| `errors(String modId)` (`:73`) | An immutable snapshot of that mod | Returns `List.of()` when there is no bucket |
-| `errorsByMod()` (`:78`) | All mods, keys sorted by id, immutable | Returns an empty map when there is no bucket |
-| `clear(String modId)` (`:83`) | Clears that mod's bucket only | The other mods and every source bucket are untouched |
+| `errors(String modId)` (`:73`) | Immutable snapshot for that mod | Returns `List.of()` when empty |
+| `errorsByMod()` (`:78`) | All mods, keys sorted by id, immutable | Returns an empty map when empty |
+| `clear(String modId)` (`:83`) | Clears that mod's bucket only | Other mods and source buckets are untouched |
 
 domain/source-key dimension:
 
 | Signature | Responsibility | Failure behavior |
 |------|------|---------|
-| `report(Domain domain, String key, Throwable error)` (`:96`) | Records one failure into some source's bucket | A `null` in any of the three parameters throws `NullPointerException` (an up-front check, treated as a programming error) |
-| `errors(Domain domain, String key)` (`:107`) | An immutable snapshot of a single source bucket | Returns `List.of()` when there is no bucket |
-| `errors(Domain domain)` (`:116`) | The aggregate over all sources of one domain, sources sorted by key | Returns an empty list when there is no bucket |
-| `clear(Domain domain)` (`:125`) | Clears every source bucket of one domain | The other domains and every mod bucket are untouched |
+| `report(Domain domain, String key, Throwable error)` (`:96`) | Records one failure into a source bucket | Throws `NullPointerException` if any argument is `null` |
+| `errors(Domain domain, String key)` (`:107`) | Immutable snapshot of one source bucket | Returns `List.of()` when empty |
+| `errors(Domain domain)` (`:116`) | Aggregate across all sources of a domain, sorted by key | Returns an empty list when empty |
+| `clear(Domain domain)` (`:125`) | Clears all source buckets of one domain | Other domains and mod buckets are untouched |
 
 Shared by both dimensions:
 
@@ -45,10 +46,10 @@ public enum Domain { REGISTRATION, RELOAD_DATA, RELOAD_ASSETS, CONFIG }   // Dia
 
 | Value | Meaning |
 |----|------|
-| `REGISTRATION` | Content registered by the mod jar, read once during mod construction |
+| `REGISTRATION` | Mod jar registration content (reserved in domain dimension) |
 | `RELOAD_DATA` | Reload data from data packs, read from the pack stack on `/reload` |
-| `RELOAD_ASSETS` | Pack-stack assets, read on resource reload |
-| `CONFIG` | Files under `config/` |
+| `RELOAD_ASSETS` | Pack-stack assets (reserved) |
+| `CONFIG` | Files under `config/` (reserved) |
 
 ### 6.4 summarize Output Format
 
@@ -56,74 +57,126 @@ public enum Domain { REGISTRATION, RELOAD_DATA, RELOAD_ASSETS, CONFIG }   // Dia
 public static List<String> summarize()   // Diagnostics.java:143
 ```
 
-One line per non-empty bucket. The mod bucket format is `<mod>: N error(s)`; the source bucket format is `<DOMAIN>[<key>]: N error(s)`. Mods come first, sorted by id, then `Domain` declaration order, with sources sorted by key. The result is deterministic, so commands and tests can assert it.
+One line per non-empty bucket: mod buckets format as `<mod>: N error(s)`; source buckets format as `<DOMAIN>[<key>]: N error(s)`. Mods come first sorted by id, then `Domain` declaration order with sources sorted by key.
 
 ### 6.5 Which Dimension Producers Use
 
-Reload-domain errors go through the **domain/source-key dimension** (`Domain.RELOAD_DATA`), key = the namespace the failing file sits in. `ReloadOrchestrator.reportError` (`:566-573`) and each handler's `reportError` / `reportWarning` (for example `FsmReloadHandler.java:118-130`) call `Diagnostics.report(Domain.RELOAD_DATA, namespace, ...)`. Registration-phase errors still go through the mod dimension. The two dimensions are told apart in the output by different labels: mod dimension `[<mod>] <error>`, reload dimension `[RELOAD_DATA[<namespace>]] <error>` (the label is provided by `Diagnostics.bucketLabel`, the same source as the summary line). The reload dimension is cleared per round (`Diagnostics.clear(Domain.RELOAD_DATA)` at the start of `runCycle`, `:208`) and does not accumulate.
+Reload-domain errors go to the **domain/source-key dimension** (`Domain.RELOAD_DATA`) keyed by the namespace owning the file. `ReloadOrchestrator.reportError` (`:617-627`) and handler reporters (`FsmReloadHandler.java:118-130`) call `Diagnostics.report(Domain.RELOAD_DATA, namespace, ...)`. v1 registration errors go to the mod dimension. Labels come from `Diagnostics.bucketLabel` (`:166`): `[<mod>] <error>` vs. `[RELOAD_DATA[<namespace>]] <error>`. The reload dimension is cleared at the start of every `runCycle` (`Diagnostics.clear(Domain.RELOAD_DATA)`, `ReloadOrchestrator.java:208`).
 
 ## 7. The /kasuga_data errors Command
 
-`DataDiagnosticsCommands.java` is the in-game entry point of the diagnostics facade.
+`DataDiagnosticsCommands.java` exposes the `Diagnostics` facade in-game (see 19.2 for `/kasuga_proxy list`).
 
 ```java
-public static LiteralArgumentBuilder<CommandSourceStack> kasugaDataCommand()   // :42
+public static LiteralArgumentBuilder<CommandSourceStack> kasugaDataCommand()   // DataDiagnosticsCommands.java:45
 ```
 
 Command syntax:
 
-- `/kasuga_data errors`: prints the one-line-per-bucket summary of `Diagnostics.summarize()`, **both dimensions included** — mod dimension `<mod>: N error(s)`, reload dimension `RELOAD_DATA[<namespace>]: N error(s)`. With no errors it prints `Kasuga data: no loading errors recorded`.
-- `/kasuga_data errors <mod>`: **lists both dimensions of that mod's errors** — registration phase (mod dimension) as `[<mod>] <throwable>` per entry; reload phase (`Domain.RELOAD_DATA`, key = namespace) as `[RELOAD_DATA[<mod>]] <throwable>` per entry (the label comes from the same source as the summary line, provided by `Diagnostics.bucketLabel`). With no errors it prints `Kasuga data: no loading errors for '<mod>'`.
+- `/kasuga_data errors` (`printSummary`, `:63`): prints the per-bucket `Diagnostics.summarize()` summary covering both dimensions, or `Kasuga data: no loading errors recorded` when clean.
+- `/kasuga_data errors <mod>` (`printMod`, `:81`): lists both the mod dimension (`[<mod>] <throwable>`) and the `RELOAD_DATA[<mod>]` source dimension (`[RELOAD_DATA[<mod>]] <throwable>`), or `Kasuga data: no loading errors for '<mod>'`.
 
 Constraints and registration:
 
-- Permission level 2 (`requires(source -> source.hasPermission(2))`, `:44`). On a dedicated server this command outputs internal loading diagnostics, which counts as administrator information; console level 4 is unaffected.
-- `kasugaDataCommand()` does not depend on a dispatcher or an event, so a pure test can register it and then assert the shape of the command tree.
-- Auto-discovery: the class carries `@EventBusSubscriber` (`:28`), and once FML scans it, `onRegisterCommands` (`:54`) registers the command tree on `RegisterCommandsEvent`. The registration sits on the COMMON side, because the facade itself is common.
-- The return value is the number of lines printed, for the command system and tests to read.
+- Requires permission level 2 (`requires(source -> source.hasPermission(2))`, `:47`).
+- `kasugaDataCommand()` has no dispatcher or event dependency, allowing pure unit tests to verify command shape.
+- Auto-registered on COMMON via `@EventBusSubscriber` (`:31`) and `onRegisterCommands` (`:57`); returns the number of printed lines.
 
-## 12. Error Classification
+## 12. Error Classification (v1 Registration Buckets and Reload Domain)
 
-Go into the error bucket (an ERROR log is written and the failure enters the bucket as an exception — during the registration phase into the mod dimension, through `JsonTreeBuilder.addLoadingError` or `Diagnostics.report(String, …)`; during the reload phase into the `Domain.RELOAD_DATA` source dimension, through `Diagnostics.report(Domain, namespace, …)`):
+This table covers diagnostics written to `Diagnostics` buckets or downgraded to logs (see section 19 for v2 `DataDrivenBuildPipeline` structured diagnostics).
 
-| Case | Source |
-|------|------|
-| Index file unreadable or not JSON | `readIndexManifest:188` |
-| Unknown top-level field in an index (including the old field name `sources`, see 3.7) | `parseIndexManifest:226-230` |
-| Neither index field declared | `parseIndexManifest:240-244` |
-| Field is not an array | `readPathArray:256-263` |
-| Array element is not a string | `readPathArray:268-274` |
-| The same path listed under both domains | `resolveIndexManifests:308-316` |
-| No index declares either domain | `resolveIndexManifests:323-326` |
-| Index directory cannot be listed | `listIndexFiles:767-771` |
-| Illegal content path | `parseSource:396-402` |
-| Mod file not found | `parseSource:408-412` |
-| Content file missing | `parseSource:423-427` |
-| Content file read / JSON exception | `parseSource:434-436` |
-| Unknown top-level field in content (including a top-level `block_entities`) | `dispatchContent:475-490` |
-| Type field is not an array | `dispatchContent:504-510` |
-| Array element is not an object | `dispatchContent:504-516` |
-| handler.apply throws | `applyUnchecked:712` |
-| Duplicate id conflict | `resolveDuplicates:667-670` |
-| Legacy layout directory present | `buildForMod:66-74` |
-| buildAll exception for a single mod | `buildAll:171` |
-| reload decode/register/validate failure | `ReloadOrchestrator.reportError:566-573`, `FsmReloadHandler.reportError:118-125` |
-| reload wrap-up finds a dangling clip reference | `FsmReloadHandler.reportWarning:127-130` |
-
-Log only, never the bucket (downgraded to WARN level):
+Bucketed errors (logged at ERROR and appended as `Throwable` — mod dimension in v1 registration, `Domain.RELOAD_DATA` in reload):
 
 | Case | Source |
 |------|------|
-| Factory not found without `state_properties` | `RegTypeHandler:71-73` |
-| Group reference cycle | `JsonTreeBuilder:823-825` |
-| Unknown block property / illegal value | `JsonPropertyParser:50-57` |
-| Unknown item property | `JsonItemParser:63` |
-| BE parent block not found / BE type unknown | `BlockEntityTypeHandler:76-86` |
-| Fallback warning when a duplicate id unexpectedly reaches apply | `RegTypeHandler:101-105` |
-| A mod declares no `on_register` (a reload-only mod) | `JsonTreeBuilder:100-104` (INFO) |
-| Index directory absent and no legacy layout | `JsonTreeBuilder:74` (DEBUG) |
+| Index file unreadable or not JSON | `JsonTreeBuilder.readIndexManifest:194-204` |
+| Unknown top-level field in an index (including removed `sources`) | `JsonTreeBuilder.parseIndexManifest:231-238` |
+| Neither `on_register` nor `on_reload` declared | `JsonTreeBuilder.parseIndexManifest:247-253` |
+| Non-array path field or non-string array element | `JsonTreeBuilder.readPathArray:263-279` |
+| Same path listed in both `on_register` and `on_reload` (fail-closed) | `JsonTreeBuilder.resolveIndexManifests:330-345` |
+| No index declares either domain | `JsonTreeBuilder.resolveIndexManifests:347-352` |
+| Index directory cannot be listed | `JsonTreeBuilder.listIndexFiles:783-795` |
+| Illegal content path | `JsonTreeBuilder.parseSource:420-426` |
+| Mod file not found | `JsonTreeBuilder.parseSource:432-438` |
+| Content file missing | `JsonTreeBuilder.parseSource:447-452` |
+| Content file read / JSON exception | `JsonTreeBuilder.parseSource:458-461` |
+| Unknown top-level field in content (including top-level `block_entities`) | `JsonTreeBuilder.dispatchContent:496-518` |
+| Type field is not an array or element is not an object | `JsonTreeBuilder.dispatchContent:523-535` |
+| Embedded extraction failure | `JsonTreeBuilder.dispatchContent:554-560` |
+| Single-entry `parse` throws | `JsonTreeBuilder.parseAndCollect:613-620` |
+| `handler.apply` throws | `JsonTreeBuilder.applyUnchecked:733-742` |
+| Duplicate id conflict | `JsonTreeBuilder.resolveDuplicates:688-692` |
+| Legacy layout directory present | `JsonTreeBuilder.buildForMod:83` |
+| `buildAll` exception for a single mod | `JsonTreeBuilder.buildAll:177-181` |
+| Reload decode/register/validate failure | `ReloadOrchestrator.reportError:617-627`, `FsmReloadHandler.reportError:118-121` |
+| Reload attempts to load an index not permitted by `ManagedReloadAllowlist` | `ReloadOrchestrator.collectIndex:430-434` |
+| Reload wrap-up finds a dangling clip reference | `FsmReloadHandler.reportWarning:127-130` |
 
-Notes: `Diagnostics.report` does not rethrow and rejects `null` arguments up front, and the buckets stay readable while loading is under way (each key is synchronized separately). Every error is swallowed into a bucket and the mod keeps starting. The conditional D9 hint shows up in two kinds of message: on the registration side the unknown-field message points at `on_reload` (`JsonTreeBuilder:559-570`; the reload key names are enumerated at runtime from `ReloadHandlerRegistry`); on the reload side the unknown-field message points at `on_register` (`ReloadOrchestrator:439-446`). The reload-domain bucket is **cleared per round** (`Diagnostics.clear(Domain.RELOAD_DATA)` at the start of `runCycle`, `:208`), so repeated `/reload`s of the same broken file do not accumulate.
+Log only, never bucketed (v1 / non-strict fallback):
 
+| Case | Source |
+|------|------|
+| Missing factory or apply failure in non-strict mode | `RegTypeHandler:162-166, 193-197` |
+| Registry group reference cycle (`topoSortGroupDefs` WARN) | `JsonTreeBuilder:907-909` |
+| Unknown block property / invalid property value | `JsonPropertyParser:152-159, 181, 191` |
+| Unknown item property / parse failure | `JsonItemParser:142-148` |
+| BE parent block not found / unknown BE type / exception | `BlockEntityTypeHandler:141-152` |
+| Mod declares no `on_register` (reload-only mod) | `JsonTreeBuilder:106-109` (INFO) |
+| Index directory absent and no legacy layout | `JsonTreeBuilder:73-77` (DEBUG) |
 
-> Other pages in the data-driven series: [Registration API](api-registration.md) · [Extension API](api-extension.md) · [Diagnostics API](api-diagnostics.md) · [Reload API](api-reload.md) · [Series index](README.md)
+Notes: Cross-domain D9 hints keep opposite directions on each side — registration points at `on_reload` (`JsonTreeBuilder.reloadDomainHint:580-591`, enumerating `ReloadHandlerRegistry`), while reload points at `on_register` (`ReloadOrchestrator.dispatch:494-501`).
+
+---
+
+## 19. v2 Structured BuildDiagnostic and Proxy Diagnostics
+
+### 19.1 BuildDiagnostic
+
+The v2 multi-source `DataDrivenBuildPipeline` replaces global exception buckets with immutable `pipeline/BuildDiagnostic.java:9-76` records attached to `PreparedContent.diagnostics()` and `BuildResult.diagnostics()`:
+
+```java
+public record BuildDiagnostic(
+        Severity severity,
+        Stage stage,
+        Code code,
+        @Nullable String sourceId,
+        @Nullable String ownerId,
+        @Nullable String logicalPath,
+        @Nullable String jsonPointer,
+        @Nullable String handler,
+        String message,
+        @Nullable String suggestion
+) {
+    public boolean blocking() { return severity == Severity.ERROR; }
+    public enum Severity { WARNING, ERROR }
+    public enum Stage { SOURCE, MANIFEST, PARSE, SELECTION, VALIDATION, CLAIMS, APPLY, FINALIZE }
+    public enum Code { ... }
+}
+```
+
+All 25 `BuildDiagnostic.Code` constants grouped by `Stage`:
+
+| `Stage` | `Code` values | Meaning |
+|---|---|---|
+| `SOURCE` | `INVALID_SOURCE`, `UNKNOWN_DEPENDENCY`, `SOURCE_FILE_MISSING`, `SOURCE_READ_FAILED` | Duplicate `(sourceId, rootId)` or `rank`, unknown dependency owner, missing content file referenced by manifest, or snapshot/I/O read error |
+| `MANIFEST` | `MANIFEST_INVALID`, `MANIFEST_EMPTY`, `INVALID_PATH` | Non-object manifest, D1–D6 violation (including removed `sources` key or dual-listed path), invalid `LogicalPath`, or zero declared `on_register`/`on_reload` paths |
+| `PARSE` | `CONTENT_INVALID`, `UNKNOWN_TYPE`, `PARSE_FAILED`, `IDENTITY_FAILED`, `MISSING_IDENTITY`, `HANDLER_NOT_STRICT_READY` | `StrictResourceJson` syntax/duplicate-key error, unknown top-level key, `on_reload` preflight decode error, `TypeHandler.parse` failure, `resolveIdentity` throw or null/blank return, or used handler failing strict capability checks |
+| `VALIDATION` | `INVALID_IDENTITY`, `UNKNOWN_FACTORY`, `UNKNOWN_REGISTRY_GROUP`, `MISSING_REFERENCE`, `REFERENCE_NOT_DECLARED`, `REFERENCE_AMBIGUOUS`, `GROUP_CYCLE`, `VALIDATION_FAILED` | Bare/invalid `ResourceLocation`, missing factory, unknown `registry_group`, missing or undeclared cross-definition reference, ambiguous visible matches (`findAllVisible.size() > 1`), `parentDefinition` cycle (`ERROR` in `STRICT`, `WARNING` in `LEGACY`), or strict property/param check failure |
+| `CLAIMS` | `CLAIM_CONFLICT`, `CLAIM_FAILED` | Two definitions competing for the same `(registry, id)`, collision with `reservedRegistryClaims`, or `TypeHandler.claims` exception |
+| `APPLY` / `FINALIZE` | `APPLY_FAILED`, `FINALIZER_FAILED` | Runtime exception thrown by `apply` or `BuildFinalizer.afterBuild` (also transitioning `BuildResult.status()` to `Status.FAILED`) |
+
+### 19.2 `/kasuga_proxy list` and `ProxyDebug`
+
+For runtime inspection of proxy-rendered hosts (including `proxy_model` / `proxy_model_be`), `modules/modelling` exposes:
+
+- **In-game command `/kasuga_proxy list`** (`ProxyCommands.java:40-76`, auto-registered via `@EventBusSubscriber` on both sides):
+  - **Permission level 0** (`source.hasPermission(0)` — usable in dev worlds without cheats).
+  - Prints `[proxy] instances=N live=L mounted=M`, followed by up to 64 (`MAX_LINES`) `ProxyInstance.describe()` lines (`ProxyInstance.java:410-420`):
+    ```text
+    <identity|<unresolved>> side=client|server|? element=<class> stage=NEW|LIVE|FAILED|RELEASED machine=<id> model=<loc> [parts=M/T] mounted=<bool> lastTick=never|<gameTime>
+    ```
+  - Field interpretation: `NEW` = not yet ticked, `FAILED` = `ElementProxy#configure` returned `null` or threw, `LIVE` with `mounted=false` = client-side model publishing or loader rejection, `lastTick=never` = proxy is not being ticked.
+- **Verbose tracing flag `-Dkasuga.proxy.debug=true`** (`ProxyDebug.java:20-49`): `[proxy]` trace lines normally emit at DEBUG (`logs/debug.log`); setting `ProxyDebug.PROPERTY` promotes them to INFO (`latest.log` and console).
+
+> Other pages in the data-driven section: [Registration API](api-registration.md) · [Extension API](api-extension.md) · [Diagnostics API](api-diagnostics.md) · [Reload API](api-reload.md) · [Schema Reference](schema.md) · [Block State Properties](block-state-properties.md) · [Section index](README.md)

@@ -126,6 +126,8 @@ On 2026-11-04, Apple M3 Max, Java 21.0.3, Minecraft 1.21.1 / NeoForge 21.1.203, 
 
 ## User-Adjustable Shader Parameters
 
+For runnable source code, typed IR, GLSL/JSON outputs, and a gameplay video demo, see the [Prism Scan Polyglot Example](../../examples/shader-dsl/README.md). The example executes GraalJS, Kotlin/JVM, and Python/JPype hosts and compares every generated output file.
+
 A shader does not expose all uniforms automatically. Register each user-adjustable parameter. Each parameter has a fixed `name`, `description`, `ShaderParameterType`, inclusive `range`, and `defaultValues`. The parameter name is also the GLSL uniform name. The name must be a valid, non-reserved GLSL identifier.
 
 ```java
