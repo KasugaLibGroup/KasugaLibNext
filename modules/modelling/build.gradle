@@ -128,6 +128,10 @@ tasks.named('sourcesJar').configure {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
+// ModDev reads and finalizes the mod source sets during IntelliJ sync after this project is evaluated.
+Project irisCompat = evaluationDependsOn(':modules:iris-compat')
+SourceSet irisMain = irisCompat.sourceSets.main
+
 neoForge {
     // Specify the version of NeoForge to use.
     version = project.neo_version
@@ -357,6 +361,7 @@ neoForge {
             sourceSet(sourceSets.main)
             sourceSet(sourceSets.contentTesting)
             sourceSet(sourceSets.gameTest)
+            sourceSet(irisMain)
         }
     }
 
@@ -477,20 +482,12 @@ dependencies {
     }
 }
 
-// Keep the adapter in modelling's dev mod layer and distribution artifacts without
-// adding it to modelling's main compile classpath.
-Project irisCompat = project(':modules:iris-compat')
-irisCompat.plugins.withId('java-library') {
-    SourceSet irisMain = irisCompat.sourceSets.main
-    neoForge.mods.named(mod_id) {
-        sourceSet(irisMain)
-    }
-    tasks.named('jar', Jar).configure {
-        from(irisMain.output)
-    }
-    tasks.named('shadowJar').configure {
-        from(irisMain.output)
-    }
+// Bundle the adapter without adding it to modelling's main compile classpath.
+tasks.named('jar', Jar).configure {
+    from(irisMain.output)
+}
+tasks.named('shadowJar').configure {
+    from(irisMain.output)
 }
 
 // The gameTest source set re-declares its resource dir (srcDir 'src/gameTest/resources') on top of Gradle's
