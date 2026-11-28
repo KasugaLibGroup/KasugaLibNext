@@ -112,7 +112,7 @@ public final class McModelHandle {
     // ------------------------------------------------------------------
 
     /**
-     * 创建指向全局内容管线的句柄（.mmd.zip / .glb / .obj / .geo.json / JE json）。
+     * 创建指向全局内容管线的句柄，支持 {@link McJavaEntityModels} 注册的 Java 实体模型。
      * 句柄可先于资源发布创建；{@link #mount()} 未成功前其余操作安全空转或暂存。
      */
     public static McModelHandle of(ResourceLocation modelLoc, @Nullable String modelName,

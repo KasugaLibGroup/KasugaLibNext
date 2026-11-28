@@ -45,6 +45,7 @@ public final class PipelineRegistry {
 
     public static final String BE = "be";
     public static final String JE = "je";
+    public static final String JAVA_ENTITY = "java_entity";
     public static final String OBJ = "obj";
     public static final String PMX = "pmx";
     public static final String GLTF = "gltf";
@@ -64,6 +65,7 @@ public final class PipelineRegistry {
         BUILTIN_ROUTES.put(".glb", GLTF);
         BUILTIN_ROUTES.put(".gltf", GLTF);
         BUILTIN_ROUTES.put(".json", JE);
+        BUILTIN_ROUTES.put(".java", JAVA_ENTITY);
         BUILTIN_ROUTES.put(".bbmodel", BBMODEL);
         BUILTIN_ROUTES.put(".mtb", FMT_ARCHIVE);
         BUILTIN_ROUTES.put(".fmtb", FMT_ARCHIVE);
@@ -128,6 +130,11 @@ public final class PipelineRegistry {
                 .withBackend("mc_backend", backend)
                 .build();
         register(JE, jePipeline);
+
+        register(JAVA_ENTITY, new ModelPipeLine.PublishedBuilder<ResourceLocation, ResourceLocation, BackendInstance>()
+                .withBridge("mc_bridge", bridge)
+                .withBackend("mc_backend", backend)
+                .build());
 
         objPipeline = new ModelPipeLine.Builder<String, BackendInstance, ResourceLocation,
                 ResourceLocation, String>()

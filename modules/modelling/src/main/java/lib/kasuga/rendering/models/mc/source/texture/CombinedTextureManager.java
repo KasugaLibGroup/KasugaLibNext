@@ -89,34 +89,26 @@ public class CombinedTextureManager extends KasugaTextureManager {
             }
             return Util.sequence(l);
         }).thenCompose(preparationBarrier::wait)
-                .thenAcceptAsync(param -> this.apply(param, reloadProfiler), gameExecutor)
-                .thenAcceptAsync(any -> this.spriteUploaders.clear(), gameExecutor)
-                .thenAcceptAsync(any -> this.caches.forEach((k, v) -> {
-                    TextureAtlasSprite[] sprites = new TextureAtlasSprite[v.length];
-                    for (int i = 0; i < v.length; i++) {
-                        SpriteContents content = v[i];
-                        Objects.requireNonNull(content);
-                        for (TextureAtlasSprite sprite : getAtlas(i).getTextures().values()) {
-                            // 图集按内容名（ResourceLocation）建 key；同名内容只能保留一个 sprite。
-                            // 因此按名称匹配（而非对象恒等）：同名的重复标识符共享同一个 sprite。
-                            if (sprite.contents().name().equals(content.name())) {
-                                sprites[i] = sprite;
-                                break;
+                .thenAcceptAsync(param -> {
+                    this.apply(param, reloadProfiler);
+                    loadedSprites.clear();
+                    caches.forEach((identifier, contents) -> {
+                        TextureAtlasSprite[] sprites = new TextureAtlasSprite[contents.length];
+                        for (int i = 0; i < contents.length; i++) {
+                            SpriteContents content = contents[i];
+                            TextureAtlas atlas = getAtlas(i);
+                            sprites[i] = atlas.getTextures().get(content.name());
+                            if (sprites[i] == null) {
+                                LOGGER.warn("Combined texture atlas {} has no sprite for content {}",
+                                        atlas.location(), content.name());
+                                sprites[i] = atlas.getTextures().get(MissingTextureAtlasSprite.getLocation());
                             }
                         }
-                        if (sprites[i] == null) {
-                            LOGGER.warn("Combined texture atlas {} has no sprite for content {} ({}x{}); "
-                                            + "{} sprites stitched, name present={}",
-                                    getAtlas(i).location(), content.name(), content.width(), content.height(),
-                                    getAtlas(i).getTextures().size(),
-                                    getAtlas(i).getTextures().containsKey(content.name()));
-                            sprites[i] = getAtlas(i).getTextures().get(MissingTextureAtlasSprite.getLocation());
-                        }
-                    }
-                    loadedSprites.put(k, sprites);
-                })).thenAcceptAsync(any -> this.caches.clear(), gameExecutor)
-                .thenAcceptAsync(any -> {
-                    this.bakeRequests.clear();
+                        loadedSprites.put(identifier, sprites);
+                    });
+                    caches.clear();
+                    spriteUploaders.clear();
+                    bakeRequests.clear();
                     PbrBakeCoordinator.getInstance().releaseMemoryResults();
                 }, gameExecutor);
     }
@@ -171,7 +163,7 @@ public class CombinedTextureManager extends KasugaTextureManager {
                 Object identifier = uploader[0].getResourceIdentifier();
                 Objects.requireNonNull(uploader[0]);
                 SpriteContents content = uploader[0].loadSprite(null, null);
-                Objects.requireNonNull(content);
+                if (content == null) return Pair.of(identifier, null);
                 int width = content.width(), height = content.height();
                 @Nullable SpriteContents normalContent = null, specularContent = null;
                 BakeRequest bakeRequest = bakeRequests.get(identifier);
@@ -347,7 +339,7 @@ public class CombinedTextureManager extends KasugaTextureManager {
                             Pair<Object, SpriteContents[]> pair = element.get();
                             Object identifier = pair.getFirst();
                             SpriteContents[] contents = pair.getSecond();
-                            caches.put(identifier, contents);
+                            if (contents != null) caches.put(identifier, contents);
                             return contents;
                         }, executor
                 )
