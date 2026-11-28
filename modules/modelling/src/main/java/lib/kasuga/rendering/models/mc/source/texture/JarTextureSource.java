@@ -5,8 +5,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 
+import java.io.IOException;
 import java.io.InputStream;
-import java.util.List;
 import java.util.Optional;
 
 public class JarTextureSource extends TextureSource<ResourceLocation> {
@@ -25,11 +25,11 @@ public class JarTextureSource extends TextureSource<ResourceLocation> {
     public Optional<InputStream> getInput(ResourceLocation input) {
         ResourceLocation location = ResourceLocation.tryBuild(input.getNamespace(), "textures/" + input.getPath() + ".png");
         ResourceManager manager = Minecraft.getInstance().getResourceManager();
-        List<Resource> resources = manager.getResourceStack(location);
-        if (resources.isEmpty()) return Optional.empty();
+        Optional<Resource> resource = manager.getResource(location);
+        if (resource.isEmpty()) return Optional.empty();
         try {
-            return Optional.of(resources.getFirst().open());
-        } catch (Exception e) {
+            return Optional.of(resource.get().open());
+        } catch (IOException e) {
             return Optional.empty();
         }
     }

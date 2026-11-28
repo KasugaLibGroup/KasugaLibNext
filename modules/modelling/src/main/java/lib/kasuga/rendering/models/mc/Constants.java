@@ -167,6 +167,7 @@ public class Constants {
         KasugaModelManager modelManager = new KasugaModelManager(List.of(basic));
         modelManager.registerRouter(router);
         modelManager.registerModelScanner(new KasugaModelScanner());
+        modelManager.registerJavaEntityModels(basic);
 
         event.registerReloadListener(modelManager);
     }
