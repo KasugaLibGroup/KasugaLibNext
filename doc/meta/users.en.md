@@ -5,7 +5,7 @@ This page lists only consumer projects directly verified in the current workspac
 ## Verified Downstream Consumer: `KuaYue`
 
 - **Workspace path and identity**: Sibling repository `KuaYue` (`mod_id=kuayue`, `mod_version=2.0.0`, `mod_group_id=cn.kycraft.kuayue`, MIT License in `KuaYue/LICENSE`).
-- **Build setup and target environment**: Targets `Minecraft 1.21.1` / `NeoForge 21.1.203` (Parchment `2024.11.17`, `Java 21`). `KuaYue/settings.gradle` consumes `KasugaLibNext` via `includeBuild("../KasugaLibNext")`, substituting `lib.kasuga:kasuga_lib` with `:modules:library` (`Bundling.SHADOWED`), along with `inject`, `generator`, `resource-compiler`, `formula`, and `../KasugaLibNext/modules/gradle-plugin`.
+- **Build setup and target environment**: Targets `Minecraft 1.21.1` / `NeoForge 21.1.268` (Parchment `2024.11.17`, `Java 21`). `KuaYue/settings.gradle` consumes `KasugaLibNext` via `includeBuild("../KasugaLibNext")`, substituting `lib.kasuga:kasuga_lib` with `:modules:library` (`Bundling.SHADOWED`), along with `inject`, `generator`, `resource-compiler`, `formula`, and `../KasugaLibNext/modules/gradle-plugin`.
 - **Module layout**: Composed of `modules/core`, `modules/decoration`, `modules/train-parts`, `modules/scheduling`, `modules/ui`, `modules/provisions`, and `temporal/migration`, applying `builder.kasuga.monorepo`, `builder.kasuga.generator`, and `builder.kasuga.resource-compiler` alongside Micronaut `4.9.10` DI.
 
 ### `KasugaLibNext` Subsystems Used by `KuaYue`

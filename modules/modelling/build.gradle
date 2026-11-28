@@ -469,16 +469,16 @@ dependencies {
     renderHarnessImplementation 'org.lwjgl:lwjgl-glfw:3.3.3'
     renderHarnessImplementation 'org.lwjgl:lwjgl-opengl:3.3.3'
 
-    compileOnly("libs:sodium:neoforge-mc1.21.1-0.6.13")
+    compileOnly files('libs/sodium-neoforge-mc1.21.1-0.8.14-beta.2-mod.jar')
     // Only the opted-in Iris smoke fixtures inspect Iris internals directly.
     contentTestingCompileOnly(project(':modules:iris-compat'))
-    contentTestingCompileOnly("libs:iris:neoforge-mc1.21.1-1.8.12")
+    contentTestingCompileOnly("libs:iris:neoforge-mc1.21.1-1.8.14-beta.1")
     // Optional renderer integrations belong to development runs only. Keeping
     // them on localRuntime preserves the client test setup without publishing
     // the non-resolvable flatDir coordinates to downstream consumers.
     if (providers.gradleProperty('kasugaRendererMods').getOrElse('true').toBoolean()) {
-        localRuntime("libs:iris:neoforge-mc1.21.1-1.8.12")
-        localRuntime("libs:sodium:neoforge-mc1.21.1-0.6.13")
+        localRuntime("libs:iris:neoforge-mc1.21.1-1.8.14-beta.1")
+        localRuntime("libs:sodium:neoforge-mc1.21.1-0.8.14-beta.2")
     }
 }
 

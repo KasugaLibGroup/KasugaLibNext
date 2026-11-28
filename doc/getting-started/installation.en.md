@@ -7,10 +7,10 @@ This page is for server owners, modpack authors, and release packagers. It expla
 | Item | Requirement |
 | --- | --- |
 | Minecraft | `1.21.1` |
-| Mod Loader | NeoForge `21.1.203` or newer (`[21.1.203,)`) |
+| Mod Loader | NeoForge `21.1.268` or newer (`[21.1.268,)`) |
 | Runtime Java | Java 21 |
 | Core Artifact | `kasuga-library-1.0.0-all.jar` (the `-all` Shadow JAR) |
-| Companion Mods (Aggregate JAR) | Create `6.0.6-98` + Flywheel `1.0.4` + Ponder `1.0.59` + Registrate `MC1.21-1.3.0+62` (see Section 3) |
+| Companion Mods (Aggregate JAR) | Create `6.0.11-346` + Flywheel `1.0.7` + Ponder `1.0.92+mc1.21.1` + Registrate `MC1.21-1.3.0+67` (see Section 3) |
 
 > **Never deploy the unshaded thin JAR or split sub-module JARs**
 >
@@ -47,7 +47,7 @@ Although KasugaLibNext gates its Create DI beans behind `@CreateModBeans` (`IfCr
 - `kasuga_lib_iris.mixins.json` (`required: false`)
 - `kasuga_lib_create.mixins.json` (`required: true`, plugin `CreateMixinPlugin`)
 
-`CreateMixinPlugin` inspects `com/simibubi/create/content/trains/track/BezierConnection.class` when applying track Mixins and throws `IllegalStateException("Create BezierConnection is missing")` if absent. When deploying the full `kasuga-library-*-all.jar`, install a compatible `1.21.1` Create build (`6.0.6-98` and its dependencies Ponder, Flywheel, and Registrate) in `mods/`.
+`CreateMixinPlugin` inspects `com/simibubi/create/content/trains/track/BezierConnection.class` when applying track Mixins and throws `IllegalStateException("Create BezierConnection is missing")` if absent. When deploying the full `kasuga-library-*-all.jar`, install a compatible `1.21.1` Create build (`6.0.11-346` and its dependencies Ponder, Flywheel, and Registrate) in `mods/`.
 
 ### 3.2 Javet JavaScript Engine (`kasuga_lib_javet`)
 
@@ -66,7 +66,7 @@ Install `kasuga_lib_javet` (`external/slp/javet`) only if your modpack, datapack
 
 | Mod | Side | Behavior |
 | --- | --- | --- |
-| **Iris** (`1.8.12` tested) & **Sodium** (`0.6.13` tested) | Client-only | `kasuga_lib_iris.mixins.json` is non-required; `IrisCameraMixinPlugin` and `IrisCompat` probe Iris/Sodium ABIs at startup and cleanly fall back to native rendering when absent or incompatible |
+| **Iris** (`1.8.14-beta.1`) & **Sodium** (`0.8.14-beta.2`) | Client-only | `kasuga_lib_iris.mixins.json` is non-required; `IrisCameraMixinPlugin` and `IrisCompat` probe Iris/Sodium ABIs at startup and cleanly fall back to native rendering when absent or incompatible |
 | **Voxy** | Client-only | `VoxyCompat` checks `ModList.get().isLoaded("voxy")` automatically |
 | **Sable** | Both (optional) | Enables Sable scene hosts and `enable_sable_weather_filter` only when Sable is installed |
 | **LDLib2** (`2.2.44`) / **ModernUI** | Optional | Required only when installing the matching `external/uip/*` companion integration mod |

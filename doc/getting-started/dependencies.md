@@ -11,7 +11,7 @@
 | Java | Java 21（`JavaLanguageVersion.of(21)`） | `build.gradle` |
 | Gradle | `8.14.3`（Wrapper `gradle-8.14.3-bin.zip`） | `gradle/wrapper/gradle-wrapper.properties` |
 | Minecraft | `1.21.1`（范围 `[1.21.1]`） | `gradle.properties` |
-| Mod Loader | NeoForge `21.1.203`（`javafml`，FML 范围 `[1,)`） | `gradle.properties`、`neoforge.mods.toml` |
+| Mod Loader | NeoForge `21.1.268`（`javafml`，FML 范围 `[1,)`） | `gradle.properties`、`neoforge.mods.toml` |
 | ModDevGradle | `net.neoforged.moddev` `2.0.107` | `build.gradle` |
 | Parchment 映射 | MC `1.21.1` / `2024.11.17` | `gradle.properties` |
 | Shadow 插件 | `com.gradleup.shadow` `9.0.2` | `modules/library/build.gradle` |
@@ -19,7 +19,7 @@
 
 > **不支持 Fabric**：仓库中所有模组工程仅配置了 `net.neoforged.moddev` 与 `javafml`。
 >
-> **关于版本目录**：本仓库未使用 `gradle/libs.versions.toml`；所有共享版本属性集中定义在根目录 `gradle.properties`（个别扩展子模块如 `external/uip/ldlib-compose` 在各自 `build.gradle` / `gradle.properties` 中覆写，例如其 `neo_version` 为 `21.1.238`）。
+> **关于版本目录**：本仓库未使用 `gradle/libs.versions.toml`；所有共享版本属性集中定义在根目录 `gradle.properties`（个别扩展子模块也在各自 `build.gradle` / `gradle.properties` 中声明 NeoForge `21.1.268`）。
 
 ## 模组标识与发布产物
 
@@ -77,7 +77,7 @@
 | `:modules:shader-graal` | `lib.kasuga:shader-graal` | 可选 GraalVM Polyglot/JS `24.1.2` Shader DSL 前端（纯 JVM 可运行） |
 | `:external:slp:javet` | `lib.kasuga.slp.javet`（`modId`: `kasuga_lib_javet`） | 可选 Javet `5.0.1` V8 JavaScript 脚本引擎支持模组 |
 | `:external:uip:ldlib` | `lib.kasuga.uip.ldlib`（`modId`: `kasuga_lib_ldlib2`） | 可选 LDLib2 `2.2.44` 世界空间 UI 提供方 |
-| `:external:uip:ldlib-compose` | `lib.kasuga.uip.compose`（`modId`: `kasuga_lib_ldlib_compose`） | 可选 LDLib2 Compose `21.0.0.1:all`（Kotlin `2.1.20`、NeoForge `21.1.238`） |
+| `:external:uip:ldlib-compose` | `lib.kasuga.uip.compose`（`modId`: `kasuga_lib_ldlib_compose`） | 可选 LDLib2 Compose `21.0.0.1:all`（Kotlin `2.1.20`、NeoForge `21.1.268`） |
 | `:external:uip:modernui` | `lib.kasuga.uip.modernui`（`modId`: `kasuga_lib_modernui`） | 可选 ModernUI `eMf1VSQd` 模型预览演示接入 |
 
 > `:modules:old` 为旧版 UI 原型归档目录，未作为功能模块纳入当前开发。
@@ -148,24 +148,24 @@ dependencies {
 | 仓库 URL | 用途与版本 | 声明位置 |
 | --- | --- | --- |
 | `mavenCentral()` / `gradlePluginPortal()` | Micronaut `4.9.10`、LWJGL `3.3.3`、JOML `1.10.5`、DataFixerUpper `8.0.16`、Gson `2.10.1`、Guava `32.1.2-jre`、jgltf `2.0.4`、ZXing `3.5.3`、Javet `5.0.1`、GraalVM `24.1.2` 等 | 各模块 `build.gradle` |
-| `https://maven.neoforged.net/releases` | NeoForge `21.1.203`、`testframework`、`render-core` / `render-opengl` | `modules/render-core/build.gradle`、ModDevGradle |
+| `https://maven.neoforged.net/releases` | NeoForge `21.1.268`、`testframework`、`render-core` / `render-opengl` | `modules/render-core/build.gradle`、ModDevGradle |
 | `https://libraries.minecraft.net` | Minecraft 共享库 | `modules/render-core/build.gradle` |
-| `https://maven.createmod.net` | Create `6.0.6-98`（`slim`）、Ponder `1.0.59`、Flywheel `1.0.4` | `modules/library/build.gradle`、`modules/create/build.gradle` |
-| `https://maven.ithundxr.dev/snapshots` | Registrate `MC1.21-1.3.0+62` | `modules/library/build.gradle`、`modules/create/build.gradle` |
+| `https://maven.createmod.net` | Create `6.0.11-346`、Ponder `1.0.92+mc1.21.1`、Flywheel `1.0.7` | `modules/library/build.gradle`、`modules/create/build.gradle` |
+| `https://maven.ithundxr.dev/snapshots` | Registrate `MC1.21-1.3.0+67` | `modules/library/build.gradle`、`modules/create/build.gradle` |
 | `https://maven.squiddev.cc`（限定组 `cc.tweaked`） | CC:Tweaked `cc-tweaked-1.21.1-forge:1.116.1` | `modules/library/build.gradle`、`modules/create/build.gradle` |
 | `https://maven.ryanhcode.dev/releases`（限定组 `dev.ryanhcode.sable-companion`） | Sable Companion `sable-companion-common-1.21.1:1.6.0`（`compileOnly`） | `modules/create/build.gradle` |
 | `https://maven.firstdark.dev/snapshots` | LDLib2 `2.2.44`、`ldlib2-compose-1.21.1:21.0.0.1:all` | `external/uip/ldlib*/build.gradle` |
 | `https://api.modrinth.com/maven` | ModernUI `maven.modrinth:modern-ui:eMf1VSQd` | `external/uip/modernui/build.gradle` |
-| 本地 `flatDir`（`modules/modelling/libs`、`modules/iris-compat/libs`） | 开发期可选编译/本地运行：`sodium:neoforge-mc1.21.1-0.6.13`、`iris:neoforge-mc1.21.1-1.8.12`（不打入发布 JAR） | `modules/modelling/build.gradle`、`modules/iris-compat/build.gradle` |
+| 本地 `flatDir`（`modules/modelling/libs`、`modules/iris-compat/libs`） | 开发期可选编译/本地运行：Sodium `0.8.14-beta.2`、Iris `1.8.14-beta.1`（不打入发布 JAR） | `modules/modelling/build.gradle`、`modules/iris-compat/build.gradle` |
 
 ## 必需与可选运行时依赖对照
 
 | 组件 / 模组 | 状态 | 机制与说明 |
 | --- | --- | --- |
-| Minecraft `1.21.1` + NeoForge `[21.1.203,)` | 必需 | 由 `neoforge.mods.toml` 强制声明 |
-| Create `6.0.6-98` + Ponder + Flywheel + Registrate | 聚合 JAR 需提供 | 虽然 DI Bean 使用 `@CreateModBeans`（`IfCreateModLoaded`）条件启用，但 `:modules:library` 的 `neoforge.mods.toml` 无条件声明了 `kasuga_lib_create.mixins.json`（`required: true`），且 `CreateMixinPlugin` 会读取 `BezierConnection.class`，缺 Create 时客户端加载会抛出 `IllegalStateException` |
+| Minecraft `1.21.1` + NeoForge `[21.1.268,)` | 必需 | 由 `neoforge.mods.toml` 强制声明 |
+| Create `6.0.11-346` + Ponder + Flywheel + Registrate | 聚合 JAR 需提供 | 虽然 DI Bean 使用 `@CreateModBeans`（`IfCreateModLoaded`）条件启用，但 `:modules:library` 的 `neoforge.mods.toml` 无条件声明了 `kasuga_lib_create.mixins.json`（`required: true`），且 `CreateMixinPlugin` 会读取 `BezierConnection.class`，缺 Create 时客户端加载会抛出 `IllegalStateException` |
 | `kasuga_lib_javet`（`external/slp/javet`） | 可选 | 提供 JavaScript（Javet `5.0.1`）脚本引擎；仅在加载声明 `javascript` 的脚本包时必需。首次运行会由 `JavetDownloader` 拉取平台 V8 原生库至 `<gameDir>/native-libraries/javet/` |
-| Iris `1.8.12` + Sodium `0.6.13` | 可选（仅客户端） | `kasuga_lib_iris.mixins.json` 设为 `required: false`，`IrisCameraMixinPlugin` 与 `IrisCompat` 在启动时做 ASM ABI 探测，不兼容或缺失时自动回退 |
+| Iris `1.8.14-beta.1` + Sodium `0.8.14-beta.2` | 可选（仅客户端） | `kasuga_lib_iris.mixins.json` 设为 `required: false`，`IrisCameraMixinPlugin` 与 `IrisCompat` 在启动时做 ASM ABI 探测，不兼容或缺失时自动回退 |
 | Voxy / Sable | 可选 | `VoxyCompat` 与 `Create` Sable 适配器均按 `ModList` / 类存在性探测启用 |
 | Box3D 原生库（`kasuga_box3d`） | 可选原生加速 | 随平台 `native/<os>-<arch>/` 打包进 JAR；构建机缺少 `cmake` 或目标平台缺失对应原生库时，`NativeBox3D.availableOrWarn()` 仅禁用布娃娃/刚体物理而不影响其余功能 |
 | `org.jgrapht:jgrapht-core:1.5.2` | 若用到图模块需自备 | `:modules:core` 将其列入 `shadowLibrary`，但 `:modules:library` 的 `shadowLibrary` 未重新声明该库（当前 `kasuga-library-*-all.jar` 不含 `org/jgrapht`）；若下游模组使用 `lib.kasuga.content.graph.*` 需显式引入（如 `KuaYue/modules/core/build.gradle` 的做法） |

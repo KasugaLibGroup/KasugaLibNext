@@ -3,6 +3,7 @@ package lib.kasuga.create.client.model;
 import com.simibubi.create.content.contraptions.Contraption;
 import com.simibubi.create.content.contraptions.render.ContraptionEntityRenderer;
 import com.simibubi.create.foundation.virtualWorld.VirtualRenderWorld;
+import lib.kasuga.create.CreateContraptionBlockEntities;
 import net.createmod.catnip.render.SuperByteBuffer;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
@@ -15,7 +16,6 @@ import java.lang.invoke.MethodType;
 /** The native structure cache moved between Create 6.0.6 and 6.0.10. Resolve public APIs once. */
 final class CreateContraptionBuffers {
     private static final MethodHandle BUFFER = resolve();
-    private static final MethodHandle BLOCK_ENTITY = resolveBlockEntity();
 
     private CreateContraptionBuffers() {}
 
@@ -49,26 +49,7 @@ final class CreateContraptionBuffers {
 
     static MethodType signature() { return BUFFER.type(); }
 
-    private static MethodHandle resolveBlockEntity() {
-        var lookup = MethodHandles.publicLookup();
-        try {
-            return lookup.findVirtual(Contraption.class, "getBlockEntityClientSide",
-                    MethodType.methodType(BlockEntity.class, BlockPos.class));
-        } catch (NoSuchMethodException olderCreate) {
-            try {
-                var map = lookup.findGetter(Contraption.class, "presentBlockEntities", java.util.Map.class);
-                var get = lookup.findVirtual(java.util.Map.class, "get", MethodType.methodType(Object.class, Object.class));
-                return MethodHandles.filterArguments(get, 0, map).asType(
-                        MethodType.methodType(BlockEntity.class, Contraption.class, BlockPos.class));
-            } catch (ReflectiveOperationException failure) {
-                throw new IllegalStateException("Unsupported Create block entity view API", failure);
-            }
-        } catch (IllegalAccessException failure) { throw new IllegalStateException(failure); }
-    }
-
     static BlockEntity blockEntity(Contraption contraption, BlockPos position) {
-        try { return (BlockEntity) BLOCK_ENTITY.invokeExact(contraption, position); }
-        catch (RuntimeException | Error failure) { throw failure; }
-        catch (Throwable failure) { throw new IllegalStateException("Create block entity view failed", failure); }
+        return CreateContraptionBlockEntities.get(contraption, position);
     }
 }

@@ -5,7 +5,7 @@
 ## 已核实的下游模组：`KuaYue`（跨越）
 
 - **项目路径与标识**：工作区同级仓库 `KuaYue`（`mod_id=kuayue`，`mod_version=2.0.0`，`mod_group_id=cn.kycraft.kuayue`，采用 MIT License）。
-- **构建与目标环境**：面向 `Minecraft 1.21.1` / `NeoForge 21.1.203`（Parchment `2024.11.17`、`Java 21`），`KuaYue/settings.gradle` 通过 Gradle 复合构建 `includeBuild("../KasugaLibNext")` 直接消费 `KasugaLibNext`，将 `lib.kasuga:kasuga_lib` 替换为 `:modules:library`（`Bundling.SHADOWED`），同时替换 `inject`、`generator`、`resource-compiler`、`formula` 并引入 `../KasugaLibNext/modules/gradle-plugin`。
+- **构建与目标环境**：面向 `Minecraft 1.21.1` / `NeoForge 21.1.268`（Parchment `2024.11.17`、`Java 21`），`KuaYue/settings.gradle` 通过 Gradle 复合构建 `includeBuild("../KasugaLibNext")` 直接消费 `KasugaLibNext`，将 `lib.kasuga:kasuga_lib` 替换为 `:modules:library`（`Bundling.SHADOWED`），同时替换 `inject`、`generator`、`resource-compiler`、`formula` 并引入 `../KasugaLibNext/modules/gradle-plugin`。
 - **子模块结构**：包含 `modules/core`、`modules/decoration`、`modules/train-parts`、`modules/scheduling`、`modules/ui`、`modules/provisions` 与 `temporal/migration`，在模块中应用 `builder.kasuga.monorepo`、`builder.kasuga.generator`、`builder.kasuga.resource-compiler` 插件并启用 Micronaut `4.9.10` DI。
 
 ### `KuaYue` 实际使用的 KasugaLibNext 能力

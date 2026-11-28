@@ -9,7 +9,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.*;
 
-/** Iris 1.8.12 injects a static format flag; each CloudRenderer owns its own geometry. */
+/** Iris injects a static format flag; each CloudRenderer owns its own geometry. */
 @Pseudo @Mixin(value = CloudRenderer.class, remap = false, priority = 900)
 abstract class WorldViewIrisCloudMixin {
     @Unique private static java.lang.invoke.VarHandle kasuga$formatFlag;
